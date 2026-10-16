@@ -26,11 +26,11 @@ import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpMethod;
@@ -44,8 +44,12 @@ class SuiteSnapshotBuilderTest {
     @Mock
     private JsonbMapper jsonbMapper;
 
-    @InjectMocks
     private SuiteSnapshotBuilder builder;
+
+    @BeforeEach
+    void setUp() {
+        builder = new SuiteSnapshotBuilder(jsonbMapper, new SuiteTargetResolver(jsonbMapper));
+    }
 
     @Nested
     @DisplayName("DEPLOYMENT suite")

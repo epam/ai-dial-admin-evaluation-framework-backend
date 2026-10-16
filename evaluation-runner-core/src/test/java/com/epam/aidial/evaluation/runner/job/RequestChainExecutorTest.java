@@ -9,6 +9,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
@@ -18,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +67,8 @@ class RequestChainExecutorTest {
                 .numberOfTestCases(1)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .createdAtMs(Instant.parse("2026-01-01T00:00:00Z").toEpochMilli())
+                .target(new DeploymentTarget(
+                        DeploymentReferenceDto.builder().id("gpt-4").build()))
                 .snapshotEndpointRef(EndpointContractDto.builder()
                         .method(HttpMethod.POST)
                         .relativeUrlPattern("/v1/chat")

@@ -8,18 +8,23 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.mcp.McpInvocationException;
 import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
+import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
@@ -123,6 +128,24 @@ class EvaluationWorkerTest {
         List<TestCaseRunResult> results = worker.execute(input, context, 0, responseColumns);
 
         assertThat(results).containsExactly(stubbedRow);
+    }
+
+    @Test
+    @DisplayName("Should delegate a ROUTE target to the request chain, not the MCP path")
+    void execute_routeTarget_delegatesToRequestChainExecutor() {
+        TestCaseRunInput input = buildTestCaseRunInput();
+        EvaluationContext context = buildContext(new RouteTarget(null));
+        TestCaseRunResult stubbedRow = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .build();
+        when(requestChainExecutor.execute(eq(input), eq(context), eq(0), any(), anyLong()))
+                .thenReturn(List.of(stubbedRow));
+
+        List<TestCaseRunResult> results = worker.execute(input, context, 0, List.of());
+
+        assertThat(results).containsExactly(stubbedRow);
+        verifyNoInteractions(mcpToolInvoker);
     }
 
     @Test
@@ -390,6 +413,11 @@ class EvaluationWorkerTest {
     // Helper methods
     // ------------------------------------------------------------------
     private EvaluationContext buildContext() {
+        return buildContext(new DeploymentTarget(
+                DeploymentReferenceDto.builder().id("gpt-4").build()));
+    }
+
+    private EvaluationContext buildContext(SuiteTarget target) {
         return EvaluationContext.builder()
                 .runId(UUID.randomUUID())
                 .suiteId(UUID.randomUUID())
@@ -406,6 +434,7 @@ class EvaluationWorkerTest {
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(System.currentTimeMillis())
+                .target(target)
                 .build();
     }
 
@@ -436,15 +465,15 @@ class EvaluationWorkerTest {
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(FIXED_CLOCK.millis())
-                .suiteType(SuiteType.MCP_TOOL)
-                .mcpDeploymentRefDto(McpDeploymentReferenceDto.builder()
-                        .id("my-toolset")
-                        .type("dial-toolset")
-                        .build())
-                .toolRefDto(ToolReferenceDto.builder()
-                        .name("search")
-                        .inputSchema(Map.of("type", "object"))
-                        .build())
+                .target(new McpToolTarget(
+                        McpDeploymentReferenceDto.builder()
+                                .id("my-toolset")
+                                .type("dial-toolset")
+                                .build(),
+                        ToolReferenceDto.builder()
+                                .name("search")
+                                .inputSchema(Map.of("type", "object"))
+                                .build()))
                 .argumentTemplateDto(ArgumentTemplateDto.builder()
                         .arguments(Map.of("query", "${{userQuery}}"))
                         .build())

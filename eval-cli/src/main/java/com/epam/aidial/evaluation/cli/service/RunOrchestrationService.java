@@ -9,8 +9,11 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
+import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import java.io.File;
 import java.io.IOException;
 import java.io.Writer;
@@ -60,7 +63,8 @@ public class RunOrchestrationService {
      *                                data (unsupported combination, mirroring the EF backend's guard)
      */
     public File run(SuiteFetchBundle bundle, DeploymentReferenceDto targetDeploymentRef, String workDir) {
-        rejectRouteSuite(bundle.getSuite());
+        final SuiteTarget target = SuiteTargets.fromSuiteResponse(bundle.getSuite());
+        rejectRouteTarget(target);
         suiteContractValidator.validate(bundle.getSuite());
         final DeploymentReferenceDto resolvedDeploymentRef =
                 resolveTargetDeploymentRef(bundle.getSuite(), targetDeploymentRef);
@@ -69,7 +73,7 @@ public class RunOrchestrationService {
         final boolean hasMultiTurnCase = testCases.stream().anyMatch(this::isMultiTurn);
 
         requireFreshSchemaForMultiTurn(bundle, hasMultiTurnCase);
-        rejectMcpSuiteWithMultiTurnCases(bundle.getSuite(), hasMultiTurnCase);
+        rejectMcpTargetWithMultiTurnCases(target, bundle.getSuite(), hasMultiTurnCase);
 
         log.info(
                 "Starting run for suite '{}' ({}) — {} test case(s) against deployment '{}'",
@@ -114,12 +118,6 @@ public class RunOrchestrationService {
         return csvPath.toFile();
     }
 
-    private void rejectRouteSuite(TestSuiteResponseDto suite) {
-        if (suite.getSuiteType() == SuiteType.ROUTE) {
-            throw new IllegalStateException("ROUTE suite execution is not supported by eval-cli");
-        }
-    }
-
     /**
      * Fails fast when the bundle's dataset schema is absent (fetched by an earlier CLI version)
      * and at least one fetched test case carries per-turn data — running such a case without a
@@ -136,12 +134,19 @@ public class RunOrchestrationService {
         }
     }
 
+    private void rejectRouteTarget(SuiteTarget target) {
+        if (target instanceof RouteTarget) {
+            throw new IllegalStateException("ROUTE suite execution is not supported by eval-cli");
+        }
+    }
+
     /**
      * Rejects an MCP tool suite that has any fetched test case carrying per-turn data, before any
      * target invocation — mirroring the EF backend's own run-creation guard (design.md Decision 8).
      */
-    private void rejectMcpSuiteWithMultiTurnCases(TestSuiteResponseDto suite, boolean hasMultiTurnCase) {
-        if (suite.getSuiteType() == SuiteType.MCP_TOOL && hasMultiTurnCase) {
+    private void rejectMcpTargetWithMultiTurnCases(
+            SuiteTarget target, TestSuiteResponseDto suite, boolean hasMultiTurnCase) {
+        if (target instanceof McpToolTarget && hasMultiTurnCase) {
             throw new IllegalStateException("Suite " + suite.getId() + " ('" + suite.getName()
                     + "') is an MCP tool suite with at least one multi-turn test case — MCP suites do not support"
                     + " multi-turn test cases.");

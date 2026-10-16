@@ -17,8 +17,8 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
@@ -68,6 +68,7 @@ public class TestSuiteRunService {
     private final TestSuiteRunRepository testSuiteRunRepository;
     private final TestSuiteRepository testSuiteRepository;
     private final TestCaseService testCaseService;
+    private final SuiteTargetResolver suiteTargetResolver;
     private final QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
     private final TestSuiteRunProperties properties;
     private final TestSuiteEvaluationJob evaluationJob;
@@ -107,9 +108,9 @@ public class TestSuiteRunService {
                     + ". The test suite is not in a valid state.");
         }
 
-        // Multi-turn test cases are supported for any DEPLOYMENT HTTP suite shape. Reject an MCP suite
+        // Multi-turn test cases are supported for any HTTP suite shape (DEPLOYMENT or ROUTE). Reject an MCP suite
         // whose dataset contains any multi-turn case (409 INVALID_OPERATION).
-        if (testSuite.getSuiteType() == SuiteType.MCP_TOOL
+        if (suiteTargetResolver.fromEntity(testSuite) instanceof McpToolTarget
                 && testCaseService.datasetHasMultiTurnCases(testSuite.getDatasetId())) {
             throw new InvalidOperationException("Cannot create a run: MCP suites do not support multi-turn test cases");
         }

@@ -24,8 +24,9 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
@@ -477,13 +478,13 @@ public class TestSuiteEvaluationJob {
         ExecutionSettingsDto exec = config.getExecution();
         RetryPolicyDto retry = config.getRetry();
 
-        SuiteType suiteType =
-                snapshot.getSuiteType() != null ? SuiteType.valueOf(snapshot.getSuiteType()) : SuiteType.DEPLOYMENT;
+        final SuiteTarget target = SuiteTargets.fromSnapshot(snapshot);
 
         UUID datasetId =
                 snapshot.getDatasetRef() != null ? snapshot.getDatasetRef().getId() : null;
 
         return EvaluationContext.builder()
+                .target(target)
                 .runId(run.getId())
                 .suiteId(run.getTestSuiteId())
                 .datasetId(datasetId)
@@ -507,8 +508,6 @@ public class TestSuiteEvaluationJob {
                 .executor(executor)
                 .credential(credential)
                 .createdAtMs(run.getCreatedAt())
-                .suiteType(suiteType)
-                .snapshotDeploymentRef(snapshot.getDeploymentRef())
                 .snapshotEndpointRef(snapshot.getEndpointRef())
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
@@ -516,8 +515,6 @@ public class TestSuiteEvaluationJob {
                 .snapshotAdditionalRequests(snapshot.getAdditionalRequests())
                 .snapshotRequestName(snapshot.getRequestName())
                 .snapshotTestCaseSchema(snapshot.getTestCaseSchema())
-                .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
-                .toolRefDto(snapshot.getToolRef())
                 .argumentTemplateDto(snapshot.getArgumentTemplate())
                 .inputBindings(snapshot.getInputBindings())
                 .build();

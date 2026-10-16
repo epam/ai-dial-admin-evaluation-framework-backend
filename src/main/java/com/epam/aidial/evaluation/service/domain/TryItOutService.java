@@ -14,7 +14,6 @@ import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
-import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
@@ -38,7 +37,10 @@ import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
 import com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulator;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
+import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
+import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
@@ -103,6 +105,7 @@ public class TryItOutService {
     private final DialCoreUrlBuilder urlBuilder;
     private final RequestModelValidator requestModelValidator;
     private final JsonbMapper jsonbMapper;
+    private final SuiteTargetResolver suiteTargetResolver;
     private final ObjectMapper objectMapper;
     private final RequestBodySerializerRegistry serializerRegistry;
     private final OpenTelemetry openTelemetry;
@@ -116,36 +119,41 @@ public class TryItOutService {
     private final ResponseColumnExtractor responseColumnExtractor;
 
     public TryItOutResponseDto tryWithTestCase(UUID testSuiteId, UUID testCaseId) {
-        TestSuite suite = loadSuite(testSuiteId);
+        final TestSuite suite = loadSuite(testSuiteId);
+        return switch (suiteTargetResolver.fromEntity(suite)) {
+            case McpToolTarget m -> tryMcpWithTestCase(suite, m, testSuiteId, testCaseId);
+            case HttpTarget h -> tryHttpWithTestCase(suite, h, testSuiteId, testCaseId);
+        };
+    }
 
-        if (isMcpSuite(suite)) {
-            McpDeploymentReferenceDto mcpRef = jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef());
-            ToolReferenceDto toolRef = jsonbMapper.mapToolRef(suite.getToolRef());
-            ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
-            validateMcpPreconditions(mcpRef, toolRef);
+    private TryItOutResponseDto tryMcpWithTestCase(
+            TestSuite suite, McpToolTarget target, UUID testSuiteId, UUID testCaseId) {
+        final McpDeploymentReferenceDto mcpRef = target.ref();
+        final ToolReferenceDto toolRef = target.tool();
+        ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
+        validateMcpPreconditions(mcpRef, toolRef);
 
-            TestCase testCase = testCaseRepository
-                    .findByIdAndDatasetId(testCaseId, suite.getDatasetId())
-                    .orElseThrow(() -> new EntityNotFoundException("TestCase " + testCaseId + " not found in dataset "
-                            + suite.getDatasetId() + " (referenced by suite " + testSuiteId + ")"));
+        TestCase testCase = testCaseRepository
+                .findByIdAndDatasetId(testCaseId, suite.getDatasetId())
+                .orElseThrow(() -> new EntityNotFoundException("TestCase " + testCaseId + " not found in dataset "
+                        + suite.getDatasetId() + " (referenced by suite " + testSuiteId + ")"));
 
-            if (testCase.getMultiTurnData() != null) {
-                throw new InvalidOperationException("Cannot try out: MCP suites do not support multi-turn test cases");
-            }
-
-            // Suite-level bindings are the effective bindings — per-test-case overrides no longer exist
-            List<InputBindingDto> effectiveBindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
-
-            Map<String, Object> testCaseData = parseTestCaseData(testCase.getData());
-            McpRequestResolver.ResolutionResult resolutionResult =
-                    mcpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData);
-            validateMcpResolutionResult(resolutionResult);
-            return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
+        if (testCase.getMultiTurnData() != null) {
+            throw new InvalidOperationException("Cannot try out: MCP suites do not support multi-turn test cases");
         }
 
-        final SuiteType suiteType = resolveSuiteType(suite);
-        final DeploymentReferenceDto deploymentRef =
-                suiteType == SuiteType.ROUTE ? null : jsonbMapper.map(suite.getDeploymentRef());
+        // Suite-level bindings are the effective bindings — per-test-case overrides no longer exist
+        List<InputBindingDto> effectiveBindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
+
+        Map<String, Object> testCaseData = parseTestCaseData(testCase.getData());
+        McpRequestResolver.ResolutionResult resolutionResult =
+                mcpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData);
+        validateMcpResolutionResult(resolutionResult);
+        return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
+    }
+
+    private TryItOutResponseDto tryHttpWithTestCase(
+            TestSuite suite, HttpTarget target, UUID testSuiteId, UUID testCaseId) {
         final EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
         // Deserialized once here and handed to the planner, so a single try-out never parses the suite's
         // additionalRequests JSONB twice.
@@ -153,13 +161,7 @@ public class TryItOutService {
                 jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
         // Preconditions (incl. per-chain-element) run on the already-loaded suite BEFORE planning, so a
         // misconfigured suite combined with a nonexistent testCaseId still yields 400, not 404 (design D7).
-        validateChainPreconditions(
-                suiteType,
-                suite.getRoutesRef(),
-                deploymentRef,
-                endpointRef,
-                suite.getRequestTemplate(),
-                additionalRequests);
+        validateChainPreconditions(target, endpointRef, suite.getRequestTemplate(), additionalRequests);
 
         final ResolvedRequestService.ChainPlan plan =
                 resolvedRequestService.planChain(testSuiteId, testCaseId, additionalRequests);
@@ -169,11 +171,10 @@ public class TryItOutService {
             validateResolutionResult(resolved);
             final List<ResponseColumnDefinitionDto> responseColumns =
                     plan.requestPlans().getFirst().spec().responseColumns();
-            return invokeAndBuildResponse(
-                    resolved, suiteType, deploymentRef, endpointRef.getMethod(), testSuiteId, responseColumns);
+            return invokeAndBuildResponse(resolved, target, endpointRef.getMethod(), testSuiteId, responseColumns);
         }
 
-        return runChain(plan, suiteType, deploymentRef, testSuiteId, null);
+        return runChain(plan, target, testSuiteId, null);
     }
 
     /**
@@ -192,8 +193,7 @@ public class TryItOutService {
      */
     private TryItOutResponseDto runChain(
             ResolvedRequestService.ChainPlan plan,
-            SuiteType suiteType,
-            DeploymentReferenceDto deploymentRef,
+            HttpTarget target,
             UUID testSuiteId,
             Map<Integer, List<InputBindingDto>> bindingsByRequest) {
         Map<String, Object> frame = Map.of();
@@ -220,12 +220,7 @@ public class TryItOutService {
                 try {
                     resolved = requestResolver.resolveForRun(spec.requestTemplate(), bindings, turnData, frame);
                     validateResolutionResult(resolved);
-                    current = invokeTurn(
-                            resolved,
-                            suiteType,
-                            deploymentRef,
-                            spec.endpointRef().getMethod(),
-                            testSuiteId);
+                    current = invokeTurn(resolved, target, spec.endpointRef().getMethod(), testSuiteId);
                     // Covers both the HTTP status and a streaming response whose SSE parse did not
                     // complete (TIMEOUT/ERROR): extracting from a partial document would poison every
                     // later request's frame.
@@ -407,36 +402,35 @@ public class TryItOutService {
             String extractionDocumentJson) {}
 
     public TryItOutResponseDto tryWithVariables(UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
-        TestSuite suite = loadSuite(testSuiteId);
+        final TestSuite suite = loadSuite(testSuiteId);
+        return switch (suiteTargetResolver.fromEntity(suite)) {
+            case McpToolTarget m -> tryMcpWithVariables(suite, m, testSuiteId, variables);
+            case HttpTarget h -> tryHttpWithVariables(suite, h, testSuiteId, variables);
+        };
+    }
 
-        if (isMcpSuite(suite)) {
-            McpDeploymentReferenceDto mcpRef = jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef());
-            ToolReferenceDto toolRef = jsonbMapper.mapToolRef(suite.getToolRef());
-            ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
-            validateMcpPreconditions(mcpRef, toolRef);
+    private TryItOutResponseDto tryMcpWithVariables(
+            TestSuite suite, McpToolTarget target, UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
+        final McpDeploymentReferenceDto mcpRef = target.ref();
+        final ToolReferenceDto toolRef = target.tool();
+        ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
+        validateMcpPreconditions(mcpRef, toolRef);
 
-            final List<InputBindingDto> bindings =
-                    variableBindings.toBindingsByRequest(variables, 1).get(0);
-            final Map<String, Object> requestVariables = variables.get(0) != null ? variables.get(0) : Map.of();
-            McpRequestResolver.ResolutionResult resolutionResult =
-                    mcpRequestResolver.resolveWithVariables(argumentTemplate, bindings, requestVariables);
-            validateMcpResolutionResult(resolutionResult);
-            return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
-        }
+        final List<InputBindingDto> bindings =
+                variableBindings.toBindingsByRequest(variables, 1).get(0);
+        final Map<String, Object> requestVariables = variables.get(0) != null ? variables.get(0) : Map.of();
+        McpRequestResolver.ResolutionResult resolutionResult =
+                mcpRequestResolver.resolveWithVariables(argumentTemplate, bindings, requestVariables);
+        validateMcpResolutionResult(resolutionResult);
+        return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
+    }
 
-        final SuiteType suiteType = resolveSuiteType(suite);
-        DeploymentReferenceDto deploymentRef =
-                suiteType == SuiteType.ROUTE ? null : jsonbMapper.map(suite.getDeploymentRef());
+    private TryItOutResponseDto tryHttpWithVariables(
+            TestSuite suite, HttpTarget target, UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
         EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
         List<RequestDefinitionDto> additionalRequests =
                 jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
-        validateChainPreconditions(
-                suiteType,
-                suite.getRoutesRef(),
-                deploymentRef,
-                endpointRef,
-                suite.getRequestTemplate(),
-                additionalRequests);
+        validateChainPreconditions(target, endpointRef, suite.getRequestTemplate(), additionalRequests);
 
         final int requestCount = 1 + (additionalRequests != null ? additionalRequests.size() : 0);
         final Map<Integer, List<InputBindingDto>> bindingsByRequest =
@@ -450,8 +444,7 @@ public class TryItOutService {
             validateResolutionResult(resolved);
             return invokeAndBuildResponse(
                     resolved,
-                    suiteType,
-                    deploymentRef,
+                    target,
                     endpointRef.getMethod(),
                     testSuiteId,
                     jsonbMapper.mapResponseColumns(suite.getResponseColumns()));
@@ -462,7 +455,7 @@ public class TryItOutService {
         // mapped above is reused, so the JSONB is deserialized once per try-out.
         final ResolvedRequestService.ChainPlan plan =
                 resolvedRequestService.planChainForVariables(testSuiteId, additionalRequests);
-        return runChain(plan, suiteType, deploymentRef, testSuiteId, bindingsByRequest);
+        return runChain(plan, target, testSuiteId, bindingsByRequest);
     }
 
     private TestSuite loadSuite(UUID testSuiteId) {
@@ -473,20 +466,18 @@ public class TryItOutService {
 
     /**
      * Validates the whole chain's preconditions before anything is planned or invoked (design D7):
-     * {@code deploymentRef} once (suite-level), request #0 via the pre-existing suite-level checks (typed
+     * the target reference (deployment or route) once (suite-level), request #0 via the pre-existing suite-level checks (typed
      * {@code endpointRef} + method, raw-JSON blank check on the template), then each chain element's own
      * typed {@code endpointRef}/method and {@code requestTemplate} — per-element failures name the element
      * with the {@code additionalRequests[i]} prefix, matching the write-time validator's convention. A
      * misconfigured element therefore returns 400 with zero HTTP calls issued.
      */
     private void validateChainPreconditions(
-            SuiteType suiteType,
-            String routesRefJson,
-            DeploymentReferenceDto deploymentRef,
+            HttpTarget target,
             EndpointContractDto endpointRef,
             String rawTemplateJson,
             List<RequestDefinitionDto> additionalRequests) {
-        validateSuitePreconditions(suiteType, routesRefJson, deploymentRef, endpointRef, rawTemplateJson);
+        validateSuitePreconditions(target, endpointRef, rawTemplateJson);
         if (additionalRequests == null) {
             return;
         }
@@ -504,17 +495,18 @@ public class TryItOutService {
     }
 
     private void validateSuitePreconditions(
-            SuiteType suiteType,
-            String routesRefJson,
-            DeploymentReferenceDto deploymentRef,
-            EndpointContractDto endpointRef,
-            String requestTemplateJson) {
-        if (suiteType == SuiteType.ROUTE) {
-            if (routesRefJson == null || routesRefJson.isBlank()) {
-                throw new ValidationException("Route reference is required for try-it-out");
+            HttpTarget target, EndpointContractDto endpointRef, String requestTemplateJson) {
+        switch (target) {
+            case DeploymentTarget d -> {
+                if (d.ref() == null) {
+                    throw new ValidationException("Deployment reference is required for try-it-out");
+                }
             }
-        } else if (deploymentRef == null) {
-            throw new ValidationException("Deployment reference is required for try-it-out");
+            case RouteTarget r -> {
+                if (r.ref() == null) {
+                    throw new ValidationException("Route reference is required for try-it-out");
+                }
+            }
         }
         if (endpointRef == null || endpointRef.getMethod() == null) {
             throw new ValidationException("Endpoint reference with HTTP method is required for try-it-out");
@@ -546,14 +538,6 @@ public class TryItOutService {
         if (hasBodyEvaluationError) {
             throw new TryItOutValidationException("Request body template failed to evaluate", resolved);
         }
-    }
-
-    private boolean isMcpSuite(TestSuite suite) {
-        return resolveSuiteType(suite) == SuiteType.MCP_TOOL;
-    }
-
-    private SuiteType resolveSuiteType(TestSuite suite) {
-        return suite.getSuiteType() != null ? suite.getSuiteType() : SuiteType.DEPLOYMENT;
     }
 
     private void validateMcpResolutionResult(McpRequestResolver.ResolutionResult result) {
@@ -661,14 +645,13 @@ public class TryItOutService {
      */
     private TryItOutResponseDto invokeAndBuildResponse(
             ResolvedRequestDto resolved,
-            SuiteType suiteType,
-            DeploymentReferenceDto deploymentRef,
+            HttpTarget target,
             HttpMethod method,
             UUID testSuiteId,
             List<ResponseColumnDefinitionDto> responseColumns) {
         final TurnInvocationResult result;
         try {
-            result = invokeTurn(resolved, suiteType, deploymentRef, method, testSuiteId);
+            result = invokeTurn(resolved, target, method, testSuiteId);
         } catch (RequestBodyValidationException e) {
             throw toTryItOutValidationException(e, resolved);
         }
@@ -688,21 +671,16 @@ public class TryItOutService {
     }
 
     private TurnInvocationResult invokeTurn(
-            ResolvedRequestDto resolved,
-            SuiteType suiteType,
-            DeploymentReferenceDto deploymentRef,
-            HttpMethod method,
-            UUID testSuiteId) {
+            ResolvedRequestDto resolved, HttpTarget target, HttpMethod method, UUID testSuiteId) {
         // Pre-invocation boundary for the fixed-path model-selecting APIs, deliberately here rather than
         // in validateResolutionResult: the chain path needs an in-band status-zero failure, while the
         // single-invocation callers convert the same exception into their HTTP 400 contract.
-        if (suiteType == SuiteType.DEPLOYMENT) {
-            requestModelValidator.validateForExecution(resolved.getUrl(), resolved.getBody(), deploymentRef.getId());
+        if (target instanceof DeploymentTarget d) {
+            requestModelValidator.validateForExecution(
+                    resolved.getUrl(), resolved.getBody(), d.ref().getId());
         }
 
-        String fullPath = suiteType == SuiteType.ROUTE
-                ? urlBuilder.buildUrl(SuiteType.ROUTE, null, resolved.getUrl())
-                : urlBuilder.buildUrl(deploymentRef.getId(), resolved.getUrl());
+        String fullPath = urlBuilder.buildUrl(target, resolved.getUrl());
         HttpHeaders headers = toHttpHeaders(resolved.getHeaders());
         MultiValueMap<String, String> queryParams = toQueryParams(resolved.getQueryParams());
 

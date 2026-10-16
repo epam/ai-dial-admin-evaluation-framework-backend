@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
@@ -103,7 +104,7 @@ public class TemplateVariableService {
     private Map<Integer, List<TemplateVariableDto>> buildChainVariables(
             TestSuite suite, List<FieldDefinitionDto> testCaseSchema, Map<String, Object> data) {
         Map<Integer, List<TemplateVariableDto>> result = new LinkedHashMap<>();
-        if (suite.getSuiteType() == SuiteType.MCP_TOOL) {
+        if (SuiteTargets.typeOrDefault(suite.getSuiteType()) == SuiteType.MCP_TOOL) {
             ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
             List<InputBindingDto> bindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
             result.put(0, resolveMcpVariables(argumentTemplate, bindings, testCaseSchema, data));

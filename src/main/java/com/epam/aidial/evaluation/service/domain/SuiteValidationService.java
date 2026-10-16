@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
@@ -59,7 +60,7 @@ public class SuiteValidationService {
      */
     public ValidationResult validateSuite(
             TestSuiteRequestDto dto, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
-        SuiteType suiteType = dto.getSuiteType() != null ? dto.getSuiteType() : SuiteType.DEPLOYMENT;
+        SuiteType suiteType = SuiteTargets.typeOrDefault(dto.getSuiteType());
         if (suiteType == SuiteType.MCP_TOOL) {
             return validateMcpSuite(dto, suiteId, testCaseSchema);
         }

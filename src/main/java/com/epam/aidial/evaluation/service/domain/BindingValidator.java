@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +20,8 @@ import org.springframework.stereotype.Component;
 /**
  * Shared binding cross-validation logic used by both DEPLOYMENT and MCP_TOOL suite validation.
  * Checks: required variable without binding, binding to unknown schema field,
- * orphan binding detection, and {@code |file} constant-value validation.
+ * orphan binding detection, {@code |file} constant-value validation, and {@code |file} hints bound to a
+ * non-FILE schema field.
  */
 @Slf4j
 @Component
@@ -28,6 +30,7 @@ import org.springframework.stereotype.Component;
 public class BindingValidator {
 
     private final FileRefValidator fileRefValidator;
+    private final FilePlaceholderDetector filePlaceholderDetector;
 
     /**
      * Validates template-variable-to-binding and binding-to-template cross-references.
@@ -112,6 +115,7 @@ public class BindingValidator {
                             ValidationWarningCode.TYPE));
                 }
             }
+            addFileHintColumnMismatchWarning(var, binding, effectiveSchema, path, warnings);
         }
 
         // Binding → Template validation (orphan bindings)
@@ -130,6 +134,32 @@ public class BindingValidator {
         }
 
         return warnings;
+    }
+
+    /**
+     * A {@code |file} hint on a variable bound via {@code dataField} to a schema field of another type would
+     * push a non-reference value through the file resolver; a hintless placeholder bound to a FILE field
+     * needs no hint (it resolves by column type) and is not flagged.
+     */
+    private void addFileHintColumnMismatchWarning(
+            TemplateVariableExtractor.ExtractedVariable var,
+            InputBindingDto binding,
+            List<FieldDefinitionDto> schema,
+            String path,
+            List<ValidationWarningDto> warnings) {
+        if (var.getDeclaredType() != SchemaFieldType.FILE) {
+            return;
+        }
+        filePlaceholderDetector
+                .boundFieldType(binding, schema)
+                .filter(columnType -> columnType != SchemaFieldType.FILE)
+                .ifPresent(columnType -> warnings.add(warning(
+                        var.getName(),
+                        path,
+                        "Variable '" + var.getName() + "' has a '|file' type hint but is bound to field '"
+                                + binding.getDataField() + "' of type " + columnType
+                                + "; bind a FILE field or remove the hint",
+                        ValidationWarningCode.TYPE)));
     }
 
     private static ValidationWarningDto warning(

@@ -105,12 +105,12 @@ class ResolvedRequestServiceTest {
 
         ResolvedRequestDto expected =
                 ResolvedRequestDto.builder().url("/resolved").build();
-        when(requestResolver.resolve(template, bindings, data)).thenReturn(expected);
+        when(requestResolver.resolve(template, bindings, data, List.of())).thenReturn(expected);
 
         ResolvedRequestDto result = service.resolveRequest(SUITE_ID, TEST_CASE_ID);
 
         assertThat(result).isSameAs(expected);
-        verify(requestResolver).resolve(template, bindings, data);
+        verify(requestResolver).resolve(template, bindings, data, List.of());
     }
 
     @Test
@@ -136,7 +136,7 @@ class ResolvedRequestServiceTest {
                 .isInstanceOf(EntityNotFoundException.class)
                 .hasMessageContaining("TestCase not found");
 
-        verify(requestResolver, never()).resolve(any(), any(), any());
+        verify(requestResolver, never()).resolve(any(), any(), any(), any());
     }
 
     @Test
@@ -167,13 +167,13 @@ class ResolvedRequestServiceTest {
 
         ResolvedRequestDto expected =
                 ResolvedRequestDto.builder().url("/second").build();
-        when(requestResolver.resolve(additionalTemplate, additionalBindings, data))
+        when(requestResolver.resolve(additionalTemplate, additionalBindings, data, List.of()))
                 .thenReturn(expected);
 
         ResolvedRequestDto result = service.resolveRequest(SUITE_ID, TEST_CASE_ID, 1);
 
         assertThat(result).isSameAs(expected);
-        verify(requestResolver).resolve(additionalTemplate, additionalBindings, data);
+        verify(requestResolver).resolve(additionalTemplate, additionalBindings, data, List.of());
     }
 
     @Test
@@ -195,7 +195,7 @@ class ResolvedRequestServiceTest {
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("requestIndex");
 
-        verify(requestResolver, never()).resolve(any(), any(), any());
+        verify(requestResolver, never()).resolve(any(), any(), any(), any());
     }
 
     @Test
@@ -217,7 +217,7 @@ class ResolvedRequestServiceTest {
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("requestIndex");
 
-        verify(requestResolver, never()).resolve(any(), any(), any());
+        verify(requestResolver, never()).resolve(any(), any(), any(), any());
     }
 
     @Test

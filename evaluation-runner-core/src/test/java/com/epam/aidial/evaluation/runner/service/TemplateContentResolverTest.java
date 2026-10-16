@@ -44,7 +44,8 @@ class TemplateContentResolverTest {
 
     @BeforeEach
     void setUp() {
-        resolver = new TemplateContentResolver(templateVariableResolver, dialFileRefResolver);
+        resolver = new TemplateContentResolver(
+                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector());
         warnings = new ArrayList<>();
     }
 
@@ -76,7 +77,7 @@ class TemplateContentResolverTest {
         when(templateVariableResolver.resolveVariable(eq("temperature"), isNull(), any(), anyMap(), any()))
                 .thenReturn(0.7);
 
-        Object result = resolver.resolveObject("${{temperature}}", Map.of(), Map.of(), warnings);
+        Object result = resolver.resolveObject("${{temperature}}", Map.of(), Map.of(), warnings, null);
 
         assertThat(result).isEqualTo(0.7).isInstanceOf(Double.class);
     }
@@ -90,7 +91,7 @@ class TemplateContentResolverTest {
                 .thenReturn(shortRef);
         when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
-        Object result = resolver.resolveObject("${{doc|file}}", Map.of(), Map.of(), warnings);
+        Object result = resolver.resolveObject("${{doc|file}}", Map.of(), Map.of(), warnings, null);
 
         assertThat(result).isEqualTo(dialRef);
     }
@@ -106,7 +107,8 @@ class TemplateContentResolverTest {
                 Map.of("outer", Map.of("inner", "${{inner}}"), "list", List.of("${{inner}}", "literal")),
                 Map.of(),
                 Map.of(),
-                warnings);
+                warnings,
+                null);
 
         @SuppressWarnings("unchecked")
         Map<String, Object> outer = (Map<String, Object>) result.get("outer");
@@ -119,9 +121,12 @@ class TemplateContentResolverTest {
     @Test
     @DisplayName("resolveObject passes non-placeholder scalars through unchanged")
     void resolveObjectPassesScalarsThrough() {
-        assertThat(resolver.resolveObject(42, Map.of(), Map.of(), warnings)).isEqualTo(42);
-        assertThat(resolver.resolveObject(true, Map.of(), Map.of(), warnings)).isEqualTo(true);
-        assertThat(resolver.resolveObject(null, Map.of(), Map.of(), warnings)).isNull();
+        assertThat(resolver.resolveObject(42, Map.of(), Map.of(), warnings, null))
+                .isEqualTo(42);
+        assertThat(resolver.resolveObject(true, Map.of(), Map.of(), warnings, null))
+                .isEqualTo(true);
+        assertThat(resolver.resolveObject(null, Map.of(), Map.of(), warnings, null))
+                .isNull();
     }
 
     @Test

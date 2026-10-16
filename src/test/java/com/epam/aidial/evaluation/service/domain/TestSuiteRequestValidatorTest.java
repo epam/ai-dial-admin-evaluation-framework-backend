@@ -22,6 +22,7 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
+import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
 import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
@@ -54,7 +55,10 @@ class TestSuiteRequestValidatorTest {
         validationProperties.setMaxTemplateSizeBytes(65536);
         validationProperties.setMaxBindingsCount(64);
         JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
-                mock(TemplateVariableResolver.class), mock(DialFileRefResolver.class), new ObjectMapper());
+                mock(TemplateVariableResolver.class),
+                mock(DialFileRefResolver.class),
+                new FilePlaceholderDetector(),
+                new ObjectMapper());
         JsonbMapper jsonbMapper = new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
         validator = new TestSuiteRequestValidator(
                 jsonataEvaluationService,
@@ -504,7 +508,10 @@ class TestSuiteRequestValidatorTest {
             validationProperties.setMaxTemplateSizeBytes(65536);
             validationProperties.setMaxBindingsCount(64);
             JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
-                    mock(TemplateVariableResolver.class), mock(DialFileRefResolver.class), new ObjectMapper());
+                    mock(TemplateVariableResolver.class),
+                    mock(DialFileRefResolver.class),
+                    new FilePlaceholderDetector(),
+                    new ObjectMapper());
             JsonbMapper jsonbMapper = new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
             return new TestSuiteRequestValidator(
                     jsonataEvaluationService,

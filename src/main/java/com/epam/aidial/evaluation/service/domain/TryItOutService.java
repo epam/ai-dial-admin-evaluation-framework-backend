@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingPro
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
@@ -95,6 +96,7 @@ public class TryItOutService {
     private final TestSuiteRepository testSuiteRepository;
     private final TestCaseRepository testCaseRepository;
     private final ResolvedRequestService resolvedRequestService;
+    private final DatasetSchemaProvider datasetSchemaProvider;
     private final RequestResolver requestResolver;
     private final DialCoreDeploymentInvoker deploymentInvoker;
     private final McpToolInvoker mcpToolInvoker;
@@ -137,8 +139,11 @@ public class TryItOutService {
             List<InputBindingDto> effectiveBindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
 
             Map<String, Object> testCaseData = parseTestCaseData(testCase.getData());
-            McpRequestResolver.ResolutionResult resolutionResult =
-                    mcpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData);
+            McpRequestResolver.ResolutionResult resolutionResult = mcpRequestResolver.resolve(
+                    argumentTemplate,
+                    effectiveBindings,
+                    testCaseData,
+                    datasetSchemaProvider.getSchema(suite.getDatasetId()));
             validateMcpResolutionResult(resolutionResult);
             return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
         }
@@ -165,7 +170,7 @@ public class TryItOutService {
                     resolved, deploymentRef, endpointRef.getMethod(), testSuiteId, responseColumns);
         }
 
-        return runChain(plan, deploymentRef, testSuiteId, null);
+        return runChain(plan, deploymentRef, testSuiteId, null, datasetSchemaProvider.getSchema(suite.getDatasetId()));
     }
 
     /**
@@ -181,12 +186,16 @@ public class TryItOutService {
      * <p>Each invocation uses its own spec's {@code endpointRef} HTTP method. When {@code
      * bindingsByRequest} is non-null (variables mode, design D8) the entry for a request's {@code
      * requestIndex} (empty when absent) wholesale-replaces that request's own {@code inputBindings}.
+     *
+     * <p>{@code testCaseSchema} (the dataset schema in test-case mode, {@code null} in variables mode, whose
+     * constant bindings have no bound column) lets a placeholder bound to a FILE field resolve to a DIAL ref.
      */
     private TryItOutResponseDto runChain(
             ResolvedRequestService.ChainPlan plan,
             DeploymentReferenceDto deploymentRef,
             UUID testSuiteId,
-            Map<Integer, List<InputBindingDto>> bindingsByRequest) {
+            Map<Integer, List<InputBindingDto>> bindingsByRequest,
+            List<FieldDefinitionDto> testCaseSchema) {
         Map<String, Object> frame = Map.of();
         final List<TryItOutResponseDto> history = new ArrayList<>();
 
@@ -209,7 +218,8 @@ public class TryItOutService {
                 boolean failed;
                 ResolvedRequestDto resolved = null;
                 try {
-                    resolved = requestResolver.resolveForRun(spec.requestTemplate(), bindings, turnData, frame);
+                    resolved = requestResolver.resolveForRun(
+                            spec.requestTemplate(), bindings, turnData, frame, testCaseSchema);
                     validateResolutionResult(resolved);
                     current = invokeTurn(
                             resolved, deploymentRef, spec.endpointRef().getMethod(), testSuiteId);
@@ -425,7 +435,7 @@ public class TryItOutService {
             // Single-request fast path keeps the pre-existing lenient resolution (design D8), plus the
             // additive extraction fields (D6).
             RequestTemplateDto template = jsonbMapper.mapRequestTemplate(suite.getRequestTemplate());
-            ResolvedRequestDto resolved = requestResolver.resolve(template, bindingsByRequest.get(0), Map.of());
+            ResolvedRequestDto resolved = requestResolver.resolve(template, bindingsByRequest.get(0), Map.of(), null);
             validateResolutionResult(resolved);
             return invokeAndBuildResponse(
                     resolved,
@@ -440,7 +450,7 @@ public class TryItOutService {
         // mapped above is reused, so the JSONB is deserialized once per try-out.
         final ResolvedRequestService.ChainPlan plan =
                 resolvedRequestService.planChainForVariables(testSuiteId, additionalRequests);
-        return runChain(plan, deploymentRef, testSuiteId, bindingsByRequest);
+        return runChain(plan, deploymentRef, testSuiteId, bindingsByRequest, null);
     }
 
     private TestSuite loadSuite(UUID testSuiteId) {

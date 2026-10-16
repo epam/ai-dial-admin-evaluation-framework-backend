@@ -3,8 +3,8 @@ package com.epam.aidial.evaluation.runner.service;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
-import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import java.util.ArrayList;
@@ -42,6 +42,7 @@ public class McpRequestResolver {
     private static final Pattern FULL_VALUE_PATTERN = Pattern.compile("^\\$\\{\\{[^}]+\\}\\}$");
 
     private final DialFileRefResolver dialFileRefResolver;
+    private final FilePlaceholderDetector filePlaceholderDetector;
 
     /**
      * Resolution result carrying resolved arguments and any warnings.
@@ -61,10 +62,15 @@ public class McpRequestResolver {
      * @param argumentTemplate the argument template with variable placeholders
      * @param bindings         input bindings (may be null or empty)
      * @param testCaseData     the test case data map (field name -> value)
+     * @param testCaseSchema   test case schema used to detect FILE-bound placeholders; {@code null} limits
+     *                         conversion to explicit {@code |file} hints
      * @return resolution result with resolved arguments and any warnings
      */
     public ResolutionResult resolve(
-            ArgumentTemplateDto argumentTemplate, List<InputBindingDto> bindings, Map<String, Object> testCaseData) {
+            ArgumentTemplateDto argumentTemplate,
+            List<InputBindingDto> bindings,
+            Map<String, Object> testCaseData,
+            List<FieldDefinitionDto> testCaseSchema) {
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
         if (argumentTemplate == null || argumentTemplate.getArguments() == null) {
@@ -81,7 +87,7 @@ public class McpRequestResolver {
         for (Map.Entry<String, Object> entry : argumentTemplate.getArguments().entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
-            resolved.put(key, resolveValue(value, bindingByVar, data, warnings));
+            resolved.put(key, resolveValue(value, bindingByVar, data, warnings, testCaseSchema));
         }
 
         return ResolutionResult.builder().arguments(resolved).warnings(warnings).build();
@@ -89,32 +95,35 @@ public class McpRequestResolver {
 
     /**
      * Resolves arguments using a direct variables map (for try-it-out with variables mode).
-     * Variables are treated as constant-value bindings — no data lookup indirection.
+     * Variables are treated as constant-value bindings — no data lookup indirection, and no bound schema
+     * column, so only an explicit {@code |file} hint converts a value to a DIAL ref.
      */
     public ResolutionResult resolveWithVariables(
             ArgumentTemplateDto argumentTemplate, List<InputBindingDto> bindings, Map<String, Object> variables) {
-        return resolve(argumentTemplate, bindings, variables);
+        return resolve(argumentTemplate, bindings, variables, null);
     }
 
     private Object resolveValue(
             Object value,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            List<FieldDefinitionDto> testCaseSchema) {
         if (value instanceof String strValue) {
-            return resolveStringValue(strValue, bindingByVar, data, warnings);
+            return resolveStringValue(strValue, bindingByVar, data, warnings, testCaseSchema);
         }
         if (value instanceof Map<?, ?> mapValue) {
             Map<String, Object> resolvedMap = new LinkedHashMap<>();
             for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
                 resolvedMap.put(
-                        String.valueOf(entry.getKey()), resolveValue(entry.getValue(), bindingByVar, data, warnings));
+                        String.valueOf(entry.getKey()),
+                        resolveValue(entry.getValue(), bindingByVar, data, warnings, testCaseSchema));
             }
             return resolvedMap;
         }
         if (value instanceof List<?> listValue) {
             return listValue.stream()
-                    .map(item -> resolveValue(item, bindingByVar, data, warnings))
+                    .map(item -> resolveValue(item, bindingByVar, data, warnings, testCaseSchema))
                     .toList();
         }
         // Numbers, booleans, null - pass through
@@ -125,7 +134,8 @@ public class McpRequestResolver {
             String strValue,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            List<FieldDefinitionDto> testCaseSchema) {
         Matcher matcher = PLACEHOLDER_PATTERN.matcher(strValue);
 
         // If the entire string is a single variable reference, preserve type
@@ -134,13 +144,14 @@ public class McpRequestResolver {
             String typeHint = matcher.group(2);
             String defaultValue = matcher.group(3);
 
+            final InputBindingDto binding = bindingByVar.get(varName);
             Object resolved = resolveVariable(varName, bindingByVar, data);
             if (resolved != null) {
-                return resolveFileRef(resolved, typeHint);
+                return resolveFileRef(resolved, typeHint, binding, testCaseSchema);
             }
             if (defaultValue != null) {
                 Object parsedDefault = parseDefaultValue(defaultValue);
-                return resolveFileRef(parsedDefault, typeHint);
+                return resolveFileRef(parsedDefault, typeHint, binding, testCaseSchema);
             }
             // Variable not found and no default — add REQUIRED warning
             warnings.add(ValidationWarningDto.builder()
@@ -181,13 +192,14 @@ public class McpRequestResolver {
     }
 
     /**
-     * Resolves a file reference if the type hint is "file" and the value is a String.
-     * Converts short-format references to DIAL API paths via {@link DialFileRefResolver}.
+     * Resolves a file reference if the placeholder is a FILE reference (see {@link FilePlaceholderDetector})
+     * and the value is a String. Converts short-format references to DIAL API paths via
+     * {@link DialFileRefResolver}.
      */
-    private Object resolveFileRef(Object resolved, String typeHint) {
-        if (typeHint != null
-                && SchemaFieldType.FILE.name().equalsIgnoreCase(typeHint.trim())
-                && resolved instanceof String resolvedRef) {
+    private Object resolveFileRef(
+            Object resolved, String typeHint, InputBindingDto binding, List<FieldDefinitionDto> testCaseSchema) {
+        if (resolved instanceof String resolvedRef
+                && filePlaceholderDetector.isFileReference(typeHint, binding, testCaseSchema)) {
             return dialFileRefResolver.resolveToDialRef(resolvedRef);
         }
         return resolved;

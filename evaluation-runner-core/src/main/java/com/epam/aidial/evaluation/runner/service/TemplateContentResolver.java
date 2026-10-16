@@ -2,8 +2,8 @@ package com.epam.aidial.evaluation.runner.service;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
-import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,6 +47,7 @@ public class TemplateContentResolver {
 
     private final TemplateVariableResolver templateVariableResolver;
     private final DialFileRefResolver dialFileRefResolver;
+    private final FilePlaceholderDetector filePlaceholderDetector;
 
     /**
      * Resolves {@code ${{}}} placeholders embedded anywhere in a plain string, stringifying each
@@ -73,15 +74,20 @@ public class TemplateContentResolver {
     /**
      * Recursively resolves {@code ${{}}} placeholders in a structural value (String, Map, List, or
      * passthrough primitive). A full-value string placeholder (the entire string is exactly one
-     * placeholder) preserves the resolved value's type instead of stringifying it, and a
-     * {@code |file} type hint resolves a String result to DIAL ref format.
+     * placeholder) preserves the resolved value's type instead of stringifying it, and a FILE placeholder
+     * (see {@link FilePlaceholderDetector}: an explicit {@code |file} hint, or no hint and a binding to a FILE
+     * schema field) resolves a String result to DIAL ref format.
+     *
+     * @param testCaseSchema test case schema used to detect FILE-bound placeholders; {@code null} limits
+     *                       conversion to explicit {@code |file} hints
      */
     @SuppressWarnings("unchecked")
     public Object resolveObject(
             Object value,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            List<FieldDefinitionDto> testCaseSchema) {
         if (value instanceof String str) {
             // Full-value replacement: if string is exactly one placeholder, return typed value
             if (FULL_VALUE_PATTERN.matcher(str).matches()) {
@@ -94,8 +100,8 @@ public class TemplateContentResolver {
                     Object resolved =
                             templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
                     // Resolve FILE-typed placeholder to DIAL ref format for JSON/URL-encoded bodies
-                    if (SchemaFieldType.FILE.name().equalsIgnoreCase(typeHint)
-                            && resolved instanceof String resolvedRef) {
+                    if (resolved instanceof String resolvedRef
+                            && filePlaceholderDetector.isFileReference(typeHint, binding, testCaseSchema)) {
                         return dialFileRefResolver.resolveToDialRef(resolvedRef);
                     }
                     return resolved;
@@ -107,13 +113,14 @@ public class TemplateContentResolver {
             Map<String, Object> result = new LinkedHashMap<>();
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 result.put(
-                        String.valueOf(entry.getKey()), resolveObject(entry.getValue(), bindingByVar, data, warnings));
+                        String.valueOf(entry.getKey()),
+                        resolveObject(entry.getValue(), bindingByVar, data, warnings, testCaseSchema));
             }
             return result;
         } else if (value instanceof List<?> list) {
             List<Object> result = new ArrayList<>();
             for (Object item : list) {
-                result.add(resolveObject(item, bindingByVar, data, warnings));
+                result.add(resolveObject(item, bindingByVar, data, warnings, testCaseSchema));
             }
             return result;
         }

@@ -90,7 +90,9 @@ public class ResolvedRequestService {
 
         Map<String, Object> data = warningsSerializer.deserializeMap(tc.getData());
 
-        return requestResolver.resolve(template, bindings, data);
+        final List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(suite.getDatasetId());
+
+        return requestResolver.resolve(template, bindings, data, schema);
     }
 
     private RequestDefinitionDto resolveAdditionalRequest(TestSuite suite, int requestIndex) {

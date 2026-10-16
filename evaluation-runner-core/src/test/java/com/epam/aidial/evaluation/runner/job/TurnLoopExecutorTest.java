@@ -28,6 +28,7 @@ import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
+import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
 import com.epam.aidial.evaluation.runner.service.RequestBodyEvaluator;
@@ -100,15 +101,15 @@ class TurnLoopExecutorTest {
         objectMapper = new ObjectMapper();
         TemplateVariableResolver templateVariableResolver = new TemplateVariableResolver();
         DialFileRefResolver dialFileRefResolver = mock(DialFileRefResolver.class);
-        TemplateContentResolver templateContentResolver =
-                new TemplateContentResolver(templateVariableResolver, dialFileRefResolver);
+        TemplateContentResolver templateContentResolver = new TemplateContentResolver(
+                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector());
         JsonataProperties jsonataProperties = new JsonataProperties();
         jsonataProperties.setEvaluationTimeoutMs(5000L);
         jsonataProperties.setMaxRecursionDepth(500);
         JsonataEvaluationService jsonataEvaluationService =
                 new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties);
-        JsonataSourcePreprocessor jsonataSourcePreprocessor =
-                new JsonataSourcePreprocessor(templateVariableResolver, dialFileRefResolver, objectMapper);
+        JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
+                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector(), objectMapper);
         RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
                 templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
         RequestResolver requestResolver = new RequestResolver(templateContentResolver, requestBodyEvaluator);

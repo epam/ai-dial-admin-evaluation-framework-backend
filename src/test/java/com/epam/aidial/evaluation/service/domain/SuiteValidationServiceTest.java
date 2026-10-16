@@ -27,6 +27,7 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
 import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
@@ -69,7 +70,7 @@ class SuiteValidationServiceTest {
     @BeforeEach
     void setUp() {
         templateVariableExtractor = new TemplateVariableExtractor();
-        bindingValidator = new BindingValidator(fileRefValidator);
+        bindingValidator = new BindingValidator(fileRefValidator, new FilePlaceholderDetector());
         service = new SuiteValidationService(
                 templateVariableExtractor,
                 evaluationRunProperties,
@@ -359,7 +360,7 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = buildMcpSuite(
                     Map.of("document", "${{doc|file}}"),
                     List.of(binding("doc", "file_path", null)),
-                    List.of(field("file_path", SchemaFieldType.STRING)));
+                    List.of(field("file_path", SchemaFieldType.FILE)));
 
             ValidationResult result = service.validateSuite(dto, SUITE_ID, lastSchema);
 

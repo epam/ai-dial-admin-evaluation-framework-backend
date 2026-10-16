@@ -291,7 +291,7 @@ class EvaluationWorkerTest {
             CallToolResult callResult = new CallToolResult(
                     List.of(TextContent.builder("result text").build()), false, null, null);
 
-            when(mcpRequestResolver.resolve(any(), any(), any()))
+            when(mcpRequestResolver.resolve(any(), any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
                             .arguments(Map.of("query", "test"))
                             .warnings(List.of())
@@ -322,7 +322,7 @@ class EvaluationWorkerTest {
             CallToolResult errorResult =
                     new CallToolResult(List.of(TextContent.builder("tool error").build()), true, null, null);
 
-            when(mcpRequestResolver.resolve(any(), any(), any()))
+            when(mcpRequestResolver.resolve(any(), any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
                             .arguments(Map.of("query", "bad"))
                             .warnings(List.of())
@@ -345,7 +345,7 @@ class EvaluationWorkerTest {
             TestCaseRunInput input = buildTestCaseRunInput();
             EvaluationContext context = buildMcpContext();
 
-            when(mcpRequestResolver.resolve(any(), any(), any()))
+            when(mcpRequestResolver.resolve(any(), any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
                             .arguments(Map.of("query", "test"))
                             .warnings(List.of())
@@ -368,7 +368,7 @@ class EvaluationWorkerTest {
             TestCaseRunInput input = buildTestCaseRunInput();
             EvaluationContext context = buildMcpContext();
 
-            when(mcpRequestResolver.resolve(any(), any(), any()))
+            when(mcpRequestResolver.resolve(any(), any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
                             .arguments(Map.of("query", "test"))
                             .warnings(List.of())
@@ -395,7 +395,7 @@ class EvaluationWorkerTest {
             CallToolResult callResult =
                     new CallToolResult(List.of(TextContent.builder("result").build()), false, null, null);
 
-            when(mcpRequestResolver.resolve(any(), any(), any()))
+            when(mcpRequestResolver.resolve(any(), any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
                             .arguments(Map.of("query", "test"))
                             .warnings(List.of())

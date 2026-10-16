@@ -331,7 +331,8 @@ public class TurnLoopExecutor {
 
         final ResolvedRequestDto resolved;
         try {
-            resolved = requestResolver.resolveForRun(template, bindings, turnData, frameBindings);
+            resolved = requestResolver.resolveForRun(
+                    template, bindings, turnData, frameBindings, context.getSnapshotTestCaseSchema());
         } catch (RequestBodyEvaluationException e) {
             log.warn(
                     "Turn {} for test case {} failed request-body evaluation: {}",

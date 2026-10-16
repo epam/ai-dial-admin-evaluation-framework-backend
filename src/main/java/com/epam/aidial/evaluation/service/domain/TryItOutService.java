@@ -14,6 +14,7 @@ import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperti
 import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
@@ -94,6 +95,7 @@ public class TryItOutService {
     private final TestSuiteRepository testSuiteRepository;
     private final TestCaseRepository testCaseRepository;
     private final ResolvedRequestService resolvedRequestService;
+    private final DatasetSchemaProvider datasetSchemaProvider;
     private final RequestResolver requestResolver;
     private final DialCoreDeploymentInvoker deploymentInvoker;
     private final McpToolInvoker mcpToolInvoker;
@@ -142,8 +144,11 @@ public class TryItOutService {
         final List<InputBindingDto> effectiveBindings = mcpSuite.inputBindings();
 
         Map<String, Object> testCaseData = parseTestCaseData(testCase.getData());
-        McpRequestResolver.ResolutionResult resolutionResult =
-                mcpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData);
+        McpRequestResolver.ResolutionResult resolutionResult = mcpRequestResolver.resolve(
+                argumentTemplate,
+                effectiveBindings,
+                testCaseData,
+                datasetSchemaProvider.getSchema(suite.getDatasetId()));
         validateMcpResolutionResult(resolutionResult);
         return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
     }
@@ -167,7 +172,7 @@ public class TryItOutService {
             return invokeAndBuildResponse(resolved, target, endpointRef.getMethod(), testSuiteId, responseColumns);
         }
 
-        return runChain(plan, target, testSuiteId, null);
+        return runChain(plan, target, testSuiteId, null, datasetSchemaProvider.getSchema(suite.getDatasetId()));
     }
 
     /**
@@ -183,12 +188,16 @@ public class TryItOutService {
      * <p>Each invocation uses its own spec's {@code endpointRef} HTTP method. When {@code
      * bindingsByRequest} is non-null (variables mode, design D8) the entry for a request's {@code
      * requestIndex} (empty when absent) wholesale-replaces that request's own {@code inputBindings}.
+     *
+     * <p>{@code testCaseSchema} (the dataset schema in test-case mode, {@code null} in variables mode, whose
+     * constant bindings have no bound column) lets a placeholder bound to a FILE field resolve to a DIAL ref.
      */
     private TryItOutResponseDto runChain(
             ResolvedRequestService.ChainPlan plan,
             HttpTarget target,
             UUID testSuiteId,
-            Map<Integer, List<InputBindingDto>> bindingsByRequest) {
+            Map<Integer, List<InputBindingDto>> bindingsByRequest,
+            List<FieldDefinitionDto> testCaseSchema) {
         Map<String, Object> frame = Map.of();
         final List<TryItOutResponseDto> history = new ArrayList<>();
 
@@ -211,7 +220,8 @@ public class TryItOutService {
                 boolean failed;
                 ResolvedRequestDto resolved = null;
                 try {
-                    resolved = requestResolver.resolveForRun(spec.requestTemplate(), bindings, turnData, frame);
+                    resolved = requestResolver.resolveForRun(
+                            spec.requestTemplate(), bindings, turnData, frame, testCaseSchema);
                     validateResolutionResult(resolved);
                     current = invokeTurn(resolved, target, spec.endpointRef().getMethod(), testSuiteId);
                     // Covers both the HTTP status and a streaming response whose SSE parse did not
@@ -432,7 +442,7 @@ public class TryItOutService {
             // Single-request fast path keeps the pre-existing lenient resolution (design D8), plus the
             // additive extraction fields (D6).
             final ResolvedRequestDto resolved =
-                    requestResolver.resolve(first.requestTemplate(), bindingsByRequest.get(0), Map.of());
+                    requestResolver.resolve(first.requestTemplate(), bindingsByRequest.get(0), Map.of(), null);
             validateResolutionResult(resolved);
             return invokeAndBuildResponse(
                     resolved, target, endpointRef.getMethod(), testSuiteId, first.responseColumns());
@@ -441,7 +451,7 @@ public class TryItOutService {
         // Multi-request suite: run the chain with every request single-turn and each request's own variables
         // wholesale-replacing that request's inputBindings (design D8).
         final ResolvedRequestService.ChainPlan plan = resolvedRequestService.planChainForVariables(httpSuite);
-        return runChain(plan, target, testSuiteId, bindingsByRequest);
+        return runChain(plan, target, testSuiteId, bindingsByRequest, null);
     }
 
     private TestSuite loadSuite(UUID testSuiteId) {

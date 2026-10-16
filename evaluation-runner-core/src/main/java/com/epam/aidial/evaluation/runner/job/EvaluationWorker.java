@@ -172,8 +172,8 @@ public class EvaluationWorker {
             final Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());
 
             // Resolve arguments
-            final McpRequestResolver.ResolutionResult resolutionResult =
-                    mcpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData);
+            final McpRequestResolver.ResolutionResult resolutionResult = mcpRequestResolver.resolve(
+                    argumentTemplate, effectiveBindings, testCaseData, context.getSnapshotTestCaseSchema());
             final Map<String, Object> resolvedArgs = resolutionResult.getArguments();
             final String requestBodyJson = serializeBody(resolvedArgs);
 

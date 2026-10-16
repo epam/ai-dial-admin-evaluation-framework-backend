@@ -1,7 +1,9 @@
 package com.epam.aidial.evaluation.runner.service;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartDto;
+import com.epam.aidial.evaluation.runner.dto.FormPartType;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
@@ -57,8 +59,11 @@ public class RequestResolver {
      * downgraded to a validation warning (never thrown) so preview/try-it-out never fails outright.
      */
     public ResolvedRequestDto resolve(
-            RequestTemplateDto template, List<InputBindingDto> bindings, Map<String, Object> data) {
-        return resolveInternal(template, bindings, data, Map.of(), true);
+            RequestTemplateDto template,
+            List<InputBindingDto> bindings,
+            Map<String, Object> data,
+            List<FieldDefinitionDto> testCaseSchema) {
+        return resolveInternal(template, bindings, data, Map.of(), true, testCaseSchema);
     }
 
     /**
@@ -72,8 +77,10 @@ public class RequestResolver {
             RequestTemplateDto template,
             List<InputBindingDto> bindings,
             Map<String, Object> data,
-            Map<String, Object> frameBindings) {
-        return resolveInternal(template, bindings, data, frameBindings != null ? frameBindings : Map.of(), false);
+            Map<String, Object> frameBindings,
+            List<FieldDefinitionDto> testCaseSchema) {
+        return resolveInternal(
+                template, bindings, data, frameBindings != null ? frameBindings : Map.of(), false, testCaseSchema);
     }
 
     private ResolvedRequestDto resolveInternal(
@@ -81,7 +88,8 @@ public class RequestResolver {
             List<InputBindingDto> bindings,
             Map<String, Object> data,
             Map<String, Object> frameBindings,
-            boolean preview) {
+            boolean preview,
+            List<FieldDefinitionDto> testCaseSchema) {
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
         if (template == null) {
@@ -140,8 +148,8 @@ public class RequestResolver {
         }
 
         // Resolve body (content-type aware)
-        ResolvedBodyDto resolvedBody =
-                resolveBody(template.getBody(), bindingByVar, safeData, warnings, frameBindings, preview);
+        ResolvedBodyDto resolvedBody = resolveBody(
+                template.getBody(), bindingByVar, safeData, warnings, frameBindings, preview, testCaseSchema);
 
         return ResolvedRequestDto.builder()
                 .url(resolvedUrl)
@@ -158,14 +166,15 @@ public class RequestResolver {
             Map<String, Object> data,
             List<ValidationWarningDto> warnings,
             Map<String, Object> frameBindings,
-            boolean preview) {
+            boolean preview,
+            List<FieldDefinitionDto> testCaseSchema) {
         if (body == null) {
             return null;
         }
         if (body instanceof JsonRequestBodyDto jsonBody) {
-            return resolveJsonBody(jsonBody, bindingByVar, data, warnings, frameBindings, preview);
+            return resolveJsonBody(jsonBody, bindingByVar, data, warnings, frameBindings, preview, testCaseSchema);
         } else if (body instanceof MultipartFormDataRequestBodyDto multipartBody) {
-            return resolveMultipartBody(multipartBody, bindingByVar, data, warnings);
+            return resolveMultipartBody(multipartBody, bindingByVar, data, warnings, testCaseSchema);
         } else if (body instanceof UrlEncodedFormRequestBodyDto urlEncodedBody) {
             return resolveUrlEncodedBody(urlEncodedBody, bindingByVar, data, warnings);
         }
@@ -185,19 +194,32 @@ public class RequestResolver {
             Map<String, Object> data,
             List<ValidationWarningDto> warnings,
             Map<String, Object> frameBindings,
-            boolean preview) {
+            boolean preview,
+            List<FieldDefinitionDto> testCaseSchema) {
         if (body.getContent() == null && body.getJsonataContent() == null) {
             return ResolvedJsonBodyDto.builder().content(null).build();
         }
         if (!preview) {
             Map<String, Object> resolvedMap = requestBodyEvaluator.evaluate(
-                    body.getContent(), body.getJsonataContent(), bindingByVar, data, frameBindings, warnings);
+                    body.getContent(),
+                    body.getJsonataContent(),
+                    bindingByVar,
+                    data,
+                    frameBindings,
+                    warnings,
+                    testCaseSchema);
             return ResolvedJsonBodyDto.builder().content(resolvedMap).build();
         }
         Map<String, Object> resolvedMap;
         try {
             resolvedMap = requestBodyEvaluator.evaluate(
-                    body.getContent(), body.getJsonataContent(), bindingByVar, data, frameBindings, warnings);
+                    body.getContent(),
+                    body.getJsonataContent(),
+                    bindingByVar,
+                    data,
+                    frameBindings,
+                    warnings,
+                    testCaseSchema);
         } catch (RequestBodyEvaluationException e) {
             log.warn("Failed to evaluate JSON request body template for preview: {}", e.getMessage(), e);
             warnings.add(ValidationWarningDto.builder()
@@ -214,7 +236,8 @@ public class RequestResolver {
             MultipartFormDataRequestBodyDto body,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            List<FieldDefinitionDto> testCaseSchema) {
         if (body.getContent() == null) {
             return ResolvedMultipartBodyDto.builder().parts(List.of()).build();
         }
@@ -223,8 +246,11 @@ public class RequestResolver {
             if (part == null) {
                 continue;
             }
+            // A FILE part is materialised from the raw short-format ref by the multipart serializer, which
+            // rejects a files/ DIAL ref — so only an explicit hint (no schema-type detection) applies to it.
+            final List<FieldDefinitionDto> partSchema = part.getType() == FormPartType.FILE ? null : testCaseSchema;
             Object resolvedValue = part.getValue() != null
-                    ? templateContentResolver.resolveObject(part.getValue(), bindingByVar, data, warnings)
+                    ? templateContentResolver.resolveObject(part.getValue(), bindingByVar, data, warnings, partSchema)
                     : null;
             String resolvedFilename = part.getFilename() != null
                     ? templateContentResolver.resolveString(part.getFilename(), bindingByVar, data, warnings)

@@ -61,16 +61,16 @@ class RequestResolverTest {
 
     @BeforeEach
     void setUp() {
-        TemplateContentResolver templateContentResolver =
-                new TemplateContentResolver(templateVariableResolver, dialFileRefResolver);
+        TemplateContentResolver templateContentResolver = new TemplateContentResolver(
+                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector());
         ObjectMapper objectMapper = new ObjectMapper();
         JsonataProperties jsonataProperties = new JsonataProperties();
         jsonataProperties.setEvaluationTimeoutMs(5000L);
         jsonataProperties.setMaxRecursionDepth(500);
         JsonataEvaluationService jsonataEvaluationService =
                 new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties);
-        JsonataSourcePreprocessor jsonataSourcePreprocessor =
-                new JsonataSourcePreprocessor(templateVariableResolver, dialFileRefResolver, objectMapper);
+        JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
+                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector(), objectMapper);
         RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
                 templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
         service = new RequestResolver(templateContentResolver, requestBodyEvaluator);
@@ -96,7 +96,7 @@ class RequestResolverTest {
                     .build());
             var data = Map.<String, Object>of("promptField", "Hello world");
 
-            ResolvedRequestDto result = service.resolve(template, bindings, data);
+            ResolvedRequestDto result = service.resolve(template, bindings, data, null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedJsonBodyDto.class);
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
@@ -118,7 +118,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("model", "gpt-4");
@@ -136,7 +136,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("temperature")).isEqualTo(0.7);
@@ -154,7 +154,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             @SuppressWarnings("unchecked")
@@ -168,7 +168,7 @@ class RequestResolverTest {
                     .body(JsonRequestBodyDto.builder().content(null).build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedJsonBodyDto.class);
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
@@ -182,7 +182,7 @@ class RequestResolverTest {
                     .body(JsonRequestBodyDto.builder().build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedJsonBodyDto.class);
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
@@ -195,7 +195,7 @@ class RequestResolverTest {
             var template =
                     RequestTemplateDto.builder().urlTemplate("/api/v1/test").build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isNull();
         }
@@ -213,7 +213,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("message")).isEqualTo("Hello Alice, your score is 95");
@@ -230,7 +230,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             @SuppressWarnings("unchecked")
@@ -240,7 +240,7 @@ class RequestResolverTest {
 
         @Test
         void shouldReturnWarningWhenNullTemplate() {
-            ResolvedRequestDto result = service.resolve(null, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(null, List.of(), Map.of(), null);
 
             assertThat(result.getWarnings()).hasSize(1);
             assertThat(result.getWarnings().get(0).getMessage()).contains("No request template configured");
@@ -255,7 +255,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("model", "gpt-4");
@@ -271,7 +271,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).isNull();
@@ -304,7 +304,7 @@ class RequestResolverTest {
                     .dataField("docField")
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(binding), Map.of("docField", shortRef));
+            ResolvedRequestDto result = service.resolve(template, List.of(binding), Map.of("docField", shortRef), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("document", dialRef);
@@ -325,7 +325,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("file_ref", dialRef);
@@ -343,7 +343,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("field", "plain-value");
@@ -361,7 +361,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("temperature")).isEqualTo(0.7);
@@ -379,7 +379,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("greeting")).isEqualTo("Hello Alice!");
@@ -398,7 +398,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("data")).isEqualTo(arrayValue);
@@ -419,7 +419,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("attachment", dialRef);
@@ -440,7 +440,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             @SuppressWarnings("unchecked")
@@ -461,7 +461,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("attachment")).isEqualTo(mapValue);
@@ -487,7 +487,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedMultipartBodyDto.class);
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
@@ -513,7 +513,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts()).hasSize(1);
@@ -538,7 +538,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             ResolvedFormPartDto part = multipartBody.getParts().get(0);
@@ -569,7 +569,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts()).hasSize(2);
@@ -592,7 +592,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts().get(0).getResolvedValue()).isEqualTo(Map.of("key", "value"));
@@ -606,7 +606,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts()).isEmpty();
@@ -625,7 +625,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts()).hasSize(1);
@@ -648,7 +648,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             @SuppressWarnings("unchecked")
@@ -678,7 +678,7 @@ class RequestResolverTest {
             var bindings = List.of(binding);
             var data = Map.<String, Object>of("inputCol", "data-driven value");
 
-            ResolvedRequestDto result = service.resolve(template, bindings, data);
+            ResolvedRequestDto result = service.resolve(template, bindings, data, null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts().get(0).getResolvedValue()).isEqualTo("data-driven value");
@@ -703,7 +703,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedUrlEncodedBodyDto.class);
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
@@ -733,7 +733,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries()).hasSize(2);
@@ -756,7 +756,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("42");
@@ -776,7 +776,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("true");
@@ -788,7 +788,7 @@ class RequestResolverTest {
                     .body(UrlEncodedFormRequestBodyDto.builder().content(null).build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries()).isEmpty();
@@ -808,7 +808,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getKey()).isEqualTo("access_token");
@@ -825,7 +825,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries()).hasSize(1);
@@ -846,7 +846,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("https://example.com/callback");
@@ -872,7 +872,7 @@ class RequestResolverTest {
             var bindings = List.of(binding);
             var data = Map.<String, Object>of("clientIdCol", "my-client-app");
 
-            ResolvedRequestDto result = service.resolve(template, bindings, data);
+            ResolvedRequestDto result = service.resolve(template, bindings, data, null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("my-client-app");
@@ -892,7 +892,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("openid");

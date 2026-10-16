@@ -41,7 +41,8 @@ class JsonataSourcePreprocessorTest {
     private List<ValidationWarningDto> warnings;
 
     private void setUp() {
-        preprocessor = new JsonataSourcePreprocessor(templateVariableResolver, dialFileRefResolver, objectMapper);
+        preprocessor = new JsonataSourcePreprocessor(
+                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector(), objectMapper);
         warnings = new ArrayList<>();
     }
 
@@ -56,7 +57,8 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("question"), isNull(), any(), anyMap(), any()))
                     .thenReturn("What is AI?");
 
-            String result = preprocessor.preprocess("{\"content\": \"${{question}}\"}", Map.of(), Map.of(), warnings);
+            String result =
+                    preprocessor.preprocess("{\"content\": \"${{question}}\"}", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("{\"content\": \"What is AI?\"}");
         }
@@ -68,7 +70,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any()))
                     .thenReturn("Alice");
 
-            String result = preprocessor.preprocess("greeting = '${{name}}'", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("greeting = '${{name}}'", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("greeting = \"Alice\"");
         }
@@ -80,7 +82,8 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("temp"), isNull(), any(), anyMap(), any()))
                     .thenReturn(0.7);
 
-            String result = preprocessor.preprocess("{\"temperature\": \"${{temp}}\"}", Map.of(), Map.of(), warnings);
+            String result =
+                    preprocessor.preprocess("{\"temperature\": \"${{temp}}\"}", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("{\"temperature\": 0.7}");
         }
@@ -92,7 +95,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("items"), isNull(), any(), anyMap(), any()))
                     .thenReturn(List.of("a", "b"));
 
-            String result = preprocessor.preprocess("\"${{items}}\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"${{items}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("[\"a\",\"b\"]");
         }
@@ -107,7 +110,7 @@ class JsonataSourcePreprocessorTest {
                     .thenReturn(shortRef);
             when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
-            String result = preprocessor.preprocess("\"${{doc|file}}\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"${{doc|file}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("\"" + dialRef + "\"");
         }
@@ -119,7 +122,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any()))
                     .thenReturn(null);
 
-            String result = preprocessor.preprocess("\"${{missing}}\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"${{missing}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("null");
         }
@@ -133,7 +136,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("obj"), isNull(), any(), anyMap(), any()))
                     .thenReturn(withNull);
 
-            String result = preprocessor.preprocess("\"${{obj}}\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"${{obj}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("{\"key\":null}");
         }
@@ -153,7 +156,8 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("messages"), isNull(), any(), anyMap(), any()))
                     .thenReturn(List.of(newMessage));
 
-            String result = preprocessor.preprocess("$append($history, ${{messages}})", Map.of(), Map.of(), warnings);
+            String result =
+                    preprocessor.preprocess("$append($history, ${{messages}})", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("$append($history, [{\"role\":\"user\",\"content\":\"hi\"}])");
         }
@@ -165,7 +169,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any()))
                     .thenReturn(null);
 
-            String result = preprocessor.preprocess("$exists(${{missing}})", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("$exists(${{missing}})", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("$exists(null)");
         }
@@ -182,7 +186,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any()))
                     .thenReturn("Alice");
 
-            String result = preprocessor.preprocess("\"Hello ${{name}}!\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"Hello ${{name}}!\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("\"Hello Alice!\"");
         }
@@ -194,7 +198,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any()))
                     .thenReturn(null);
 
-            String result = preprocessor.preprocess("\"Value: [${{missing}}]\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"Value: [${{missing}}]\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("\"Value: []\"");
         }
@@ -206,7 +210,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("quoted"), isNull(), any(), anyMap(), any()))
                     .thenReturn("say \"hi\"");
 
-            String result = preprocessor.preprocess("\"text: ${{quoted}}\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"text: ${{quoted}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("\"text: say \\\"hi\\\"\"");
         }
@@ -218,7 +222,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("path"), isNull(), any(), anyMap(), any()))
                     .thenReturn("C:\\temp");
 
-            String result = preprocessor.preprocess("\"path: ${{path}}\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"path: ${{path}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("\"path: C:\\\\temp\"");
         }
@@ -230,7 +234,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("multiline"), isNull(), any(), anyMap(), any()))
                     .thenReturn("line1\nline2");
 
-            String result = preprocessor.preprocess("\"text: ${{multiline}}\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"text: ${{multiline}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("\"text: line1\\nline2\"");
         }
@@ -243,7 +247,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("evil"), isNull(), any(), anyMap(), any()))
                     .thenReturn("${{other}}");
 
-            String result = preprocessor.preprocess("\"text: ${{evil}}\"", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("\"text: ${{evil}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("\"text: ${{other}}\"");
             // The substituted text is not re-scanned for placeholders — a second variable lookup never happens.
@@ -256,7 +260,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any()))
                     .thenReturn("it's ok");
 
-            String result = preprocessor.preprocess("'value: ${{name}}'", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("'value: ${{name}}'", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("'value: it\\'s ok'");
         }
@@ -272,7 +276,7 @@ class JsonataSourcePreprocessorTest {
             setUp();
             String source = "\"already \\\"escaped\\\" text\"";
 
-            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo(source);
         }
@@ -283,7 +287,7 @@ class JsonataSourcePreprocessorTest {
             setUp();
             String source = "$sum(scores) / $count(scores)";
 
-            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo(source);
         }
@@ -295,7 +299,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
                     .thenReturn(5);
 
-            String result = preprocessor.preprocess("`field name`.value + ${{x}}", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("`field name`.value + ${{x}}", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("`field name`.value + 5");
         }
@@ -304,7 +308,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("null source is returned unchanged")
         void nullSourceReturnedUnchanged() {
             setUp();
-            String result = preprocessor.preprocess(null, Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess(null, Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isNull();
         }
@@ -313,7 +317,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("empty source is returned unchanged")
         void emptySourceReturnedUnchanged() {
             setUp();
-            String result = preprocessor.preprocess("", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEmpty();
         }
@@ -331,7 +335,8 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
                     .thenReturn(5);
 
-            String result = preprocessor.preprocess("`it's a field`.value + ${{x}}", Map.of(), Map.of(), warnings);
+            String result =
+                    preprocessor.preprocess("`it's a field`.value + ${{x}}", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("`it's a field`.value + 5");
         }
@@ -344,7 +349,8 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
                     .thenReturn(5);
 
-            String result = preprocessor.preprocess("$match(input, /a\"b/) and ${{x}}", Map.of(), Map.of(), warnings);
+            String result =
+                    preprocessor.preprocess("$match(input, /a\"b/) and ${{x}}", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("$match(input, /a\"b/) and 5");
         }
@@ -358,7 +364,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("b"), isNull(), any(), anyMap(), any()))
                     .thenReturn(2);
 
-            String result = preprocessor.preprocess("${{a}} / ${{b}}", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("${{a}} / ${{b}}", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("10 / 2");
         }
@@ -369,7 +375,7 @@ class JsonataSourcePreprocessorTest {
             setUp();
             String source = "$match(x, /abc";
 
-            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo(source);
         }
@@ -386,7 +392,7 @@ class JsonataSourcePreprocessorTest {
             when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
                     .thenReturn(5);
 
-            String result = preprocessor.preprocess("/* it's a comment */ ${{x}}", Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess("/* it's a comment */ ${{x}}", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("/* it's a comment */ 5");
         }
@@ -398,7 +404,7 @@ class JsonataSourcePreprocessorTest {
             setUp();
 
             String source = "/* example: ${{x}} */ 1 + 1";
-            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo(source);
         }
@@ -409,7 +415,7 @@ class JsonataSourcePreprocessorTest {
             setUp();
 
             String source = "1 + 1 /* unterminated ${{x}}";
-            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo(source);
         }
@@ -483,7 +489,7 @@ class JsonataSourcePreprocessorTest {
             String source = "${{cfg:{\"a\":1}}}";
 
             String neutralized = preprocessor.neutralize(source);
-            String preprocessed = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+            String preprocessed = preprocessor.preprocess(source, Map.of(), Map.of(), warnings, null);
 
             // Both paths locate the identical span end (the object's own closing brace plus the first
             // placeholder-closing brace) and both leave the same trailing "}" verbatim afterwards — this
@@ -501,7 +507,7 @@ class JsonataSourcePreprocessorTest {
             String source = "${{fallback:[{\"role\":\"system\"}]}}";
 
             String neutralized = preprocessor.neutralize(source);
-            String preprocessed = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+            String preprocessed = preprocessor.preprocess(source, Map.of(), Map.of(), warnings, null);
 
             assertThat(neutralized).isEqualTo(preprocessed);
             assertThat(neutralized).doesNotContain("null");
@@ -524,7 +530,11 @@ class JsonataSourcePreprocessorTest {
                     .thenReturn("bound value");
 
             String result = preprocessor.preprocess(
-                    "\"${{question}}\"", Map.of("question", binding), Map.of("questionCol", "bound value"), warnings);
+                    "\"${{question}}\"",
+                    Map.of("question", binding),
+                    Map.of("questionCol", "bound value"),
+                    warnings,
+                    null);
 
             assertThat(result).isEqualTo("\"bound value\"");
         }

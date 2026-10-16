@@ -9,13 +9,16 @@ import com.epam.aidial.evaluation.runner.model.SuiteType;
  *
  * <p>Static on purpose: pure, dependency-free derivation over runner DTOs, in the same style as
  * {@link SuiteType#fromValue(String)}.
+ *
+ * <p>The only null-tolerant seams are {@link #fromSnapshot} (old snapshot JSON) and {@link #fromSuiteResponse}
+ * (older remote server); everywhere else the suite type is non-null.
  */
 public final class SuiteTargets {
 
     private SuiteTargets() {}
 
-    /** Resolves a possibly-null suite type; legacy suites without a type are DEPLOYMENT. */
-    public static SuiteType typeOrDefault(SuiteType type) {
+    /** Response from a server predating {@code suiteType}: a missing type means DEPLOYMENT. */
+    private static SuiteType orDefault(SuiteType type) {
         return type != null ? type : SuiteType.DEPLOYMENT;
     }
 
@@ -32,7 +35,7 @@ public final class SuiteTargets {
 
     /** Derives the target from a suite response DTO. */
     public static SuiteTarget fromSuiteResponse(TestSuiteResponseDto suite) {
-        return switch (typeOrDefault(suite.getSuiteType())) {
+        return switch (orDefault(suite.getSuiteType())) {
             case DEPLOYMENT -> new DeploymentTarget(suite.getDeploymentRef());
             case ROUTE -> new RouteTarget(suite.getRoutesRef());
             case MCP_TOOL -> new McpToolTarget(suite.getMcpDeploymentRef(), suite.getToolRef());

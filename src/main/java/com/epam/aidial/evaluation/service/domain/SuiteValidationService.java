@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
@@ -13,17 +14,18 @@ import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestBodySchemaDto;
-import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
-import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.McpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinition;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
-import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -46,12 +48,16 @@ public class SuiteValidationService {
     private final FileRefValidator fileRefValidator;
     private final BindingValidator bindingValidator;
     private final McpArgumentValidator mcpArgumentValidator;
-    private final JsonbMapper jsonbMapper;
+    private final SuiteDefinitionResolver suiteDefinitionResolver;
     private final RequestModelValidator requestModelValidator;
 
     /**
      * Validates suite configuration: requestTemplate, inputBindings, testCaseSchema.
      * Produces warnings per the Validation Matrix (design.md).
+     *
+     * <p>Derives the {@link SuiteDefinition} via {@link SuiteDefinitionResolver#fromRequest}; callers must
+     * have run {@code TestSuiteRequestValidator.validateSuiteTypeFields} and {@code validateTestSuiteSchemas}
+     * first (create, update and clone all do), so the derivation cannot throw and the chain has no null elements.
      *
      * @param dto             suite request DTO
      * @param suiteId         existing suite UUID for ownership validation; null on create (ownership check skipped)
@@ -60,47 +66,37 @@ public class SuiteValidationService {
      */
     public ValidationResult validateSuite(
             TestSuiteRequestDto dto, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
-        SuiteType suiteType = SuiteTargets.typeOrDefault(dto.getSuiteType());
-        if (suiteType == SuiteType.MCP_TOOL) {
-            return validateMcpSuite(dto, suiteId, testCaseSchema);
-        }
-        return validateDeploymentSuite(dto, suiteId, testCaseSchema);
+        return validate(suiteDefinitionResolver.fromRequest(dto), suiteId, testCaseSchema);
     }
 
     /**
      * Model-based overload used by Phase 2 of dataset-rooted revalidation
-     * ({@link RevalidationService#runDatasetRevalidation}). Reverse-maps the JSONB-backed
-     * {@link TestSuite} columns into a transient {@link TestSuiteRequestDto} and forwards the
-     * dataset's typed schema (since the suite no longer owns {@code testCaseSchema}).
+     * ({@link RevalidationService#runDatasetRevalidation}). Derives the {@link SuiteDefinition} straight from
+     * the persisted {@link TestSuite} (no request-DTO round trip, so stored data is never re-rejected by the
+     * write-time target checks) and forwards the dataset's typed schema (since the suite no longer owns
+     * {@code testCaseSchema}).
      *
      * @param suite             persistent suite entity
      * @param testCaseSchema    dataset's resolved schema (parameter so the dataset table is queried once
      *                          by the caller and reused across the suite fan-out)
      */
     public ValidationResult validateSuite(TestSuite suite, List<FieldDefinitionDto> testCaseSchema) {
-        TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
-                .name(suite.getName())
-                .description(suite.getDescription())
-                .suiteType(suite.getSuiteType())
-                .datasetId(suite.getDatasetId())
-                .deploymentRef(jsonbMapper.map(suite.getDeploymentRef()))
-                .endpointRef(jsonbMapper.mapEndpointContract(suite.getEndpointRef()))
-                .responseColumns(jsonbMapper.mapResponseColumns(suite.getResponseColumns()))
-                .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
-                .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()))
-                .additionalRequests(jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests()))
-                .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))
-                .toolRef(jsonbMapper.mapToolRef(suite.getToolRef()))
-                .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
-                .build();
-        return validateSuite(dto, suite.getId(), testCaseSchema);
+        return validate(suiteDefinitionResolver.fromEntity(suite), suite.getId(), testCaseSchema);
     }
 
-    private ValidationResult validateMcpSuite(
-            TestSuiteRequestDto dto, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
-        List<ValidationWarningDto> warnings = new ArrayList<>();
+    private ValidationResult validate(
+            SuiteDefinition definition, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
+        return switch (definition) {
+            case McpSuite m -> validateMcpSuite(m, suiteId, testCaseSchema);
+            case HttpSuite h -> validateHttpSuite(h, suiteId, testCaseSchema);
+        };
+    }
 
-        if (dto.getArgumentTemplate() == null) {
+    private ValidationResult validateMcpSuite(McpSuite suite, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
+        List<ValidationWarningDto> warnings = new ArrayList<>();
+        final ArgumentTemplateDto argumentTemplate = suite.argumentTemplate();
+
+        if (argumentTemplate == null) {
             warnings.add(warning(
                     null,
                     "$.argumentTemplate",
@@ -109,7 +105,7 @@ public class SuiteValidationService {
         } else {
             // Extract variables from argument template (with type-hint warnings)
             TemplateVariableExtractor.ExtractionResult extractionResult =
-                    templateVariableExtractor.extractFromArgumentTemplateWithWarnings(dto.getArgumentTemplate());
+                    templateVariableExtractor.extractFromArgumentTemplateWithWarnings(argumentTemplate);
             List<TemplateVariableExtractor.ExtractedVariable> variables = extractionResult.getVariables();
 
             // Add warnings for unrecognised type hints
@@ -119,15 +115,13 @@ public class SuiteValidationService {
 
             // Shared binding cross-validation. MCP_TOOL suites cannot carry additionalRequests
             // (rejected at write time), so the chain is always length 1 — prefix is always "".
-            List<InputBindingDto> bindings = dto.getInputBindings();
+            final List<InputBindingDto> bindings = suite.inputBindings();
             warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId, ""));
 
             // Argument coverage against the selected tool's own JSON schema
-            ToolReferenceDto toolRef = dto.getToolRef();
+            final ToolReferenceDto toolRef = suite.target().tool();
             warnings.addAll(mcpArgumentValidator.validate(
-                    toolRef != null ? toolRef.getInputSchema() : null,
-                    dto.getArgumentTemplate().getArguments(),
-                    bindings));
+                    toolRef != null ? toolRef.getInputSchema() : null, argumentTemplate.getArguments(), bindings));
         }
 
         return ValidationResult.builder()
@@ -136,34 +130,23 @@ public class SuiteValidationService {
                 .build();
     }
 
-    private ValidationResult validateDeploymentSuite(
-            TestSuiteRequestDto dto, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
-        DeploymentReferenceDto deploymentRef = dto.getDeploymentRef();
-        List<ValidationWarningDto> warnings = new ArrayList<>(validateRequest(
-                dto.getEndpointRef(),
-                dto.getRequestTemplate(),
-                dto.getInputBindings(),
-                suiteId,
-                testCaseSchema,
-                deploymentRef,
-                ""));
+    private ValidationResult validateHttpSuite(HttpSuite suite, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
+        // Only DEPLOYMENT suites select the deployment by URL/body model; ROUTE suites have no deploymentRef.
+        final DeploymentReferenceDto deploymentRef = suite.target() instanceof DeploymentTarget d ? d.ref() : null;
 
-        List<RequestDefinitionDto> additionalRequests = dto.getAdditionalRequests();
-        if (additionalRequests != null) {
-            for (int i = 0; i < additionalRequests.size(); i++) {
-                RequestDefinitionDto request = additionalRequests.get(i);
-                if (request == null) {
-                    continue;
-                }
-                warnings.addAll(validateRequest(
-                        request.getEndpointRef(),
-                        request.getRequestTemplate(),
-                        request.getInputBindings(),
-                        suiteId,
-                        testCaseSchema,
-                        deploymentRef,
-                        "$.additionalRequests[" + i + "]"));
-            }
+        List<ValidationWarningDto> warnings = new ArrayList<>();
+        for (RequestExecutionSpec spec : suite.chain()) {
+            // Request #0 keeps the unprefixed legacy paths; chain request i + 1 is additionalRequests[i].
+            final String pathPrefix =
+                    spec.requestIndex() == 0 ? "" : "$.additionalRequests[" + (spec.requestIndex() - 1) + "]";
+            warnings.addAll(validateRequest(
+                    spec.endpointRef(),
+                    spec.requestTemplate(),
+                    spec.inputBindings(),
+                    suiteId,
+                    testCaseSchema,
+                    deploymentRef,
+                    pathPrefix));
         }
 
         return ValidationResult.builder()

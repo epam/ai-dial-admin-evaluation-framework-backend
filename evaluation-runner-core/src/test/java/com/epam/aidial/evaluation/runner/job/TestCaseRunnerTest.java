@@ -16,6 +16,8 @@ import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.io.IOException;
@@ -99,9 +101,10 @@ class TestCaseRunnerTest {
                 .executor(executor)
                 .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(System.currentTimeMillis())
-                .target(new DeploymentTarget(
-                        DeploymentReferenceDto.builder().id("gpt-4").build()))
-                .snapshotResponseColumns(List.of());
+                .suite(new HttpSuite(
+                        new DeploymentTarget(
+                                DeploymentReferenceDto.builder().id("gpt-4").build()),
+                        SuiteDefinitions.httpChain(null, null, null, List.of(), List.of(), List.of())));
     }
 
     private TestCaseRunInput buildInput() {

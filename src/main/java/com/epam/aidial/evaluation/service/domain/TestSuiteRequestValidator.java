@@ -91,7 +91,7 @@ public class TestSuiteRequestValidator {
      * Rejects a null element anywhere in {@code additionalRequests} with a hard 400 naming the index.
      * Runs first in {@link #validateTestSuiteSchemas} — before any per-request field access — so this
      * is the single write-time gate every persistence path (create, update, and clone's effective-dto
-     * revalidation) passes through; {@code RequestChainExecutor.buildSpecs} at run time therefore never
+     * revalidation) passes through; {@code SuiteDefinitions.httpChain} at run time therefore never
      * needs to defend against a null chain element (see the comment there).
      */
     private void validateNoNullAdditionalRequests(List<RequestDefinitionDto> additionalRequests) {

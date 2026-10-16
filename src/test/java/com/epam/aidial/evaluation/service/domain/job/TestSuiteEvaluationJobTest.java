@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -36,6 +37,8 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
@@ -330,7 +333,8 @@ class TestSuiteEvaluationJobTest {
     class RequestChainWiring {
 
         @Test
-        @DisplayName("buildContext exposes snapshotAdditionalRequests and snapshotRequestName from the snapshot")
+        @DisplayName(
+                "buildContext exposes the snapshot's request chain (requestName + additionalRequests) via the suite")
         void buildContextExposesChain() {
             UUID suiteId = UUID.randomUUID();
             UUID datasetId = UUID.randomUUID();
@@ -383,13 +387,21 @@ class TestSuiteEvaluationJobTest {
                     Executors.newVirtualThreadPerTaskExecutor(),
                     CallerCredential.bearer("token"));
 
-            assertThat(context.getSnapshotRequestName()).isEqualTo("first");
-            assertThat(context.getSnapshotAdditionalRequests()).isEqualTo(additionalRequests);
+            final List<RequestExecutionSpec> chain = ((HttpSuite) context.getSuite()).chain();
+            assertThat(chain.getFirst().name()).isEqualTo("first");
+            assertThat(chain.subList(1, chain.size()))
+                    .extracting(
+                            RequestExecutionSpec::name,
+                            RequestExecutionSpec::endpointRef,
+                            RequestExecutionSpec::requestTemplate)
+                    .containsExactlyElementsOf(additionalRequests.stream()
+                            .map(r -> tuple(r.getName(), r.getEndpointRef(), r.getRequestTemplate()))
+                            .toList());
         }
 
         @Test
-        @DisplayName("buildContext yields an empty chain and null requestName for a legacy snapshot")
-        void buildContextEmptyChainForLegacySnapshot() {
+        @DisplayName("buildContext yields a single-request chain with null requestName for a legacy snapshot")
+        void buildContextSingleRequestChainForLegacySnapshot() {
             TestSuiteRun run = TestSuiteRun.builder()
                     .id(UUID.randomUUID())
                     .testSuiteId(UUID.randomUUID())
@@ -419,8 +431,9 @@ class TestSuiteEvaluationJobTest {
                     Executors.newVirtualThreadPerTaskExecutor(),
                     CallerCredential.bearer("token"));
 
-            assertThat(context.getSnapshotRequestName()).isNull();
-            assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
+            final List<RequestExecutionSpec> chain = ((HttpSuite) context.getSuite()).chain();
+            assertThat(chain.getFirst().name()).isNull();
+            assertThat(chain).hasSize(1);
         }
 
         @Test

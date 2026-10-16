@@ -25,13 +25,6 @@ class SuiteTargetsTest {
             ToolReferenceDto.builder().name("tool-1").build();
 
     @Test
-    @DisplayName("typeOrDefault maps null to DEPLOYMENT and keeps explicit values")
-    void typeOrDefault() {
-        assertThat(SuiteTargets.typeOrDefault(null)).isEqualTo(SuiteType.DEPLOYMENT);
-        assertThat(SuiteTargets.typeOrDefault(SuiteType.ROUTE)).isEqualTo(SuiteType.ROUTE);
-    }
-
-    @Test
     @DisplayName("fromSnapshot with null suiteType yields DeploymentTarget")
     void snapshotNullType() {
         final SuiteSnapshotDto snapshot =

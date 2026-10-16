@@ -17,8 +17,6 @@ import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
-import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
-import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
@@ -30,15 +28,16 @@ import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationExceptio
 import com.epam.aidial.evaluation.runner.exception.RequestBodyValidationException;
 import com.epam.aidial.evaluation.runner.job.DeploymentInvocationSupport;
 import com.epam.aidial.evaluation.runner.job.ExecutionErrorCodes;
-import com.epam.aidial.evaluation.runner.job.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.job.SseEvent;
 import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
 import com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulator;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.McpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
-import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
@@ -57,7 +56,6 @@ import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
-import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
@@ -103,8 +101,7 @@ public class TryItOutService {
     private final McpResponseSerializer mcpResponseSerializer;
     private final DialCoreUrlBuilder urlBuilder;
     private final RequestModelValidator requestModelValidator;
-    private final JsonbMapper jsonbMapper;
-    private final SuiteTargetResolver suiteTargetResolver;
+    private final SuiteDefinitionResolver suiteDefinitionResolver;
     private final ObjectMapper objectMapper;
     private final RequestBodySerializerRegistry serializerRegistry;
     private final OpenTelemetry openTelemetry;
@@ -119,17 +116,17 @@ public class TryItOutService {
 
     public TryItOutResponseDto tryWithTestCase(UUID testSuiteId, UUID testCaseId) {
         final TestSuite suite = loadSuite(testSuiteId);
-        return switch (suiteTargetResolver.fromEntity(suite)) {
-            case McpToolTarget m -> tryMcpWithTestCase(suite, m, testSuiteId, testCaseId);
-            case HttpTarget h -> tryHttpWithTestCase(suite, h, testSuiteId, testCaseId);
+        return switch (suiteDefinitionResolver.fromEntity(suite)) {
+            case McpSuite m -> tryMcpWithTestCase(suite, m, testSuiteId, testCaseId);
+            case HttpSuite h -> tryHttpWithTestCase(suite, h, testSuiteId, testCaseId);
         };
     }
 
     private TryItOutResponseDto tryMcpWithTestCase(
-            TestSuite suite, McpToolTarget target, UUID testSuiteId, UUID testCaseId) {
-        final McpDeploymentReferenceDto mcpRef = target.ref();
-        final ToolReferenceDto toolRef = target.tool();
-        ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
+            TestSuite suite, McpSuite mcpSuite, UUID testSuiteId, UUID testCaseId) {
+        final McpDeploymentReferenceDto mcpRef = mcpSuite.target().ref();
+        final ToolReferenceDto toolRef = mcpSuite.target().tool();
+        final ArgumentTemplateDto argumentTemplate = mcpSuite.argumentTemplate();
         validateMcpPreconditions(mcpRef, toolRef);
 
         TestCase testCase = testCaseRepository
@@ -142,7 +139,7 @@ public class TryItOutService {
         }
 
         // Suite-level bindings are the effective bindings — per-test-case overrides no longer exist
-        List<InputBindingDto> effectiveBindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
+        final List<InputBindingDto> effectiveBindings = mcpSuite.inputBindings();
 
         Map<String, Object> testCaseData = parseTestCaseData(testCase.getData());
         McpRequestResolver.ResolutionResult resolutionResult =
@@ -152,18 +149,15 @@ public class TryItOutService {
     }
 
     private TryItOutResponseDto tryHttpWithTestCase(
-            TestSuite suite, HttpTarget target, UUID testSuiteId, UUID testCaseId) {
-        final EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
-        // Deserialized once here and handed to the planner, so a single try-out never parses the suite's
-        // additionalRequests JSONB twice.
-        final List<RequestDefinitionDto> additionalRequests =
-                jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
+            TestSuite suite, HttpSuite httpSuite, UUID testSuiteId, UUID testCaseId) {
+        final HttpTarget target = httpSuite.target();
+        final EndpointContractDto endpointRef = httpSuite.first().endpointRef();
         // Preconditions (incl. per-chain-element) run on the already-loaded suite BEFORE planning, so a
         // misconfigured suite combined with a nonexistent testCaseId still yields 400, not 404 (design D7).
-        validateChainPreconditions(target, endpointRef, suite.getRequestTemplate(), additionalRequests);
+        validateChainPreconditions(target, endpointRef, suite.getRequestTemplate(), httpSuite.chain());
 
         final ResolvedRequestService.ChainPlan plan =
-                resolvedRequestService.planChain(testSuiteId, testCaseId, additionalRequests);
+                resolvedRequestService.planChain(testSuiteId, testCaseId, httpSuite);
         if (plan.totalInvocations() <= 1) {
             // Single-request single-turn fast path, unchanged except the additive extraction fields (D5/D6).
             final ResolvedRequestDto resolved = resolvedRequestService.resolveRequest(testSuiteId, testCaseId);
@@ -402,17 +396,17 @@ public class TryItOutService {
 
     public TryItOutResponseDto tryWithVariables(UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
         final TestSuite suite = loadSuite(testSuiteId);
-        return switch (suiteTargetResolver.fromEntity(suite)) {
-            case McpToolTarget m -> tryMcpWithVariables(suite, m, testSuiteId, variables);
-            case HttpTarget h -> tryHttpWithVariables(suite, h, testSuiteId, variables);
+        return switch (suiteDefinitionResolver.fromEntity(suite)) {
+            case McpSuite m -> tryMcpWithVariables(m, testSuiteId, variables);
+            case HttpSuite h -> tryHttpWithVariables(suite, h, testSuiteId, variables);
         };
     }
 
     private TryItOutResponseDto tryMcpWithVariables(
-            TestSuite suite, McpToolTarget target, UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
-        final McpDeploymentReferenceDto mcpRef = target.ref();
-        final ToolReferenceDto toolRef = target.tool();
-        ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
+            McpSuite mcpSuite, UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
+        final McpDeploymentReferenceDto mcpRef = mcpSuite.target().ref();
+        final ToolReferenceDto toolRef = mcpSuite.target().tool();
+        final ArgumentTemplateDto argumentTemplate = mcpSuite.argumentTemplate();
         validateMcpPreconditions(mcpRef, toolRef);
 
         final List<InputBindingDto> bindings =
@@ -425,35 +419,28 @@ public class TryItOutService {
     }
 
     private TryItOutResponseDto tryHttpWithVariables(
-            TestSuite suite, HttpTarget target, UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
-        EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
-        List<RequestDefinitionDto> additionalRequests =
-                jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
-        validateChainPreconditions(target, endpointRef, suite.getRequestTemplate(), additionalRequests);
+            TestSuite suite, HttpSuite httpSuite, UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
+        final HttpTarget target = httpSuite.target();
+        final RequestExecutionSpec first = httpSuite.first();
+        final EndpointContractDto endpointRef = first.endpointRef();
+        validateChainPreconditions(target, endpointRef, suite.getRequestTemplate(), httpSuite.chain());
 
-        final int requestCount = 1 + (additionalRequests != null ? additionalRequests.size() : 0);
-        final Map<Integer, List<InputBindingDto>> bindingsByRequest =
-                variableBindings.toBindingsByRequest(variables, requestCount);
+        final Map<Integer, List<InputBindingDto>> bindingsByRequest = variableBindings.toBindingsByRequest(
+                variables, httpSuite.chain().size());
 
-        if (additionalRequests == null || additionalRequests.isEmpty()) {
+        if (httpSuite.chain().size() == 1) {
             // Single-request fast path keeps the pre-existing lenient resolution (design D8), plus the
             // additive extraction fields (D6).
-            RequestTemplateDto template = jsonbMapper.mapRequestTemplate(suite.getRequestTemplate());
-            ResolvedRequestDto resolved = requestResolver.resolve(template, bindingsByRequest.get(0), Map.of());
+            final ResolvedRequestDto resolved =
+                    requestResolver.resolve(first.requestTemplate(), bindingsByRequest.get(0), Map.of());
             validateResolutionResult(resolved);
             return invokeAndBuildResponse(
-                    resolved,
-                    target,
-                    endpointRef.getMethod(),
-                    testSuiteId,
-                    jsonbMapper.mapResponseColumns(suite.getResponseColumns()));
+                    resolved, target, endpointRef.getMethod(), testSuiteId, first.responseColumns());
         }
 
         // Multi-request suite: run the chain with every request single-turn and each request's own variables
-        // wholesale-replacing that request's inputBindings (design D8). The additionalRequests list
-        // mapped above is reused, so the JSONB is deserialized once per try-out.
-        final ResolvedRequestService.ChainPlan plan =
-                resolvedRequestService.planChainForVariables(testSuiteId, additionalRequests);
+        // wholesale-replacing that request's inputBindings (design D8).
+        final ResolvedRequestService.ChainPlan plan = resolvedRequestService.planChainForVariables(httpSuite);
         return runChain(plan, target, testSuiteId, bindingsByRequest);
     }
 
@@ -475,18 +462,15 @@ public class TryItOutService {
             HttpTarget target,
             EndpointContractDto endpointRef,
             String rawTemplateJson,
-            List<RequestDefinitionDto> additionalRequests) {
+            List<RequestExecutionSpec> chain) {
         validateSuitePreconditions(target, endpointRef, rawTemplateJson);
-        if (additionalRequests == null) {
-            return;
-        }
-        for (int i = 0; i < additionalRequests.size(); i++) {
-            RequestDefinitionDto element = additionalRequests.get(i);
-            if (element.getEndpointRef() == null || element.getEndpointRef().getMethod() == null) {
+        for (int i = 0; i < chain.size() - 1; i++) {
+            final RequestExecutionSpec element = chain.get(i + 1);
+            if (element.endpointRef() == null || element.endpointRef().getMethod() == null) {
                 throw new ValidationException("additionalRequests[" + i
                         + "]: endpoint reference with HTTP method is required for try-it-out");
             }
-            if (element.getRequestTemplate() == null) {
+            if (element.requestTemplate() == null) {
                 throw new ValidationException(
                         "additionalRequests[" + i + "]: request template is required for try-it-out");
             }

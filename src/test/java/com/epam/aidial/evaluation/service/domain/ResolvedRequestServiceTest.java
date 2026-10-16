@@ -14,6 +14,7 @@ import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -22,7 +23,10 @@ import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.job.PerTurnBindingDetector;
-import com.epam.aidial.evaluation.runner.job.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
@@ -223,13 +227,7 @@ class ResolvedRequestServiceTest {
     @Test
     @DisplayName("planChain plans a single turn from shared data when multiTurnData is absent")
     void planChain_singleTurn_whenNoMultiTurnData() {
-        TestSuite suite = TestSuite.builder()
-                .id(SUITE_ID)
-                .datasetId(DATASET_ID)
-                .requestTemplate("{}")
-                .inputBindings("[]")
-                .responseColumns("[]")
-                .build();
+        TestSuite suite = TestSuite.builder().id(SUITE_ID).datasetId(DATASET_ID).build();
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         TestCase testCase = TestCase.builder()
                 .id(TEST_CASE_ID)
@@ -240,13 +238,11 @@ class ResolvedRequestServiceTest {
         RequestTemplateDto template = RequestTemplateDto.builder().build();
         List<InputBindingDto> bindings = List.of();
         Map<String, Object> data = Map.of("field", "value");
-        when(jsonbMapper.mapRequestTemplate("{}")).thenReturn(template);
-        when(jsonbMapper.mapInputBindings("[]")).thenReturn(bindings);
-        when(jsonbMapper.mapResponseColumns("[]")).thenReturn(List.of());
         when(warningsSerializer.deserializeMap("{\"field\":\"value\"}")).thenReturn(data);
         when(turnsSerializer.deserializeTurns(null)).thenReturn(null);
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, null);
+        HttpSuite httpSuite = httpSuite(null, null, template, bindings, List.of(), null);
+        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, httpSuite);
 
         assertThat(plan.requestPlans()).hasSize(1);
         assertThat(plan.requestPlans().getFirst().turnDataList()).containsExactly(data);
@@ -257,13 +253,7 @@ class ResolvedRequestServiceTest {
     @Test
     @DisplayName("planChain collapses to a single turn when no effective binding targets a perTurn field")
     void planChain_collapsesToSingleTurn_whenNoPerTurnBinding() {
-        TestSuite suite = TestSuite.builder()
-                .id(SUITE_ID)
-                .datasetId(DATASET_ID)
-                .requestTemplate("{}")
-                .inputBindings("[]")
-                .responseColumns("[]")
-                .build();
+        TestSuite suite = TestSuite.builder().id(SUITE_ID).datasetId(DATASET_ID).build();
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         TestCase testCase = TestCase.builder()
                 .id(TEST_CASE_ID)
@@ -277,15 +267,13 @@ class ResolvedRequestServiceTest {
         Map<String, Object> sharedData = Map.of("field", "value");
         List<Map<String, Object>> turns = List.of(Map.of("turn", 1), Map.of("turn", 2));
         List<FieldDefinitionDto> schema = List.of();
-        when(jsonbMapper.mapRequestTemplate("{}")).thenReturn(template);
-        when(jsonbMapper.mapInputBindings("[]")).thenReturn(bindings);
-        when(jsonbMapper.mapResponseColumns("[]")).thenReturn(List.of());
         when(warningsSerializer.deserializeMap("{\"field\":\"value\"}")).thenReturn(sharedData);
         when(turnsSerializer.deserializeTurns("[{\"turn\":1},{\"turn\":2}]")).thenReturn(turns);
         when(datasetSchemaProvider.getSchema(DATASET_ID)).thenReturn(schema);
         when(perTurnBindingDetector.referencesPerTurnField(bindings, schema)).thenReturn(false);
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, null);
+        HttpSuite httpSuite = httpSuite(null, null, template, bindings, List.of(), null);
+        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, httpSuite);
 
         assertThat(plan.requestPlans().getFirst().turnDataList()).containsExactly(sharedData);
     }
@@ -293,13 +281,7 @@ class ResolvedRequestServiceTest {
     @Test
     @DisplayName("planChain builds one merged turn per multiTurnData entry when a perTurn binding is present")
     void planChain_buildsPerTurnList_whenPerTurnBindingPresent() {
-        TestSuite suite = TestSuite.builder()
-                .id(SUITE_ID)
-                .datasetId(DATASET_ID)
-                .requestTemplate("{}")
-                .inputBindings("[]")
-                .responseColumns("[]")
-                .build();
+        TestSuite suite = TestSuite.builder().id(SUITE_ID).datasetId(DATASET_ID).build();
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         TestCase testCase = TestCase.builder()
                 .id(TEST_CASE_ID)
@@ -314,15 +296,13 @@ class ResolvedRequestServiceTest {
         Map<String, Object> turn1 = Map.of("question", "q1");
         Map<String, Object> turn2 = Map.of("question", "q2", "shared", "overridden");
         List<FieldDefinitionDto> schema = List.of();
-        when(jsonbMapper.mapRequestTemplate("{}")).thenReturn(template);
-        when(jsonbMapper.mapInputBindings("[]")).thenReturn(bindings);
-        when(jsonbMapper.mapResponseColumns("[]")).thenReturn(List.of());
         when(warningsSerializer.deserializeMap("{\"shared\":\"s\"}")).thenReturn(sharedData);
         when(turnsSerializer.deserializeTurns(any())).thenReturn(List.of(turn1, turn2));
         when(datasetSchemaProvider.getSchema(DATASET_ID)).thenReturn(schema);
         when(perTurnBindingDetector.referencesPerTurnField(bindings, schema)).thenReturn(true);
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, null);
+        HttpSuite httpSuite = httpSuite(null, null, template, bindings, List.of(), null);
+        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, httpSuite);
 
         assertThat(plan.requestPlans().getFirst().turnDataList())
                 .containsExactly(
@@ -332,16 +312,7 @@ class ResolvedRequestServiceTest {
     @Test
     @DisplayName("planChain builds ordered specs: #0 from suite fields with requestName, then additionalRequests")
     void planChain_buildsOrderedSpecs_withSuiteRequestNameThreaded() {
-        TestSuite suite = TestSuite.builder()
-                .id(SUITE_ID)
-                .datasetId(DATASET_ID)
-                .requestName("primary")
-                .endpointRef("{\"method\":\"POST\"}")
-                .requestTemplate("{}")
-                .inputBindings("[]")
-                .responseColumns("[]")
-                .additionalRequests("[{\"name\":\"second\"}]")
-                .build();
+        TestSuite suite = TestSuite.builder().id(SUITE_ID).datasetId(DATASET_ID).build();
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         TestCase testCase = TestCase.builder().id(TEST_CASE_ID).data("{}").build();
         when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
@@ -351,10 +322,6 @@ class ResolvedRequestServiceTest {
         List<InputBindingDto> suiteBindings = List.of();
         List<ResponseColumnDefinitionDto> suiteColumns =
                 List.of(ResponseColumnDefinitionDto.builder().name("col").build());
-        when(jsonbMapper.mapEndpointContract("{\"method\":\"POST\"}")).thenReturn(suiteEndpoint);
-        when(jsonbMapper.mapRequestTemplate("{}")).thenReturn(suiteTemplate);
-        when(jsonbMapper.mapInputBindings("[]")).thenReturn(suiteBindings);
-        when(jsonbMapper.mapResponseColumns("[]")).thenReturn(suiteColumns);
 
         EndpointContractDto additionalEndpoint = EndpointContractDto.builder().build();
         RequestTemplateDto additionalTemplate =
@@ -374,7 +341,9 @@ class ResolvedRequestServiceTest {
         when(warningsSerializer.deserializeMap("{}")).thenReturn(data);
         when(turnsSerializer.deserializeTurns(null)).thenReturn(null);
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, List.of(additionalRequest));
+        HttpSuite httpSuite = httpSuite(
+                "primary", suiteEndpoint, suiteTemplate, suiteBindings, suiteColumns, List.of(additionalRequest));
+        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, httpSuite);
 
         assertThat(plan.requestPlans()).hasSize(2);
         RequestExecutionSpec first = plan.requestPlans().get(0).spec();
@@ -399,14 +368,7 @@ class ResolvedRequestServiceTest {
     @Test
     @DisplayName("planChain normalizes an additional request's null bindings/columns to empty lists")
     void planChain_normalizesNullBindingsAndColumns() {
-        TestSuite suite = TestSuite.builder()
-                .id(SUITE_ID)
-                .datasetId(DATASET_ID)
-                .requestTemplate("{}")
-                .inputBindings("[]")
-                .responseColumns("[]")
-                .additionalRequests("[{}]")
-                .build();
+        TestSuite suite = TestSuite.builder().id(SUITE_ID).datasetId(DATASET_ID).build();
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         TestCase testCase = TestCase.builder().id(TEST_CASE_ID).data("{}").build();
         when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
@@ -415,7 +377,8 @@ class ResolvedRequestServiceTest {
         when(warningsSerializer.deserializeMap("{}")).thenReturn(Map.of());
         when(turnsSerializer.deserializeTurns(null)).thenReturn(null);
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, List.of(bare));
+        HttpSuite httpSuite = httpSuite(null, null, null, List.of(), List.of(), List.of(bare));
+        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, httpSuite);
 
         RequestExecutionSpec chained = plan.requestPlans().get(1).spec();
         assertThat(chained.inputBindings()).isEmpty();
@@ -425,14 +388,7 @@ class ResolvedRequestServiceTest {
     @Test
     @DisplayName("planChain decides turn count per request from that request's own bindings, loading the schema once")
     void planChain_perRequestTurnDetection_loadsSchemaOnce() {
-        TestSuite suite = TestSuite.builder()
-                .id(SUITE_ID)
-                .datasetId(DATASET_ID)
-                .requestTemplate("{}")
-                .inputBindings("[]")
-                .responseColumns("[]")
-                .additionalRequests("[{\"name\":\"second\"}]")
-                .build();
+        TestSuite suite = TestSuite.builder().id(SUITE_ID).datasetId(DATASET_ID).build();
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         TestCase testCase = TestCase.builder()
                 .id(TEST_CASE_ID)
@@ -450,10 +406,6 @@ class ResolvedRequestServiceTest {
                 .requestTemplate(RequestTemplateDto.builder().build())
                 .inputBindings(additionalBindings)
                 .build();
-        when(jsonbMapper.mapRequestTemplate("{}"))
-                .thenReturn(RequestTemplateDto.builder().build());
-        when(jsonbMapper.mapInputBindings("[]")).thenReturn(suiteBindings);
-        when(jsonbMapper.mapResponseColumns("[]")).thenReturn(List.of());
 
         Map<String, Object> sharedData = Map.of("shared", "s");
         when(warningsSerializer.deserializeMap("{\"shared\":\"s\"}")).thenReturn(sharedData);
@@ -467,7 +419,9 @@ class ResolvedRequestServiceTest {
         when(perTurnBindingDetector.referencesPerTurnField(additionalBindings, schema))
                 .thenReturn(false);
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, List.of(additionalRequest));
+        HttpSuite httpSuite = httpSuite(
+                null, null, RequestTemplateDto.builder().build(), suiteBindings, List.of(), List.of(additionalRequest));
+        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, httpSuite);
 
         assertThat(plan.requestPlans().get(0).turnDataList())
                 .containsExactly(Map.of("shared", "s", "question", "q1"), Map.of("shared", "s", "question", "q2"));
@@ -479,14 +433,7 @@ class ResolvedRequestServiceTest {
     @Test
     @DisplayName("planChain skips the schema read entirely when the test case has no readable turns")
     void planChain_lazySchemaLoading_skippedWithoutReadableTurns() {
-        TestSuite suite = TestSuite.builder()
-                .id(SUITE_ID)
-                .datasetId(DATASET_ID)
-                .requestTemplate("{}")
-                .inputBindings("[]")
-                .responseColumns("[]")
-                .additionalRequests("[{\"name\":\"second\"}]")
-                .build();
+        TestSuite suite = TestSuite.builder().id(SUITE_ID).datasetId(DATASET_ID).build();
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         TestCase testCase = TestCase.builder()
                 .id(TEST_CASE_ID)
@@ -501,7 +448,8 @@ class ResolvedRequestServiceTest {
         when(warningsSerializer.deserializeMap("{\"field\":\"value\"}")).thenReturn(data);
         when(turnsSerializer.deserializeTurns("[]")).thenReturn(List.of());
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, List.of(additionalRequest));
+        HttpSuite httpSuite = httpSuite(null, null, null, List.of(), List.of(), List.of(additionalRequest));
+        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, httpSuite);
 
         assertThat(plan.requestPlans()).hasSize(2);
         assertThat(plan.requestPlans().get(0).turnDataList()).containsExactly(data);
@@ -517,7 +465,8 @@ class ResolvedRequestServiceTest {
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.planChain(SUITE_ID, TEST_CASE_ID, null))
+        assertThatThrownBy(() -> service.planChain(
+                        SUITE_ID, TEST_CASE_ID, httpSuite(null, null, null, List.of(), List.of(), null)))
                 .isInstanceOf(EntityNotFoundException.class)
                 .hasMessageContaining("TestCase not found");
     }
@@ -525,21 +474,13 @@ class ResolvedRequestServiceTest {
     @Test
     @DisplayName("planChainForVariables plans one empty-data turn per request and never touches TestCaseRepository")
     void planChainForVariables_singleTurnPerRequest_noTestCaseAccess() {
-        TestSuite suite = TestSuite.builder()
-                .id(SUITE_ID)
-                .datasetId(DATASET_ID)
-                .requestName("primary")
-                .requestTemplate("{}")
-                .inputBindings("[]")
-                .responseColumns("[]")
-                .additionalRequests("[{\"name\":\"second\"}]")
-                .build();
-        when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+        TestSuite suite = TestSuite.builder().id(SUITE_ID).datasetId(DATASET_ID).build();
 
         RequestDefinitionDto additionalRequest =
                 RequestDefinitionDto.builder().name("second").build();
 
-        ResolvedRequestService.ChainPlan plan = service.planChainForVariables(SUITE_ID, List.of(additionalRequest));
+        ResolvedRequestService.ChainPlan plan = service.planChainForVariables(
+                httpSuite("primary", null, null, List.of(), List.of(), List.of(additionalRequest)));
 
         assertThat(plan.requestPlans()).hasSize(2);
         assertThat(plan.requestPlans().get(0).spec().name()).isEqualTo("primary");
@@ -554,14 +495,7 @@ class ResolvedRequestServiceTest {
     @DisplayName("planChain's request #0 plan carries the suite's own template, bindings, response columns "
             + "and the test case's turn data")
     void planChain_requestZeroCarriesSuiteOwnedFields() {
-        TestSuite suite = TestSuite.builder()
-                .id(SUITE_ID)
-                .datasetId(DATASET_ID)
-                .requestTemplate("{}")
-                .inputBindings("[]")
-                .responseColumns("[]")
-                .additionalRequests("[{\"name\":\"second\"}]")
-                .build();
+        TestSuite suite = TestSuite.builder().id(SUITE_ID).datasetId(DATASET_ID).build();
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         TestCase testCase = TestCase.builder().id(TEST_CASE_ID).data("{}").build();
         when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
@@ -569,9 +503,6 @@ class ResolvedRequestServiceTest {
         RequestTemplateDto template = RequestTemplateDto.builder().build();
         List<InputBindingDto> bindings = List.of();
         List<ResponseColumnDefinitionDto> columns = List.of();
-        when(jsonbMapper.mapRequestTemplate("{}")).thenReturn(template);
-        when(jsonbMapper.mapInputBindings("[]")).thenReturn(bindings);
-        when(jsonbMapper.mapResponseColumns("[]")).thenReturn(columns);
         Map<String, Object> data = Map.of("field", "value");
         when(warningsSerializer.deserializeMap("{}")).thenReturn(data);
         when(turnsSerializer.deserializeTurns(null)).thenReturn(null);
@@ -579,12 +510,32 @@ class ResolvedRequestServiceTest {
         ResolvedRequestService.ChainPlan plan = service.planChain(
                 SUITE_ID,
                 TEST_CASE_ID,
-                List.of(RequestDefinitionDto.builder().name("second").build()));
+                httpSuite(
+                        null,
+                        null,
+                        template,
+                        bindings,
+                        columns,
+                        List.of(RequestDefinitionDto.builder().name("second").build())));
 
         ResolvedRequestService.RequestPlan requestZero = plan.requestPlans().getFirst();
         assertThat(requestZero.spec().requestTemplate()).isSameAs(template);
         assertThat(requestZero.spec().inputBindings()).isSameAs(bindings);
         assertThat(requestZero.spec().responseColumns()).isSameAs(columns);
         assertThat(requestZero.turnDataList()).containsExactly(data);
+    }
+
+    private static HttpSuite httpSuite(
+            String requestName,
+            EndpointContractDto endpointRef,
+            RequestTemplateDto requestTemplate,
+            List<InputBindingDto> inputBindings,
+            List<ResponseColumnDefinitionDto> responseColumns,
+            List<RequestDefinitionDto> additionalRequests) {
+        return new HttpSuite(
+                new DeploymentTarget(
+                        DeploymentReferenceDto.builder().id("gpt-4").build()),
+                SuiteDefinitions.httpChain(
+                        requestName, endpointRef, requestTemplate, inputBindings, responseColumns, additionalRequests));
     }
 }

@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.cli.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,8 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
@@ -209,7 +212,16 @@ class EvaluationContextFactoryTest {
         final EvaluationContext context = factory.create(
                 suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
 
-        assertThat(context.getSnapshotAdditionalRequests()).containsExactly(second, third);
+        final List<RequestExecutionSpec> chain = ((HttpSuite) context.getSuite()).chain();
+        assertThat(chain).hasSize(3);
+        assertThat(chain.subList(1, 3))
+                .extracting(
+                        RequestExecutionSpec::name,
+                        RequestExecutionSpec::endpointRef,
+                        RequestExecutionSpec::requestTemplate)
+                .containsExactly(
+                        tuple(second.getName(), second.getEndpointRef(), second.getRequestTemplate()),
+                        tuple(third.getName(), third.getEndpointRef(), third.getRequestTemplate()));
     }
 
     @Test
@@ -226,12 +238,12 @@ class EvaluationContextFactoryTest {
         final EvaluationContext context = factory.create(
                 suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
 
-        assertThat(context.getSnapshotRequestName()).isEqualTo("primary");
+        assertThat(((HttpSuite) context.getSuite()).first().name()).isEqualTo("primary");
     }
 
     @Test
-    @DisplayName("defaults a null additionalRequests to an empty list")
-    void defaultsNullAdditionalRequestsToEmptyList() {
+    @DisplayName("a null additionalRequests yields a single-request chain")
+    void nullAdditionalRequestsYieldsSingleRequestChain() {
         final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
                 .id(UUID.randomUUID())
                 .datasetId(UUID.randomUUID())
@@ -242,7 +254,7 @@ class EvaluationContextFactoryTest {
         final EvaluationContext context = factory.create(
                 suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
 
-        assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
+        assertThat(((HttpSuite) context.getSuite()).chain()).hasSize(1);
     }
 
     @Test

@@ -352,13 +352,14 @@ class TestSuiteMapperCloneTest {
     }
 
     @Test
-    @DisplayName("defaults suiteType to DEPLOYMENT when entity suiteType is null")
-    void toRequestDto_defaultsSuiteTypeToDeployment_whenEntitySuiteTypeIsNull() {
-        TestSuite entity = TestSuite.builder().name("No Type").suiteType(null).build();
+    @DisplayName("copies suiteType from the entity")
+    void toRequestDto_copiesSuiteType_fromEntity() {
+        TestSuite entity =
+                TestSuite.builder().name("Typed").suiteType(SuiteType.MCP_TOOL).build();
 
         TestSuiteRequestDto dto = mapper.toRequestDto(entity);
 
-        assertThat(dto.getSuiteType()).isEqualTo(SuiteType.DEPLOYMENT);
+        assertThat(dto.getSuiteType()).isEqualTo(SuiteType.MCP_TOOL);
     }
 
     @Test

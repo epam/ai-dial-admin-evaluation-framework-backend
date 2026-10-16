@@ -6,7 +6,6 @@ import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
-import com.epam.aidial.evaluation.runner.client.mcp.McpInvocationException;
 import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
@@ -497,22 +496,21 @@ public class TryItOutService {
     private void validateSuitePreconditions(
             HttpTarget target, EndpointContractDto endpointRef, String requestTemplateJson) {
         switch (target) {
-            case DeploymentTarget d -> {
-                if (d.ref() == null) {
-                    throw new ValidationException("Deployment reference is required for try-it-out");
+            case DeploymentTarget d
+            when d.ref() == null ->
+                throw new ValidationException("Deployment reference is " + "required for try-it-out");
+
+            case RouteTarget r
+            when r.ref() == null -> throw new ValidationException("Route reference is required for try-it-out");
+
+            default -> {
+                if (endpointRef == null || endpointRef.getMethod() == null) {
+                    throw new ValidationException("Endpoint reference with HTTP method is required for try-it-out");
+                }
+                if (requestTemplateJson == null || requestTemplateJson.isBlank()) {
+                    throw new ValidationException("Request template is required for try-it-out");
                 }
             }
-            case RouteTarget r -> {
-                if (r.ref() == null) {
-                    throw new ValidationException("Route reference is required for try-it-out");
-                }
-            }
-        }
-        if (endpointRef == null || endpointRef.getMethod() == null) {
-            throw new ValidationException("Endpoint reference with HTTP method is required for try-it-out");
-        }
-        if (requestTemplateJson == null || requestTemplateJson.isBlank()) {
-            throw new ValidationException("Request template is required for try-it-out");
         }
     }
 
@@ -593,7 +591,7 @@ public class TryItOutService {
                 .setAttribute(TracingConstants.MCP_TOOL_NAME, toolRef.getName())
                 .startSpan();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
-        try (Scope scope = span.makeCurrent()) {
+        try (Scope _ = span.makeCurrent()) {
             CallerCredential credential = AuthorizationTokenHolder.getCredential();
             McpTransport transport =
                     mcpRef.getTransport() != null ? mcpRef.getTransport() : McpTransport.STREAMABLE_HTTP;
@@ -620,10 +618,6 @@ public class TryItOutService {
                     .traceId(traceId)
                     .grafanaTraceUrl(grafanaLinkBuilder.traceUrl(traceId))
                     .build();
-        } catch (McpInvocationException e) {
-            span.recordException(e);
-            span.setStatus(StatusCode.ERROR, e.getMessage());
-            throw e;
         } catch (JacksonException e) {
             span.recordException(e);
             span.setStatus(StatusCode.ERROR, e.getMessage());

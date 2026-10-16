@@ -338,7 +338,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .mapToLong(r -> switch (r) {
                     case TsmdEvaluationResult.Success success -> success.durationMs();
                     case TsmdEvaluationResult.Failure failure -> failure.durationMs();
-                    case TsmdEvaluationResult.ConditionError ignored -> -1L;
+                    case TsmdEvaluationResult.ConditionError _ -> -1L;
                 })
                 .filter(durationMs -> durationMs >= 0)
                 .sum();

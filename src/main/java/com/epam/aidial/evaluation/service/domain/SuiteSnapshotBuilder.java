@@ -51,7 +51,7 @@ public class SuiteSnapshotBuilder {
                 .requestName(suite.getRequestName());
 
         switch (suiteTargetResolver.fromEntity(suite)) {
-            case McpToolTarget ignored ->
+            case McpToolTarget _ ->
                 builder.mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))
                         .toolRef(jsonbMapper.mapToolRef(suite.getToolRef()))
                         .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))

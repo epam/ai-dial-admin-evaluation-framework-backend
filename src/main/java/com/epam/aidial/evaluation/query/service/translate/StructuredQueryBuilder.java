@@ -259,7 +259,7 @@ public class StructuredQueryBuilder {
                 }
                 select.addLimit(offset.offset(), clampLimit(offset.limit()));
             }
-            case CursorPage ignored ->
+            case CursorPage _ ->
                 throw new ValidationException(
                         "cursor pagination is not supported by the query translator; use offset paging");
         }

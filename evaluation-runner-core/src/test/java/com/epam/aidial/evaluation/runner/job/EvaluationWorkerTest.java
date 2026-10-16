@@ -21,10 +21,13 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.McpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
 import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
-import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
@@ -55,7 +58,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Every DEPLOYMENT HTTP test case (single-request or multi-request chain, single-turn or multi-turn alike)
+ * Every HTTP-suite (DEPLOYMENT or ROUTE) test case (single-request or multi-request chain, single-turn or multi-turn alike)
  * is delegated whole to {@link RequestChainExecutor}; {@link EvaluationWorker} itself only decides
  * MCP-vs-HTTP dispatch, builds the tracing span/baggage, and owns the MCP execution path end to end.
  * HTTP-path behavior (retries, timeouts, header filtering, turn-loop/chain semantics) is covered by
@@ -122,7 +125,7 @@ class EvaluationWorkerTest {
         // traceId is null here (the mocked OpenTelemetry span isn't stubbed valid) — match with any(),
         // not anyString(), since anyString() rejects null and would misroute this call to the outer
         // catch block instead of the stub.
-        when(requestChainExecutor.execute(eq(input), eq(context), eq(0), any(), anyLong()))
+        when(requestChainExecutor.execute(eq(input), any(HttpSuite.class), eq(context), eq(0), any(), anyLong()))
                 .thenReturn(List.of(stubbedRow));
 
         List<TestCaseRunResult> results = worker.execute(input, context, 0, responseColumns);
@@ -139,7 +142,7 @@ class EvaluationWorkerTest {
                 .id(UUID.randomUUID())
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .build();
-        when(requestChainExecutor.execute(eq(input), eq(context), eq(0), any(), anyLong()))
+        when(requestChainExecutor.execute(eq(input), any(HttpSuite.class), eq(context), eq(0), any(), anyLong()))
                 .thenReturn(List.of(stubbedRow));
 
         List<TestCaseRunResult> results = worker.execute(input, context, 0, List.of());
@@ -182,13 +185,14 @@ class EvaluationWorkerTest {
         TestCaseRunInput input = buildTestCaseRunInput();
         EvaluationContext context = buildContext();
         List<ResponseColumnDefinitionDto> responseColumns = List.of();
-        when(requestChainExecutor.execute(any(), any(), eq(0), anyString(), anyLong()))
+        when(requestChainExecutor.execute(any(), any(HttpSuite.class), any(), eq(0), anyString(), anyLong()))
                 .thenReturn(List.of());
 
         worker.execute(input, context, 0, responseColumns);
 
         ArgumentCaptor<String> traceIdCaptor = ArgumentCaptor.forClass(String.class);
-        verify(requestChainExecutor).execute(eq(input), eq(context), eq(0), traceIdCaptor.capture(), anyLong());
+        verify(requestChainExecutor)
+                .execute(eq(input), any(HttpSuite.class), eq(context), eq(0), traceIdCaptor.capture(), anyLong());
         assertThat(traceIdCaptor.getValue()).isEqualTo(expectedTraceId);
     }
 
@@ -199,7 +203,7 @@ class EvaluationWorkerTest {
         EvaluationContext context = buildContext();
         List<ResponseColumnDefinitionDto> responseColumns = List.of();
 
-        when(requestChainExecutor.execute(any(), any(), eq(0), any(), anyLong()))
+        when(requestChainExecutor.execute(any(), any(HttpSuite.class), any(), eq(0), any(), anyLong()))
                 .thenThrow(new IllegalStateException("boom"));
         when(responseColumnExtractor.extract(anyList(), anyString(), any()))
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
@@ -224,7 +228,7 @@ class EvaluationWorkerTest {
                 .executionStatus(ExecutionStatus.ERROR)
                 .logDetails("{\"error\":\"boom\"}")
                 .build();
-        when(requestChainExecutor.execute(eq(input), eq(context), eq(0), any(), anyLong()))
+        when(requestChainExecutor.execute(eq(input), any(HttpSuite.class), eq(context), eq(0), any(), anyLong()))
                 .thenReturn(List.of(errorRow));
 
         worker.execute(input, context, 0, responseColumns);
@@ -248,7 +252,7 @@ class EvaluationWorkerTest {
                 .id(UUID.randomUUID())
                 .executionStatus(ExecutionStatus.FAILED)
                 .build();
-        when(requestChainExecutor.execute(eq(input), eq(context), eq(0), any(), anyLong()))
+        when(requestChainExecutor.execute(eq(input), any(HttpSuite.class), eq(context), eq(0), any(), anyLong()))
                 .thenReturn(List.of(successRow, failedRow));
 
         worker.execute(input, context, 0, responseColumns);
@@ -417,7 +421,7 @@ class EvaluationWorkerTest {
                 DeploymentReferenceDto.builder().id("gpt-4").build()));
     }
 
-    private EvaluationContext buildContext(SuiteTarget target) {
+    private EvaluationContext buildContext(HttpTarget target) {
         return EvaluationContext.builder()
                 .runId(UUID.randomUUID())
                 .suiteId(UUID.randomUUID())
@@ -435,6 +439,7 @@ class EvaluationWorkerTest {
                 .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(System.currentTimeMillis())
                 .target(target)
+                .suite(new HttpSuite(target, SuiteDefinitions.httpChain(null, null, null, List.of(), List.of(), null)))
                 .build();
     }
 
@@ -449,6 +454,18 @@ class EvaluationWorkerTest {
     }
 
     private EvaluationContext buildMcpContext() {
+        final McpToolTarget target = new McpToolTarget(
+                McpDeploymentReferenceDto.builder()
+                        .id("my-toolset")
+                        .type("dial-toolset")
+                        .build(),
+                ToolReferenceDto.builder()
+                        .name("search")
+                        .inputSchema(Map.of("type", "object"))
+                        .build());
+        final ArgumentTemplateDto argumentTemplate = ArgumentTemplateDto.builder()
+                .arguments(Map.of("query", "${{userQuery}}"))
+                .build();
         return EvaluationContext.builder()
                 .runId(UUID.randomUUID())
                 .suiteId(UUID.randomUUID())
@@ -465,18 +482,9 @@ class EvaluationWorkerTest {
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(FIXED_CLOCK.millis())
-                .target(new McpToolTarget(
-                        McpDeploymentReferenceDto.builder()
-                                .id("my-toolset")
-                                .type("dial-toolset")
-                                .build(),
-                        ToolReferenceDto.builder()
-                                .name("search")
-                                .inputSchema(Map.of("type", "object"))
-                                .build()))
-                .argumentTemplateDto(ArgumentTemplateDto.builder()
-                        .arguments(Map.of("query", "${{userQuery}}"))
-                        .build())
+                .target(target)
+                .suite(new McpSuite(target, argumentTemplate, List.of(), List.of()))
+                .argumentTemplateDto(argumentTemplate)
                 .inputBindings(List.of())
                 .build();
     }

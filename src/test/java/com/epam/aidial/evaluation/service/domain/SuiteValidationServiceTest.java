@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.FormPartDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartType;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
@@ -77,7 +78,7 @@ class SuiteValidationServiceTest {
                 bindingValidator,
                 new McpArgumentValidator(
                         templateVariableExtractor, new JsonSchemaPropertyExtractor(new ObjectMapper())),
-                jsonbMapper,
+                new SuiteDefinitionResolver(new SuiteTargetResolver(jsonbMapper), jsonbMapper),
                 new RequestModelValidator());
         lenient().when(evaluationRunProperties.getExecution()).thenReturn(execution);
         lenient().when(execution.getHeaderBlacklist()).thenReturn(List.of());
@@ -156,6 +157,7 @@ class SuiteValidationServiceTest {
             return TestSuiteRequestDto.builder()
                     .name("Test Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .endpointRef(EndpointContractDto.builder()
                             .method(HttpMethod.POST)
                             .relativeUrlPattern("/upload")
@@ -299,6 +301,8 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                     .name("MCP Suite")
                     .suiteType(SuiteType.MCP_TOOL)
+                    .mcpDeploymentRef(McpDeploymentReferenceDto.builder().build())
+                    .toolRef(ToolReferenceDto.builder().build())
                     .argumentTemplate(null)
                     .build();
 
@@ -377,6 +381,8 @@ class SuiteValidationServiceTest {
             return TestSuiteRequestDto.builder()
                     .name("MCP Suite")
                     .suiteType(SuiteType.MCP_TOOL)
+                    .mcpDeploymentRef(McpDeploymentReferenceDto.builder().build())
+                    .toolRef(ToolReferenceDto.builder().build())
                     .argumentTemplate(
                             ArgumentTemplateDto.builder().arguments(arguments).build())
                     .inputBindings(bindings)
@@ -434,6 +440,8 @@ class SuiteValidationServiceTest {
             return TestSuiteRequestDto.builder()
                     .name("MCP Suite")
                     .suiteType(SuiteType.MCP_TOOL)
+                    .mcpDeploymentRef(McpDeploymentReferenceDto.builder().build())
+                    .toolRef(ToolReferenceDto.builder().build())
                     .toolRef(ToolReferenceDto.builder()
                             .name("github_search")
                             .inputSchema(Map.of(
@@ -463,6 +471,7 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .endpointRef(EndpointContractDto.builder()
                             .method(HttpMethod.POST)
                             .relativeUrlPattern("/v1/chat")
@@ -483,6 +492,7 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .endpointRef(EndpointContractDto.builder()
                             .method(HttpMethod.POST)
                             .relativeUrlPattern("/v1/chat")
@@ -509,6 +519,7 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .endpointRef(EndpointContractDto.builder()
                             .method(HttpMethod.POST)
                             .relativeUrlPattern("/v1/chat")
@@ -536,6 +547,7 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .endpointRef(EndpointContractDto.builder()
                             .method(HttpMethod.POST)
                             .relativeUrlPattern("/v1/chat")
@@ -568,6 +580,7 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .endpointRef(EndpointContractDto.builder()
                             .method(HttpMethod.POST)
                             .relativeUrlPattern("/v1/chat")
@@ -593,6 +606,7 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .endpointRef(EndpointContractDto.builder()
                             .method(HttpMethod.POST)
                             .relativeUrlPattern("/v1/chat")
@@ -755,6 +769,7 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .deploymentRef(DeploymentReferenceDto.builder()
                             .id("claude-3-5-sonnet-v2")
                             .build())
@@ -837,6 +852,7 @@ class SuiteValidationServiceTest {
             return TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .deploymentRef(
                             DeploymentReferenceDto.builder().id(deploymentRefId).build())
                     .endpointRef(EndpointContractDto.builder()

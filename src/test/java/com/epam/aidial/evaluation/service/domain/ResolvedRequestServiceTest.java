@@ -246,7 +246,8 @@ class ResolvedRequestServiceTest {
         when(warningsSerializer.deserializeMap("{\"field\":\"value\"}")).thenReturn(data);
         when(turnsSerializer.deserializeTurns(null)).thenReturn(null);
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, null);
+        ResolvedRequestService.ChainPlan plan =
+                service.planChain(SUITE_ID, TEST_CASE_ID, (List<RequestDefinitionDto>) null);
 
         assertThat(plan.requestPlans()).hasSize(1);
         assertThat(plan.requestPlans().getFirst().turnDataList()).containsExactly(data);
@@ -285,7 +286,8 @@ class ResolvedRequestServiceTest {
         when(datasetSchemaProvider.getSchema(DATASET_ID)).thenReturn(schema);
         when(perTurnBindingDetector.referencesPerTurnField(bindings, schema)).thenReturn(false);
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, null);
+        ResolvedRequestService.ChainPlan plan =
+                service.planChain(SUITE_ID, TEST_CASE_ID, (List<RequestDefinitionDto>) null);
 
         assertThat(plan.requestPlans().getFirst().turnDataList()).containsExactly(sharedData);
     }
@@ -322,7 +324,8 @@ class ResolvedRequestServiceTest {
         when(datasetSchemaProvider.getSchema(DATASET_ID)).thenReturn(schema);
         when(perTurnBindingDetector.referencesPerTurnField(bindings, schema)).thenReturn(true);
 
-        ResolvedRequestService.ChainPlan plan = service.planChain(SUITE_ID, TEST_CASE_ID, null);
+        ResolvedRequestService.ChainPlan plan =
+                service.planChain(SUITE_ID, TEST_CASE_ID, (List<RequestDefinitionDto>) null);
 
         assertThat(plan.requestPlans().getFirst().turnDataList())
                 .containsExactly(
@@ -517,7 +520,7 @@ class ResolvedRequestServiceTest {
         when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
         when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.planChain(SUITE_ID, TEST_CASE_ID, null))
+        assertThatThrownBy(() -> service.planChain(SUITE_ID, TEST_CASE_ID, (List<RequestDefinitionDto>) null))
                 .isInstanceOf(EntityNotFoundException.class)
                 .hasMessageContaining("TestCase not found");
     }

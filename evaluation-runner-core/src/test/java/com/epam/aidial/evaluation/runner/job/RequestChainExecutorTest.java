@@ -19,8 +19,11 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
 import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -85,6 +88,18 @@ class RequestChainExecutorTest {
                 .snapshotTestCaseSchema(List.of());
     }
 
+    private HttpSuite suiteOf(EvaluationContext context) {
+        return new HttpSuite(
+                (HttpTarget) context.getTarget(),
+                SuiteDefinitions.httpChain(
+                        context.getSnapshotRequestName(),
+                        context.getSnapshotEndpointRef(),
+                        context.getSnapshotRequestTemplate(),
+                        context.getSnapshotInputBindings(),
+                        context.getSnapshotResponseColumns(),
+                        context.getSnapshotAdditionalRequests()));
+    }
+
     private TestCaseRunResult successRow() {
         return TestCaseRunResult.builder()
                 .id(UUID.randomUUID())
@@ -99,10 +114,10 @@ class RequestChainExecutorTest {
         EvaluationContext context =
                 baseContextBuilder().snapshotAdditionalRequests(List.of()).build();
 
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false));
 
-        List<TestCaseRunResult> rows = chainExecutor.execute(input, context, 0, "trace-1", 1000L);
+        List<TestCaseRunResult> rows = chainExecutor.execute(input, suiteOf(context), context, 0, "trace-1", 1000L);
 
         assertThat(rows).hasSize(1);
         ArgumentCaptor<RequestExecutionSpec> specCaptor = ArgumentCaptor.forClass(RequestExecutionSpec.class);
@@ -112,6 +127,7 @@ class RequestChainExecutorTest {
                 .execute(
                         eq(input),
                         eq(context),
+                        any(HttpTarget.class),
                         eq(0),
                         specCaptor.capture(),
                         frameCaptor.capture(),
@@ -147,11 +163,11 @@ class RequestChainExecutorTest {
                 .build();
 
         Map<String, Object> request0Frame = Map.of("configId", "cfg-1");
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), request0Frame, false))
                 .thenReturn(new RequestExecutionResult(List.of(successRow(), successRow()), Map.of(), false));
 
-        List<TestCaseRunResult> rows = chainExecutor.execute(input, context, 0, "trace-2", 1000L);
+        List<TestCaseRunResult> rows = chainExecutor.execute(input, suiteOf(context), context, 0, "trace-2", 1000L);
 
         assertThat(rows).hasSize(3);
         ArgumentCaptor<RequestExecutionSpec> specCaptor = ArgumentCaptor.forClass(RequestExecutionSpec.class);
@@ -161,6 +177,7 @@ class RequestChainExecutorTest {
                 .execute(
                         eq(input),
                         eq(context),
+                        any(HttpTarget.class),
                         eq(0),
                         specCaptor.capture(),
                         frameCaptor.capture(),
@@ -204,13 +221,14 @@ class RequestChainExecutorTest {
                 .id(UUID.randomUUID())
                 .executionStatus(ExecutionStatus.ERROR)
                 .build();
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(errorRow), Map.of(), true));
 
-        List<TestCaseRunResult> rows = chainExecutor.execute(input, context, 0, "trace-3", 1000L);
+        List<TestCaseRunResult> rows = chainExecutor.execute(input, suiteOf(context), context, 0, "trace-3", 1000L);
 
         assertThat(rows).containsExactly(errorRow);
-        verify(turnLoopExecutor, times(1)).execute(any(), any(), eq(0), any(), any(), anyString(), anyLong());
+        verify(turnLoopExecutor, times(1))
+                .execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong());
     }
 
     @Test
@@ -219,14 +237,14 @@ class RequestChainExecutorTest {
         TestCaseRunInput input = baseInputBuilder().testCaseName("case-4").build();
         EvaluationContext context = baseContextBuilder().build();
 
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false));
 
-        List<TestCaseRunResult> rows = chainExecutor.execute(input, context, 0, "trace-4", 1000L);
+        List<TestCaseRunResult> rows = chainExecutor.execute(input, suiteOf(context), context, 0, "trace-4", 1000L);
 
         assertThat(rows).hasSize(1);
         verify(turnLoopExecutor, times(1))
-                .execute(eq(input), eq(context), eq(0), any(), any(), eq("trace-4"), eq(1000L));
+                .execute(eq(input), eq(context), any(HttpTarget.class), eq(0), any(), any(), eq("trace-4"), eq(1000L));
     }
 
     @Test
@@ -242,15 +260,23 @@ class RequestChainExecutorTest {
                 .snapshotAdditionalRequests(List.of(additional))
                 .build();
 
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false));
 
-        chainExecutor.execute(input, context, 0, "trace-5", 1000L);
+        chainExecutor.execute(input, suiteOf(context), context, 0, "trace-5", 1000L);
 
         ArgumentCaptor<RequestExecutionSpec> specCaptor = ArgumentCaptor.forClass(RequestExecutionSpec.class);
         verify(turnLoopExecutor, times(2))
-                .execute(eq(input), eq(context), eq(0), specCaptor.capture(), any(), eq("trace-5"), eq(1000L));
+                .execute(
+                        eq(input),
+                        eq(context),
+                        any(HttpTarget.class),
+                        eq(0),
+                        specCaptor.capture(),
+                        any(),
+                        eq("trace-5"),
+                        eq(1000L));
         RequestExecutionSpec spec1 = specCaptor.getAllValues().get(1);
         assertThat(spec1.inputBindings()).isEmpty();
         assertThat(spec1.responseColumns()).isEmpty();

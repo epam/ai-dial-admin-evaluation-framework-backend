@@ -19,20 +19,17 @@ import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
-import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
-import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
@@ -195,6 +192,10 @@ class TurnLoopExecutorTest {
                         .build());
     }
 
+    private HttpTarget httpTarget(EvaluationContext context) {
+        return (HttpTarget) context.getTarget();
+    }
+
     private TestCaseRunInput.TestCaseRunInputBuilder baseInputBuilder() {
         return TestCaseRunInput.builder().runId(UUID.randomUUID()).position(0).testCaseId(UUID.randomUUID());
     }
@@ -244,6 +245,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -257,35 +259,6 @@ class TurnLoopExecutorTest {
                 .isEqualTo(ExecutionStatus.SUCCESS);
         verify(urlBuilder).buildUrl(new RouteTarget(null), OPENAI_RESPONSES);
         verify(deploymentTurnInvoker).invoke(any(), any(), eq(OPENAI_RESPONSES), any(), any(), any());
-    }
-
-    @Test
-    @DisplayName(
-            "A non-HTTP (MCP) target is a programming error: the turn loop's IllegalStateException surfaces as an ERROR row")
-    void mcpTargetIsRejected() {
-        EvaluationContext context = baseContextBuilder()
-                .target(new McpToolTarget(
-                        McpDeploymentReferenceDto.builder().id("toolset").build(),
-                        ToolReferenceDto.builder().name("search").build()))
-                .build();
-        TestCaseRunInput input =
-                baseInputBuilder().testCaseName("mcp-case").testCaseData("{}").build();
-
-        List<TestCaseRunResult> results = executor.execute(
-                        input,
-                        context,
-                        0,
-                        singleRequestSpec(context, List.of()),
-                        Map.of(),
-                        "trace-mcp",
-                        FIXED_CLOCK.millis())
-                .rows();
-
-        assertThat(results).singleElement().satisfies(row -> {
-            assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-            assertThat(row.getResponseBody()).contains("requires an HTTP suite target");
-        });
-        verify(deploymentTurnInvoker, never()).invoke(any(), any(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -312,6 +285,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -363,6 +337,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -424,6 +399,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, responseColumns),
                         Map.of(),
@@ -464,6 +440,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -503,6 +480,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -547,6 +525,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -585,6 +564,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, responseColumns),
                         Map.of(),
@@ -616,6 +596,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -655,7 +636,14 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
 
         RequestExecutionResult result = executor.execute(
-                input, context, 0, singleRequestSpec(context, List.of()), Map.of(), "trace-9", FIXED_CLOCK.millis());
+                input,
+                context,
+                httpTarget(context),
+                0,
+                singleRequestSpec(context, List.of()),
+                Map.of(),
+                "trace-9",
+                FIXED_CLOCK.millis());
 
         assertThat(result.aborted()).isFalse();
         TestCaseRunResult row = result.rows().getFirst();
@@ -696,8 +684,8 @@ class TurnLoopExecutorTest {
                         0,
                         null));
 
-        RequestExecutionResult result =
-                executor.execute(input, context, 0, spec, initialFrame, "trace-10", FIXED_CLOCK.millis());
+        RequestExecutionResult result = executor.execute(
+                input, context, httpTarget(context), 0, spec, initialFrame, "trace-10", FIXED_CLOCK.millis());
 
         assertThat(result.aborted()).isFalse();
         TestCaseRunResult row = result.rows().getFirst();
@@ -740,7 +728,14 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":\"boom\"}", 0, null));
 
         RequestExecutionResult result = executor.execute(
-                input, context, 0, singleRequestSpec(context, List.of()), Map.of(), "trace-11", FIXED_CLOCK.millis());
+                input,
+                context,
+                httpTarget(context),
+                0,
+                singleRequestSpec(context, List.of()),
+                Map.of(),
+                "trace-11",
+                FIXED_CLOCK.millis());
 
         assertThat(result.aborted()).isTrue();
         assertThat(result.rows()).hasSize(2);
@@ -780,6 +775,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -819,6 +815,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -848,6 +845,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -883,6 +881,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -920,6 +919,7 @@ class TurnLoopExecutorTest {
         RequestExecutionResult result = executor.execute(
                 input,
                 context,
+                httpTarget(context),
                 0,
                 singleRequestSpec(context, List.of()),
                 Map.of(),
@@ -956,6 +956,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
@@ -995,6 +996,7 @@ class TurnLoopExecutorTest {
         List<TestCaseRunResult> results = executor.execute(
                         input,
                         context,
+                        httpTarget(context),
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),

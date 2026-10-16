@@ -10,6 +10,8 @@ import com.epam.aidial.evaluation.runner.job.ResultBatchWriter;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.McpSuite;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +38,11 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
 
     @Override
     public void execute(EvaluationContext context) {
-        List<ResponseColumnDefinitionDto> responseColumns = context.getSnapshotResponseColumns();
+        final List<ResponseColumnDefinitionDto> responseColumns =
+                switch (context.getSuite()) {
+                    case HttpSuite h -> h.first().responseColumns();
+                    case McpSuite m -> m.responseColumns();
+                };
 
         log.info(
                 "Starting deployment evaluation for run {}: {} test case(s), {} run(s) each, concurrency={}",

@@ -12,7 +12,8 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
-import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.McpSuite;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
@@ -41,9 +42,9 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Dispatches a single test case to the right execution path: every HTTP case (DEPLOYMENT or ROUTE target) (single-request or
+ * Dispatches a single test case to the right execution path: every case of an {@link HttpSuite} (DEPLOYMENT or ROUTE target; single-request or
  * multi-request chain, single-turn or multi-turn alike) runs through {@link RequestChainExecutor}; an
- * MCP_TOOL case resolves arguments and calls the tool directly here, with its own retry loop and response
+ * {@link McpSuite} case resolves arguments and calls the tool directly here, with its own retry loop and response
  * handling. {@code responseColumns} is used only by the MCP branch — a DEPLOYMENT chain derives every
  * request's own response columns from the run snapshot (see {@link RequestChainExecutor}).
  */
@@ -87,24 +88,12 @@ public class EvaluationWorker {
                 context.getRunId(), context.getSuiteId(), input.getTestCaseId(), runIndex);
         Context traceContext = Context.current().with(span).with(baggage);
         try (Scope _ = traceContext.makeCurrent()) {
-            // MCP targets take the tool-invocation path; HTTP targets go through the request chain
-            if (context.getTarget() instanceof McpToolTarget mcpTarget) {
-                return List.of(executeMcp(
-                        input, context, mcpTarget, runIndex, responseColumns, span, traceId, execStartedAtMs));
-            }
-
-            List<TestCaseRunResult> results =
-                    requestChainExecutor.execute(input, context, runIndex, traceId, execStartedAtMs);
-
-            results.stream()
-                    .filter(row -> row.getExecutionStatus() == ExecutionStatus.ERROR)
-                    .findFirst()
-                    .ifPresent(errorRow -> span.setStatus(
-                            StatusCode.ERROR,
-                            errorRow.getLogDetails() != null
-                                    ? errorRow.getLogDetails()
-                                    : "Test case execution failed"));
-            return results;
+            // MCP suites take the tool-invocation path; HTTP suites go through the request chain
+            return switch (context.getSuite()) {
+                case McpSuite mcp ->
+                    List.of(executeMcp(input, context, mcp, runIndex, responseColumns, span, traceId, execStartedAtMs));
+                case HttpSuite http -> executeHttp(input, http, context, runIndex, span, traceId, execStartedAtMs);
+            };
 
         } catch (Exception e) {
             // Request resolution error
@@ -136,12 +125,33 @@ public class EvaluationWorker {
         }
     }
 
+    // ---- HTTP execution path ----
+
+    private List<TestCaseRunResult> executeHttp(
+            TestCaseRunInput input,
+            HttpSuite suite,
+            EvaluationContext context,
+            int runIndex,
+            Span span,
+            String traceId,
+            long execStartedAtMs) {
+        final List<TestCaseRunResult> results =
+                requestChainExecutor.execute(input, suite, context, runIndex, traceId, execStartedAtMs);
+        results.stream()
+                .filter(row -> row.getExecutionStatus() == ExecutionStatus.ERROR)
+                .findFirst()
+                .ifPresent(errorRow -> span.setStatus(
+                        StatusCode.ERROR,
+                        errorRow.getLogDetails() != null ? errorRow.getLogDetails() : "Test case execution failed"));
+        return results;
+    }
+
     // ---- MCP execution path ----
 
     private TestCaseRunResult executeMcp(
             TestCaseRunInput input,
             EvaluationContext context,
-            McpToolTarget mcpTarget,
+            McpSuite suite,
             int runIndex,
             List<ResponseColumnDefinitionDto> responseColumns,
             Span span,
@@ -149,14 +159,14 @@ public class EvaluationWorker {
             long execStartedAtMs) {
         try {
             // Use pre-deserialized typed DTOs from context
-            McpDeploymentReferenceDto mcpRef = mcpTarget.ref();
-            ToolReferenceDto toolRef = mcpTarget.tool();
-            ArgumentTemplateDto argumentTemplate = context.getArgumentTemplateDto();
+            McpDeploymentReferenceDto mcpRef = suite.target().ref();
+            ToolReferenceDto toolRef = suite.target().tool();
+            ArgumentTemplateDto argumentTemplate = suite.argumentTemplate();
 
             // Resolve effective bindings: test case override takes priority over suite-level
             List<InputBindingDto> effectiveBindings = input.getInputBindingsOverride() != null
                     ? jsonbMapper.mapInputBindings(input.getInputBindingsOverride())
-                    : context.getInputBindings();
+                    : suite.inputBindings();
 
             // Parse test case data
             Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());

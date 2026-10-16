@@ -50,6 +50,7 @@ import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
 import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
@@ -184,8 +185,7 @@ class TryItOutServiceTest {
                 mcpResponseSerializer,
                 urlBuilder,
                 new RequestModelValidator(),
-                jsonbMapper,
-                new SuiteTargetResolver(jsonbMapper),
+                new SuiteDefinitionResolver(new SuiteTargetResolver(jsonbMapper), jsonbMapper),
                 objectMapperMock,
                 serializerRegistry,
                 openTelemetry,
@@ -208,7 +208,7 @@ class TryItOutServiceTest {
         // Default: a single-request single-turn plan (no response columns), so existing single-shot tests
         // take the pre-chain fast path unchanged. Chain/multi-turn tests override this stub explicitly.
         lenient()
-                .when(resolvedRequestService.planChain(any(), any(), any()))
+                .when(resolvedRequestService.planChain(any(), any(), any(HttpSuite.class)))
                 .thenReturn(new ResolvedRequestService.ChainPlan(List.of(new ResolvedRequestService.RequestPlan(
                         new RequestExecutionSpec(0, 1, null, null, null, List.of(), List.of()), List.of(Map.of())))));
         // Multi-turn frame-binding extraction serializes via the real mapper; delegate the mock accordingly.
@@ -493,7 +493,7 @@ class TryItOutServiceTest {
                     .hasMessageContaining("request template is required");
 
             verifyNoInteractions(deploymentInvoker);
-            verify(resolvedRequestService, never()).planChain(any(), any(), any());
+            verify(resolvedRequestService, never()).planChain(any(), any(), any(HttpSuite.class));
         }
 
         @Test
@@ -571,7 +571,7 @@ class TryItOutServiceTest {
         void shouldExecuteAllTurnsThreadingFrameBindings() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"), Map.of("q", "3"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             Map<String, Object> frame1 = Map.of("history", "after-turn-0");
@@ -618,7 +618,7 @@ class TryItOutServiceTest {
         void shouldKeepEarlierTurnsColumnInFrameWhenLaterTurnReproducesNothing() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"), Map.of("q", "3"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             // Turn 0 extracts "history"; turn 1's extraction reproduces nothing for it (empty values map) —
@@ -655,7 +655,7 @@ class TryItOutServiceTest {
         void shouldStopAtFirstFailedTurn() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"), Map.of("q", "3"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             when(requestResolver.resolveForRun(eq(template), eq(bindings), any(), any()))
@@ -687,7 +687,7 @@ class TryItOutServiceTest {
         void shouldSkipExtractionOnFailedTurnDespiteResponseColumns() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             when(requestResolver.resolveForRun(eq(template), eq(bindings), any(), any()))
@@ -720,7 +720,7 @@ class TryItOutServiceTest {
         void shouldOmitRequestStampsForSingleRequestMultiTurnSuite() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, List.of()));
 
             when(requestResolver.resolveForRun(eq(template), eq(bindings), any(), any()))
@@ -751,7 +751,7 @@ class TryItOutServiceTest {
         void shouldStopWhenRequestBodyEvaluationFails() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             when(requestResolver.resolveForRun(eq(template), eq(bindings), eq(turnData.get(0)), eq(Map.of())))
@@ -772,7 +772,7 @@ class TryItOutServiceTest {
         void shouldBehaveLikeSingleTurnWhenPlanCollapsesToSingleTurn() {
             setUpDeploymentSuite();
             // Empty response columns: the fast path must not touch the extractor at all (design D6).
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(List.of(Map.of("shared", "value")), List.of()));
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
@@ -880,7 +880,7 @@ class TryItOutServiceTest {
         @DisplayName("threads request #0's real extracted columns into request #1's frame")
         void shouldThreadExtractedColumnsFromRequestZeroIntoRequestOnesFrame() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, columns0, List.of()));
 
             when(requestResolver.resolveForRun(eq(template0), eq(bindings), eq(Map.of()), eq(Map.of())))
@@ -907,7 +907,7 @@ class TryItOutServiceTest {
         @DisplayName("invokes each chain request with its own endpoint's HTTP method")
         void shouldInvokeEachRequestWithItsOwnHttpMethod() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.GET, List.of(), List.of()));
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
@@ -938,7 +938,7 @@ class TryItOutServiceTest {
                     new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec2, List.of(Map.of()))));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(plan);
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
@@ -961,7 +961,7 @@ class TryItOutServiceTest {
             setUpDeploymentSuite();
             // objectMapperMock.createObjectNode() — use the real mapper to build the error envelope
             when(objectMapperMock.createObjectNode()).thenAnswer(inv -> realObjectMapper.createObjectNode());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
 
             // Request #0 succeeds on a non-canonical path; request #1 targets Anthropic Messages with a
@@ -993,7 +993,7 @@ class TryItOutServiceTest {
                 + "omitting turnIndex/totalTurns for its single-turn requests")
         void shouldStampIdentityOnTwoRequestChain() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
@@ -1027,7 +1027,7 @@ class TryItOutServiceTest {
                 + "chain request defines response columns")
         void shouldOmitExtractionFieldsWhenNoRequestDefinesResponseColumns() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
@@ -1060,7 +1060,7 @@ class TryItOutServiceTest {
             ResolvedRequestService.ChainPlan plan = new ResolvedRequestService.ChainPlan(List.of(
                     new ResolvedRequestService.RequestPlan(spec0, turnData0),
                     new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of()))));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(plan);
 
             when(requestResolver.resolveForRun(eq(template0), eq(bindings), eq(turnData0.get(0)), eq(Map.of())))
@@ -1106,7 +1106,7 @@ class TryItOutServiceTest {
                     new RequestExecutionSpec(0, 2, null, buildEndpointRef(), template0, bindings, List.of());
             RequestExecutionSpec spec1 =
                     new RequestExecutionSpec(1, 2, "  ", buildEndpointRef(), template1, bindings, List.of());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
@@ -1141,7 +1141,7 @@ class TryItOutServiceTest {
                     new RequestExecutionSpec(1, 3, "second", buildEndpointRef(), template1, bindings, columns1);
             RequestExecutionSpec spec2 =
                     new RequestExecutionSpec(2, 3, "third", buildEndpointRef(), template2, bindings, List.of());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())),
@@ -1187,7 +1187,7 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(new ResolvedRequestService.RequestPlan(
                             new RequestExecutionSpec(0, 1, null, null, null, List.of(), responseColumns),
                             List.of(Map.of())))));
@@ -1493,7 +1493,7 @@ class TryItOutServiceTest {
             ResolvedRequestService.ChainPlan plan = new ResolvedRequestService.ChainPlan(List.of(
                     new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of()))));
-            when(resolvedRequestService.planChainForVariables(eq(SUITE_ID), any()))
+            when(resolvedRequestService.planChainForVariables(any(HttpSuite.class)))
                     .thenReturn(plan);
 
             List<InputBindingDto> expectedBindings = List.of(InputBindingDto.builder()
@@ -1674,7 +1674,7 @@ class TryItOutServiceTest {
             RequestExecutionSpec spec1 =
                     new RequestExecutionSpec(1, 2, null, buildEndpointRef(), template1, List.of(), List.of());
             lenient()
-                    .when(resolvedRequestService.planChainForVariables(eq(SUITE_ID), any()))
+                    .when(resolvedRequestService.planChainForVariables(any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
@@ -1727,7 +1727,7 @@ class TryItOutServiceTest {
                     new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec2, List.of(Map.of()))));
-            when(resolvedRequestService.planChainForVariables(eq(SUITE_ID), any()))
+            when(resolvedRequestService.planChainForVariables(any(HttpSuite.class)))
                     .thenReturn(plan);
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
@@ -1904,7 +1904,7 @@ class TryItOutServiceTest {
         void shouldExtractFromAssembledDocumentWhileDtoKeepsEventsEnvelope() {
             setUpDeploymentSuite();
             // Single-request/single-turn fast path with response columns.
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(answerColumn));
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
@@ -1945,7 +1945,7 @@ class TryItOutServiceTest {
                     new RequestExecutionSpec(0, 2, null, buildEndpointRef(), template0, bindings, answerColumn);
             RequestExecutionSpec spec1 =
                     new RequestExecutionSpec(1, 2, "followup", buildEndpointRef(), template1, bindings, List.of());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
@@ -1988,7 +1988,7 @@ class TryItOutServiceTest {
         @DisplayName("a non-OpenAI-mode stream extracts against the events envelope the run path would see")
         void shouldExtractFromEventsEnvelopeForStructuredStream() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(answerColumn));
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
@@ -2018,7 +2018,7 @@ class TryItOutServiceTest {
                     new RequestExecutionSpec(0, 2, null, buildEndpointRef(), template0, bindings, answerColumn);
             RequestExecutionSpec spec1 =
                     new RequestExecutionSpec(1, 2, "followup", buildEndpointRef(), template1, bindings, List.of());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
@@ -2052,7 +2052,7 @@ class TryItOutServiceTest {
                 + "streamingStatus=TIMEOUT")
         void shouldSkipExtractionForTimedOutStreamOnFastPath() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(answerColumn));
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");

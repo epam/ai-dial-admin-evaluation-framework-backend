@@ -1,6 +1,8 @@
 package com.epam.aidial.evaluation.runner.model.suite;
 
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
+import java.util.List;
 
 /**
  * Internal, derived view of everything a test suite does: WHERE it calls ({@link SuiteTarget}) paired with
@@ -16,4 +18,10 @@ public sealed interface SuiteDefinition permits HttpSuite, McpSuite {
 
     /** Where this suite calls. */
     SuiteTarget target();
+
+    /**
+     * Response columns of request #0 (HTTP) or of the tool call (MCP) - what the engine's
+     * {@code responseColumns} parameter used to receive.
+     */
+    List<ResponseColumnDefinitionDto> responseColumns();
 }

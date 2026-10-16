@@ -96,8 +96,7 @@ class InProcessEvaluationExecutorTest {
                 .createdAtMs(System.currentTimeMillis())
                 .suite(new HttpSuite(
                         new DeploymentTarget(null),
-                        SuiteDefinitions.httpChain(null, null, null, List.of(), List.of(), null)))
-                .snapshotResponseColumns(List.of());
+                        SuiteDefinitions.httpChain(null, null, null, List.of(), List.of(), null)));
     }
 
     private TestCaseRunInput buildInput() {

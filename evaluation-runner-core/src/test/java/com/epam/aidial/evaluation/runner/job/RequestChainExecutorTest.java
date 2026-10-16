@@ -71,33 +71,28 @@ class RequestChainExecutorTest {
                 .numberOfTestCases(1)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .createdAtMs(Instant.parse("2026-01-01T00:00:00Z").toEpochMilli())
-                .target(new DeploymentTarget(
-                        DeploymentReferenceDto.builder().id("gpt-4").build()))
-                .snapshotEndpointRef(EndpointContractDto.builder()
-                        .method(HttpMethod.POST)
-                        .relativeUrlPattern("/v1/chat")
-                        .build())
-                .snapshotRequestTemplate(RequestTemplateDto.builder()
-                        .urlTemplate("/v1/chat")
-                        .body(JsonRequestBodyDto.builder()
-                                .content(Map.of("messages", "hi"))
-                                .build())
-                        .build())
-                .snapshotInputBindings(List.of())
-                .snapshotResponseColumns(List.of())
                 .snapshotTestCaseSchema(List.of());
     }
 
-    private HttpSuite suiteOf(EvaluationContext context) {
+    private HttpSuite httpSuite(String requestName, List<RequestDefinitionDto> additionalRequests) {
         return new HttpSuite(
-                (HttpTarget) context.getTarget(),
+                new DeploymentTarget(
+                        DeploymentReferenceDto.builder().id("gpt-4").build()),
                 SuiteDefinitions.httpChain(
-                        context.getSnapshotRequestName(),
-                        context.getSnapshotEndpointRef(),
-                        context.getSnapshotRequestTemplate(),
-                        context.getSnapshotInputBindings(),
-                        context.getSnapshotResponseColumns(),
-                        context.getSnapshotAdditionalRequests()));
+                        requestName,
+                        EndpointContractDto.builder()
+                                .method(HttpMethod.POST)
+                                .relativeUrlPattern("/v1/chat")
+                                .build(),
+                        RequestTemplateDto.builder()
+                                .urlTemplate("/v1/chat")
+                                .body(JsonRequestBodyDto.builder()
+                                        .content(Map.of("messages", "hi"))
+                                        .build())
+                                .build(),
+                        List.of(),
+                        List.of(),
+                        additionalRequests));
     }
 
     private TestCaseRunResult successRow() {
@@ -111,13 +106,13 @@ class RequestChainExecutorTest {
     @DisplayName("Empty additionalRequests executes exactly one request with totalRequests=1")
     void emptyAdditionalRequests_executesOneRequest() {
         TestCaseRunInput input = baseInputBuilder().testCaseName("case-1").build();
-        EvaluationContext context =
-                baseContextBuilder().snapshotAdditionalRequests(List.of()).build();
+        HttpSuite suite = httpSuite(null, List.of());
+        EvaluationContext context = baseContextBuilder().suite(suite).build();
 
         when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false));
 
-        List<TestCaseRunResult> rows = chainExecutor.execute(input, suiteOf(context), context, 0, "trace-1", 1000L);
+        List<TestCaseRunResult> rows = chainExecutor.execute(input, suite, context, 0, "trace-1", 1000L);
 
         assertThat(rows).hasSize(1);
         ArgumentCaptor<RequestExecutionSpec> specCaptor = ArgumentCaptor.forClass(RequestExecutionSpec.class);
@@ -157,17 +152,15 @@ class RequestChainExecutorTest {
                         .build()))
                 .inputBindings(List.of())
                 .build();
-        EvaluationContext context = baseContextBuilder()
-                .snapshotRequestName("configure")
-                .snapshotAdditionalRequests(List.of(additional))
-                .build();
+        HttpSuite suite = httpSuite("configure", List.of(additional));
+        EvaluationContext context = baseContextBuilder().suite(suite).build();
 
         Map<String, Object> request0Frame = Map.of("configId", "cfg-1");
         when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), request0Frame, false))
                 .thenReturn(new RequestExecutionResult(List.of(successRow(), successRow()), Map.of(), false));
 
-        List<TestCaseRunResult> rows = chainExecutor.execute(input, suiteOf(context), context, 0, "trace-2", 1000L);
+        List<TestCaseRunResult> rows = chainExecutor.execute(input, suite, context, 0, "trace-2", 1000L);
 
         assertThat(rows).hasSize(3);
         ArgumentCaptor<RequestExecutionSpec> specCaptor = ArgumentCaptor.forClass(RequestExecutionSpec.class);
@@ -213,9 +206,8 @@ class RequestChainExecutorTest {
                 .requestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/v1/second").build())
                 .build();
-        EvaluationContext context = baseContextBuilder()
-                .snapshotAdditionalRequests(List.of(additional))
-                .build();
+        HttpSuite suite = httpSuite(null, List.of(additional));
+        EvaluationContext context = baseContextBuilder().suite(suite).build();
 
         TestCaseRunResult errorRow = TestCaseRunResult.builder()
                 .id(UUID.randomUUID())
@@ -224,7 +216,7 @@ class RequestChainExecutorTest {
         when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(errorRow), Map.of(), true));
 
-        List<TestCaseRunResult> rows = chainExecutor.execute(input, suiteOf(context), context, 0, "trace-3", 1000L);
+        List<TestCaseRunResult> rows = chainExecutor.execute(input, suite, context, 0, "trace-3", 1000L);
 
         assertThat(rows).containsExactly(errorRow);
         verify(turnLoopExecutor, times(1))
@@ -235,12 +227,13 @@ class RequestChainExecutorTest {
     @DisplayName("Null additionalRequests is treated as an empty chain (legacy/defensive)")
     void nullAdditionalRequests_treatedAsEmptyChain() {
         TestCaseRunInput input = baseInputBuilder().testCaseName("case-4").build();
-        EvaluationContext context = baseContextBuilder().build();
+        HttpSuite suite = httpSuite(null, null);
+        EvaluationContext context = baseContextBuilder().suite(suite).build();
 
         when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false));
 
-        List<TestCaseRunResult> rows = chainExecutor.execute(input, suiteOf(context), context, 0, "trace-4", 1000L);
+        List<TestCaseRunResult> rows = chainExecutor.execute(input, suite, context, 0, "trace-4", 1000L);
 
         assertThat(rows).hasSize(1);
         verify(turnLoopExecutor, times(1))
@@ -256,15 +249,14 @@ class RequestChainExecutorTest {
                 .requestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/v1/second").build())
                 .build();
-        EvaluationContext context = baseContextBuilder()
-                .snapshotAdditionalRequests(List.of(additional))
-                .build();
+        HttpSuite suite = httpSuite(null, List.of(additional));
+        EvaluationContext context = baseContextBuilder().suite(suite).build();
 
         when(turnLoopExecutor.execute(any(), any(), any(HttpTarget.class), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false));
 
-        chainExecutor.execute(input, suiteOf(context), context, 0, "trace-5", 1000L);
+        chainExecutor.execute(input, suite, context, 0, "trace-5", 1000L);
 
         ArgumentCaptor<RequestExecutionSpec> specCaptor = ArgumentCaptor.forClass(RequestExecutionSpec.class);
         verify(turnLoopExecutor, times(2))

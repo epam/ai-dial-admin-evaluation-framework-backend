@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.runner.model.suite;
 
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
 import java.util.List;
 
@@ -16,6 +17,11 @@ public record HttpSuite(HttpTarget target, List<RequestExecutionSpec> chain) imp
     /** Request #0 of the chain. */
     public RequestExecutionSpec first() {
         return chain.get(0);
+    }
+
+    @Override
+    public List<ResponseColumnDefinitionDto> responseColumns() {
+        return first().responseColumns();
     }
 
     /** Returns a copy of this suite calling {@code newTarget} instead, with the same chain. */

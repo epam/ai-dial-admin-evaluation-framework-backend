@@ -1,4 +1,4 @@
-# `SuiteTarget` sealed hierarchy
+# `SuiteTarget` / `SuiteDefinition` sealed hierarchy
 
 What a suite invokes is modelled internally as a sealed `SuiteTarget` (`com.epam.aidial.evaluation.runner.model.target`, `evaluation-runner-core`, shared with `eval-cli`), not as a flat `suiteType` plus four nullable ref fields.
 
@@ -32,7 +32,9 @@ The target is derived **once per entry point** and then passed down:
 | runner-core / `eval-cli` | `SuiteTargets.fromSnapshot(SuiteSnapshotDto)`, `SuiteTargets.fromSuiteResponse(TestSuiteResponseDto)` |
 | main app | `SuiteTargetResolver.fromEntity(TestSuite)` (JSONB strings via `JsonbMapper`), `SuiteTargetResolver.fromRequest(TestSuiteRequestDto)` |
 
-`EvaluationContext` carries only `target`; consumers never re-read the flat fields.
+(Target only. For the full target + invocation shape see the `SuiteDefinition` derivation table below.)
+
+`EvaluationContext` carries only `suite` (a `SuiteDefinition`, below; `getTarget()` derives its target); consumers never re-read the flat fields.
 
 ## Single validation point
 
@@ -46,14 +48,47 @@ Suites created before `suiteType` existed have it null, which means DEPLOYMENT. 
 
 Branch with an exhaustive `switch` (type or record patterns) and **no `default`**, so adding a variant is a compile error at every site. An `instanceof` guard is acceptable when only one variant is special (e.g. `target instanceof RouteTarget`).
 
+## Invocation shape: `SuiteDefinition`
+
+`SuiteTarget` says WHERE a suite calls; `SuiteDefinition` (`runner.model.suite`, `evaluation-runner-core`) pairs it with WHAT is sent:
+
+```
+SuiteDefinition (sealed)
+├── HttpSuite(HttpTarget target, List<RequestExecutionSpec> chain)   // chain[0] = suite's own request, then additionalRequests
+└── McpSuite(McpToolTarget target, argumentTemplate, inputBindings, responseColumns)
+```
+
+`SuiteDefinition` exposes `target()` and `responseColumns()`. `RequestExecutionSpec` (moved from `runner.job` to `runner.model.suite`) is one request of the HTTP chain.
+
+**Why pair them.** Illegal combinations (an MCP target with a request chain, an HTTP target with an `argumentTemplate`) are unrepresentable. `EvaluationContext` carries one value (`suite`) instead of nine nullable fields. Consumers use exhaustive `switch`es (`case HttpSuite h`, `case McpSuite m`, no `default`) in `EvaluationWorker`, `SuiteValidationService`, `TemplateVariableService`, `TryItOutService` and `InProcessEvaluationExecutor`, instead of branching on `SuiteType`. `TurnLoopExecutor` receives the `HttpTarget` directly.
+
+### Derivation
+
+| Where | Derivation |
+|-------|------------|
+| runner-core / `eval-cli` | `SuiteDefinitions.fromSnapshot(SuiteSnapshotDto)`, `SuiteDefinitions.fromSuiteResponse(TestSuiteResponseDto)`; the single HTTP chain builder is `SuiteDefinitions.httpChain` |
+| main app, persisted rows | `SuiteDefinitionResolver.fromEntity(TestSuite)` — no validation; also used for revalidation of persisted suites |
+| main app, incoming request | `SuiteDefinitionResolver.fromRequest(TestSuiteRequestDto)` — delegates target validation to `SuiteTargetResolver.fromRequest` (same 400s, same order) |
+
+HTTP chain: request #0 comes from the suite's singular fields (`requestTemplate`, `endpointRef`, `inputBindings`, `responseColumns`, `requestName`), followed by `additionalRequests[i]` as request `i+1`. `ResolvedRequestService.planChain(UUID, UUID, HttpSuite)` / `planChainForVariables(HttpSuite)` and `RequestChainExecutor` consume the chain; there is no second spec builder. `testCaseSchema` stays suite-level (`EvaluationContext.snapshotTestCaseSchema`).
+
+### Cheap vs full
+
+Use `SuiteTargetResolver` / `SuiteTargets` when only the target is needed (createRun guards, immutability check, mappers): the full definition deserializes every JSONB column (templates, bindings, columns, additional requests). Build a `SuiteDefinition` only where the invocation shape is consumed.
+
+### Boundary and soft fields
+
+Still flat on the wire, in DB JSONB and in the snapshot JSON; the definition is derived once per entry point and never serialized. Request #0 of a DEPLOYMENT suite may legitimately have null `endpointRef` / `requestTemplate`: these are soft warnings in `SuiteValidationService`, not hard-required (only ROUTE hard-requires them, via `SuiteTargetResolver.fromRequest`). `SuiteTargets.typeOrDefault` remains at persistence/mapper boundaries. The records do not null-check.
+
 ## Adding a fourth target kind
 
 1. Add the value to `SuiteType` and a record under `model.target` implementing `SuiteTarget` (or `HttpTarget` if it is invoked over HTTP; update the `permits`).
 2. Add flat ref field(s) to the DTOs/snapshot, a Flyway migration for the column(s), regenerate jOOQ, and update `docs/database-schema.md`.
 3. Extend the `SuiteTargets` factories and `SuiteTargetResolver.fromEntity`/`fromRequest` (hard-required fields + "others must be empty" checks).
-4. Fix every compile error from the now non-exhaustive switches (no `default` to hide them).
-5. Update OpenAPI examples and tests (`SuiteTargetResolver`, `SuiteTargets`, a functional create/run path).
+4. Decide which `SuiteDefinition` variant the target belongs to (`HttpSuite` for an `HttpTarget`; `McpSuite` for MCP-like), or add a new variant; extend `SuiteDefinitions` (`fromSnapshot`/`fromSuiteResponse`) and `SuiteDefinitionResolver` (`fromEntity`/`fromRequest`).
+5. Fix every compile error from the now non-exhaustive switches (no `default` to hide them).
+6. Update OpenAPI examples and tests (`SuiteTargetResolver`, `SuiteTargets`, `SuiteDefinitions`, `SuiteDefinitionResolver`, a functional create/run path).
 
-## Deliberately not modelled
+## Not modelled
 
-The **invocation shape** is still flat: `requestTemplate` / `endpointRef` / `additionalRequests` (HTTP) vs `argumentTemplate` (MCP) are validated and consumed independently in `TemplateVariableService` and `SuiteValidationService`, keyed off `SuiteType` (via `SuiteTargets.typeOrDefault`), not the target. Folding them into the target records is a possible follow-up, out of scope here.
+Nothing target-related remains flat internally. The one deliberate pass-through is `TestSuiteMapper.toCloneEntity`, which copies the source entity's raw `suiteType` (and flat ref columns) rather than going through a target or definition.

@@ -438,7 +438,6 @@ class EvaluationWorkerTest {
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(System.currentTimeMillis())
-                .target(target)
                 .suite(new HttpSuite(target, SuiteDefinitions.httpChain(null, null, null, List.of(), List.of(), null)))
                 .build();
     }
@@ -482,10 +481,7 @@ class EvaluationWorkerTest {
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(FIXED_CLOCK.millis())
-                .target(target)
                 .suite(new McpSuite(target, argumentTemplate, List.of(), List.of()))
-                .argumentTemplateDto(argumentTemplate)
-                .inputBindings(List.of())
                 .build();
     }
 }

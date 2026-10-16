@@ -13,7 +13,6 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.job.PerTurnBindingDetector;
 import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
 import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
-import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
@@ -107,32 +106,18 @@ public class ResolvedRequestService {
     }
 
     /**
-     * Plans the whole request chain for a test-case try-it-out, mirroring {@code RequestChainExecutor
-     * .buildSpecs} (spec construction) and {@code TurnLoopExecutor.buildTurnPlan} (per-request turn-count
-     * decision) so a preview never disagrees with what a real run would do for the same suite/test case.
-     * Spec 0 is built from the suite's own fields (labelled by the suite-level {@code requestName}); specs
-     * 1..N from {@code additionalRequests} in order. Turn count is decided <strong>per request</strong>
+     * Plans the whole request chain for a test-case try-it-out, mirroring {@code SuiteDefinitions.httpChain}
+     * (spec construction) and {@code TurnLoopExecutor.buildTurnPlan} (per-request turn-count decision) so a
+     * preview never disagrees with what a real run would do for the same suite/test case. The chain comes
+     * from an already-derived {@link HttpSuite} (the caller derived it once from the suite entity, so
+     * nothing is deserialized again); the suite entity is still loaded here for its {@code datasetId}.
+     * Spec 0 is the suite's own request (labelled by the suite-level {@code requestName}); specs 1..N are
+     * {@code additionalRequests} in order. Turn count is decided <strong>per request</strong>
      * from that request's own {@code inputBindings}: a single-turn case (no readable {@code multiTurnData}
      * turns) plans exactly one turn from shared {@code data} for every request; otherwise each request
      * either collapses to one shared-data turn (no effective binding on a {@code perTurn=true} schema
      * field) or plans one merged turn per {@code multiTurnData} entry. The dataset schema is loaded
-     * lazily, at most once for the whole chain — only when the case has readable turns.
-     *
-     * @param additionalRequests the suite's already-deserialized {@code additionalRequests} (nullable /
-     *     empty for a single-request suite). The caller maps them for its own precondition pass before the
-     *     test case is looked up (400-before-404, design D7) and passes them in here, so one try-out never
-     *     deserializes that JSONB column twice.
-     */
-    @Transactional(value = "metaTransactionManager", readOnly = true)
-    public ChainPlan planChain(UUID testSuiteId, UUID testCaseId, List<RequestDefinitionDto> additionalRequests) {
-        final TestSuite suite = loadSuite(testSuiteId);
-        return planChain(suite, testCaseId, buildSpecs(suite, additionalRequests));
-    }
-
-    /**
-     * Same planning as {@link #planChain(UUID, UUID, List)}, taking the chain from an already-derived
-     * {@link HttpSuite} (the caller derived it once from the suite entity, so nothing is deserialized
-     * again). The suite entity is still loaded here for its {@code datasetId}.
+     * lazily, at most once for the whole chain - only when the case has readable turns.
      */
     @Transactional(value = "metaTransactionManager", readOnly = true)
     public ChainPlan planChain(UUID testSuiteId, UUID testCaseId, HttpSuite httpSuite) {
@@ -167,17 +152,10 @@ public class ResolvedRequestService {
     }
 
     /**
-     * Plans the request chain for variables-mode try-it-out: suite fields + {@code additionalRequests}
-     * only — no test case is loaded (variables mode has none), so there is no turn planning and every
-     * request plans exactly one turn over an empty data map. {@code additionalRequests} is supplied
-     * already-deserialized by the caller for the same reason as in {@link #planChain}.
+     * Plans the request chain for variables-mode try-it-out from an already-derived {@link HttpSuite}: no
+     * test case is loaded (variables mode has none), so there is no turn planning and every request plans
+     * exactly one turn over an empty data map.
      */
-    @Transactional(value = "metaTransactionManager", readOnly = true)
-    public ChainPlan planChainForVariables(UUID testSuiteId, List<RequestDefinitionDto> additionalRequests) {
-        return singleTurnChainPlan(buildSpecs(loadSuite(testSuiteId), additionalRequests), Map.of());
-    }
-
-    /** Variables-mode planning from an already-derived {@link HttpSuite}; see {@link #planChainForVariables(UUID, List)}. */
     public ChainPlan planChainForVariables(HttpSuite httpSuite) {
         return singleTurnChainPlan(httpSuite.chain(), Map.of());
     }
@@ -193,17 +171,6 @@ public class ResolvedRequestService {
         final List<Map<String, Object>> singleTurn = List.of(data);
         return new ChainPlan(
                 specs.stream().map(spec -> new RequestPlan(spec, singleTurn)).toList());
-    }
-
-    /** Builds the request chain from the suite entity plus the caller-supplied {@code additionalRequests}. */
-    private List<RequestExecutionSpec> buildSpecs(TestSuite suite, List<RequestDefinitionDto> additionalRequests) {
-        return SuiteDefinitions.httpChain(
-                suite.getRequestName(),
-                jsonbMapper.mapEndpointContract(suite.getEndpointRef()),
-                jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()),
-                jsonbMapper.mapInputBindings(suite.getInputBindings()),
-                jsonbMapper.mapResponseColumns(suite.getResponseColumns()),
-                additionalRequests);
     }
 
     /** Merges the case's shared data with one turn's own map; per-turn keys win on collision. */

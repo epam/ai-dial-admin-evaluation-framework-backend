@@ -27,7 +27,9 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
 import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
@@ -168,29 +170,68 @@ class TurnLoopExecutorTest {
                 .build();
     }
 
-    private EvaluationContext.EvaluationContextBuilder baseContextBuilder() {
-        return EvaluationContext.builder()
-                .runId(UUID.randomUUID())
-                .suiteId(UUID.randomUUID())
-                .numberOfRuns(1)
-                .numberOfTestCases(1)
-                .maxRetries(0)
-                .retryDelayMs(100L)
-                .retryBackoffMultiplier(2.0)
-                .maxRetryDelayMs(1000L)
-                .resultBatchSize(100)
-                .maxResponseSizeBytes(5_000_000L)
-                .executor(Executors.newVirtualThreadPerTaskExecutor())
-                .createdAtMs(FIXED_CLOCK.millis())
-                .target(new DeploymentTarget(DeploymentReferenceDto.builder()
-                        .id("gpt-4")
-                        .name("GPT-4")
-                        .build()))
-                .snapshotEndpointRef(EndpointContractDto.builder()
-                        .method(HttpMethod.POST)
-                        .relativeUrlPattern("/v1/chat")
-                        .build());
+    private ContextFixture baseContextBuilder() {
+        return new ContextFixture();
     }
+
+    /**
+     * Test-local stand-in for the old flat builder fields: collects the request #0 shape and target, then
+     * assembles the {@link HttpSuite} that {@link EvaluationContext#getSuite()} carries.
+     */
+    private static final class ContextFixture {
+        private HttpTarget target = new DeploymentTarget(
+                DeploymentReferenceDto.builder().id("gpt-4").name("GPT-4").build());
+        private RequestTemplateDto requestTemplate;
+        private List<InputBindingDto> inputBindings;
+        private List<FieldDefinitionDto> testCaseSchema;
+
+        ContextFixture target(HttpTarget newTarget) {
+            this.target = newTarget;
+            return this;
+        }
+
+        ContextFixture requestTemplate(RequestTemplateDto newTemplate) {
+            this.requestTemplate = newTemplate;
+            return this;
+        }
+
+        ContextFixture inputBindings(List<InputBindingDto> newBindings) {
+            this.inputBindings = newBindings;
+            return this;
+        }
+
+        ContextFixture snapshotTestCaseSchema(List<FieldDefinitionDto> schema) {
+            this.testCaseSchema = schema;
+            return this;
+        }
+
+        EvaluationContext build() {
+            return EvaluationContext.builder()
+                    .runId(UUID.randomUUID())
+                    .suiteId(UUID.randomUUID())
+                    .numberOfRuns(1)
+                    .numberOfTestCases(1)
+                    .maxRetries(0)
+                    .retryDelayMs(100L)
+                    .retryBackoffMultiplier(2.0)
+                    .maxRetryDelayMs(1000L)
+                    .resultBatchSize(100)
+                    .maxResponseSizeBytes(5_000_000L)
+                    .executor(Executors.newVirtualThreadPerTaskExecutor())
+                    .createdAtMs(FIXED_CLOCK.millis())
+                    .suite(new HttpSuite(
+                            target,
+                            SuiteDefinitions.httpChain(
+                                    null, ENDPOINT_REF, requestTemplate, inputBindings, List.of(), List.of())))
+                    .snapshotTestCaseSchema(testCaseSchema)
+                    .build();
+        }
+    }
+
+    private static final EndpointContractDto ENDPOINT_REF = EndpointContractDto.builder()
+            .method(HttpMethod.POST)
+            .relativeUrlPattern("/v1/chat")
+            .build();
 
     private HttpTarget httpTarget(EvaluationContext context) {
         return (HttpTarget) context.getTarget();
@@ -208,13 +249,14 @@ class TurnLoopExecutorTest {
      */
     private RequestExecutionSpec singleRequestSpec(
             EvaluationContext context, List<ResponseColumnDefinitionDto> responseColumns) {
+        final RequestExecutionSpec first = ((HttpSuite) context.getSuite()).first();
         return new RequestExecutionSpec(
                 0,
                 1,
-                context.getSnapshotRequestName(),
-                context.getSnapshotEndpointRef(),
-                context.getSnapshotRequestTemplate(),
-                context.getSnapshotInputBindings(),
+                first.name(),
+                first.endpointRef(),
+                first.requestTemplate(),
+                first.inputBindings(),
                 responseColumns);
     }
 
@@ -230,13 +272,13 @@ class TurnLoopExecutorTest {
 
         EvaluationContext context = baseContextBuilder()
                 .target(new RouteTarget(null))
-                .snapshotRequestTemplate(RequestTemplateDto.builder()
+                .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate(OPENAI_RESPONSES)
                         .body(JsonRequestBodyDto.builder()
                                 .content(Map.of("model", "not-a-deployment"))
                                 .build())
                         .build())
-                .snapshotInputBindings(List.of())
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
         TestCaseRunInput input =
@@ -271,8 +313,8 @@ class TurnLoopExecutorTest {
                 .testCaseData(rawDataJson)
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", "${{prompt}}")))
-                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                .requestTemplate(jsonBodyTemplate(Map.of("messages", "${{prompt}}")))
+                .inputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("prompt")
                         .dataField("prompt")
                         .build()))
@@ -313,8 +355,8 @@ class TurnLoopExecutorTest {
                 .build();
         // `prompt` is NOT bound — only `system` (shared, perTurn=false) is bound — so no per-turn binding.
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("system", "${{system}}")))
-                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                .requestTemplate(jsonBodyTemplate(Map.of("system", "${{system}}")))
+                .inputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("system")
                         .dataField("system")
                         .build()))
@@ -365,8 +407,8 @@ class TurnLoopExecutorTest {
                 .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"}]")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonataBodyTemplate(source))
-                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                .requestTemplate(jsonataBodyTemplate(source))
+                .inputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("prompt")
                         .dataField("prompt")
                         .build()))
@@ -432,8 +474,8 @@ class TurnLoopExecutorTest {
         TestCaseRunInput input =
                 baseInputBuilder().testCaseName("bad-body").testCaseData("{}").build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonataBodyTemplate("1 + 1"))
-                .snapshotInputBindings(List.of())
+                .requestTemplate(jsonataBodyTemplate("1 + 1"))
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
@@ -472,8 +514,8 @@ class TurnLoopExecutorTest {
                 .testCaseData("{}")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
-                .snapshotInputBindings(List.of())
+                .requestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
@@ -505,9 +547,8 @@ class TurnLoopExecutorTest {
                 .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"},{\"prompt\":\"q2\"}]")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(
-                        jsonBodyTemplate(Map.of("messages", List.of(Map.of("content", "${{prompt}}")))))
-                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                .requestTemplate(jsonBodyTemplate(Map.of("messages", List.of(Map.of("content", "${{prompt}}")))))
+                .inputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("prompt")
                         .dataField("prompt")
                         .build()))
@@ -548,8 +589,8 @@ class TurnLoopExecutorTest {
         TestCaseRunInput input =
                 baseInputBuilder().testCaseName("http-error").testCaseData("{}").build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
-                .snapshotInputBindings(List.of())
+                .requestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
         List<ResponseColumnDefinitionDto> responseColumns = List.of(ResponseColumnDefinitionDto.builder()
@@ -588,8 +629,8 @@ class TurnLoopExecutorTest {
                 .multiTurnData("[]")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", List.of())))
-                .snapshotInputBindings(List.of())
+                .requestTemplate(jsonBodyTemplate(Map.of("messages", List.of())))
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
@@ -625,8 +666,8 @@ class TurnLoopExecutorTest {
                 .testCaseData("{\"prompt\":\"hi\"}")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", "${{prompt}}")))
-                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                .requestTemplate(jsonBodyTemplate(Map.of("messages", "${{prompt}}")))
+                .inputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("prompt")
                         .dataField("prompt")
                         .build()))
@@ -659,14 +700,14 @@ class TurnLoopExecutorTest {
         TestCaseRunInput input =
                 baseInputBuilder().testCaseName("second-req").testCaseData("{}").build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotInputBindings(List.of())
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
         RequestExecutionSpec spec = new RequestExecutionSpec(
                 1,
                 2,
                 "second",
-                context.getSnapshotEndpointRef(),
+                ((HttpSuite) context.getSuite()).first().endpointRef(),
                 jsonataBodyTemplate("{\"cfg\": $configId, \"messages\": \"hi\"}"),
                 List.of(),
                 List.of(ResponseColumnDefinitionDto.builder()
@@ -711,9 +752,8 @@ class TurnLoopExecutorTest {
                 .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"}]")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(
-                        jsonBodyTemplate(Map.of("messages", List.of(Map.of("content", "${{prompt}}")))))
-                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                .requestTemplate(jsonBodyTemplate(Map.of("messages", List.of(Map.of("content", "${{prompt}}")))))
+                .inputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("prompt")
                         .dataField("prompt")
                         .build()))
@@ -766,9 +806,9 @@ class TurnLoopExecutorTest {
                 .testCaseData("{}")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(fixedPathJsonBodyTemplate(
+                .requestTemplate(fixedPathJsonBodyTemplate(
                         ANTHROPIC_MESSAGES, Map.of("model", "other-deployment", "messages", List.of())))
-                .snapshotInputBindings(List.of())
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
@@ -804,9 +844,8 @@ class TurnLoopExecutorTest {
                 .testCaseData("{}")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(
-                        fixedPathJsonBodyTemplate(OPENAI_RESPONSES, Map.of("model", "gpt-4", "input", "hi")))
-                .snapshotInputBindings(List.of())
+                .requestTemplate(fixedPathJsonBodyTemplate(OPENAI_RESPONSES, Map.of("model", "gpt-4", "input", "hi")))
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
         when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
@@ -836,9 +875,9 @@ class TurnLoopExecutorTest {
                 .testCaseData("{}")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(fixedPathJsonataBodyTemplate(
+                .requestTemplate(fixedPathJsonataBodyTemplate(
                         OPENAI_RESPONSES, "{\"model\": \"other-deployment\", \"input\": \"hi\"}"))
-                .snapshotInputBindings(List.of())
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
@@ -871,8 +910,8 @@ class TurnLoopExecutorTest {
                 .testCaseData("{}")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("model", "some-other-value", "messages", "hi")))
-                .snapshotInputBindings(List.of())
+                .requestTemplate(jsonBodyTemplate(Map.of("model", "some-other-value", "messages", "hi")))
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
         when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
@@ -902,10 +941,10 @@ class TurnLoopExecutorTest {
                 .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"},{\"prompt\":\"q2\"}]")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(fixedPathJsonBodyTemplate(
+                .requestTemplate(fixedPathJsonBodyTemplate(
                         ANTHROPIC_MESSAGES,
                         Map.of("model", "other-deployment", "messages", List.of(Map.of("content", "${{prompt}}")))))
-                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                .inputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("prompt")
                         .dataField("prompt")
                         .build()))
@@ -947,9 +986,9 @@ class TurnLoopExecutorTest {
                         .id("cli-target")
                         .name("CLI Target")
                         .build()))
-                .snapshotRequestTemplate(
+                .requestTemplate(
                         fixedPathJsonBodyTemplate(ANTHROPIC_MESSAGES, Map.of("model", "gpt-4", "messages", List.of())))
-                .snapshotInputBindings(List.of())
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
@@ -985,9 +1024,9 @@ class TurnLoopExecutorTest {
                         .id("cli-target")
                         .name("CLI Target")
                         .build()))
-                .snapshotRequestTemplate(fixedPathJsonBodyTemplate(
+                .requestTemplate(fixedPathJsonBodyTemplate(
                         ANTHROPIC_MESSAGES, Map.of("model", "cli-target", "messages", List.of())))
-                .snapshotInputBindings(List.of())
+                .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
         when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))

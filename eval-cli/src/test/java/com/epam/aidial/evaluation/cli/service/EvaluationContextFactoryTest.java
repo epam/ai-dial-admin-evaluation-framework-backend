@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.cli.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -9,12 +10,21 @@ import com.epam.aidial.evaluation.cli.config.properties.TargetProperties;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
+import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.util.CredentialKind;
 import java.time.Clock;
 import java.time.Instant;
@@ -89,8 +99,7 @@ class EvaluationContextFactoryTest {
 
         // The --deployment-id override becomes the effective target the shared engine validates the
         // resolved request "model" against — the source suite's own ref is deliberately discarded.
-        assertThat(context.getSnapshotDeploymentRef()).isEqualTo(targetRef);
-        assertThat(context.getSnapshotDeploymentRef().getId()).isEqualTo("target-model");
+        assertThat(context.getTarget()).isEqualTo(new DeploymentTarget(targetRef));
     }
 
     @Test
@@ -113,8 +122,7 @@ class EvaluationContextFactoryTest {
         // it here as the target, so the engine validates against "suite-model".
         final EvaluationContext context = factory.create(suite, 1, suiteRef, null);
 
-        assertThat(context.getSnapshotDeploymentRef()).isEqualTo(suiteRef);
-        assertThat(context.getSnapshotDeploymentRef().getId()).isEqualTo("suite-model");
+        assertThat(context.getTarget()).isEqualTo(new DeploymentTarget(suiteRef));
     }
 
     @Test
@@ -204,7 +212,16 @@ class EvaluationContextFactoryTest {
         final EvaluationContext context = factory.create(
                 suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
 
-        assertThat(context.getSnapshotAdditionalRequests()).containsExactly(second, third);
+        final List<RequestExecutionSpec> chain = ((HttpSuite) context.getSuite()).chain();
+        assertThat(chain).hasSize(3);
+        assertThat(chain.subList(1, 3))
+                .extracting(
+                        RequestExecutionSpec::name,
+                        RequestExecutionSpec::endpointRef,
+                        RequestExecutionSpec::requestTemplate)
+                .containsExactly(
+                        tuple(second.getName(), second.getEndpointRef(), second.getRequestTemplate()),
+                        tuple(third.getName(), third.getEndpointRef(), third.getRequestTemplate()));
     }
 
     @Test
@@ -221,12 +238,12 @@ class EvaluationContextFactoryTest {
         final EvaluationContext context = factory.create(
                 suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
 
-        assertThat(context.getSnapshotRequestName()).isEqualTo("primary");
+        assertThat(((HttpSuite) context.getSuite()).first().name()).isEqualTo("primary");
     }
 
     @Test
-    @DisplayName("defaults a null additionalRequests to an empty list")
-    void defaultsNullAdditionalRequestsToEmptyList() {
+    @DisplayName("a null additionalRequests yields a single-request chain")
+    void nullAdditionalRequestsYieldsSingleRequestChain() {
         final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
                 .id(UUID.randomUUID())
                 .datasetId(UUID.randomUUID())
@@ -237,7 +254,7 @@ class EvaluationContextFactoryTest {
         final EvaluationContext context = factory.create(
                 suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
 
-        assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
+        assertThat(((HttpSuite) context.getSuite()).chain()).hasSize(1);
     }
 
     @Test
@@ -299,5 +316,47 @@ class EvaluationContextFactoryTest {
                 suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
 
         assertThat(context.getSnapshotTestCaseSchema()).isNull();
+    }
+
+    @Test
+    @DisplayName("a ROUTE suite yields a RouteTarget carrying the suite's routesRef, ignoring the deployment override")
+    void routeSuiteYieldsRouteTarget() {
+        final RouteReferenceDto routesRef =
+                RouteReferenceDto.builder().name("routes/platform/r1").build();
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .suiteType(SuiteType.ROUTE)
+                .routesRef(routesRef)
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        final EvaluationContext context = factory.create(
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
+
+        assertThat(context.getTarget()).isEqualTo(new RouteTarget(routesRef));
+    }
+
+    @Test
+    @DisplayName("an MCP_TOOL suite yields a McpToolTarget carrying the suite's MCP deployment and tool refs")
+    void mcpSuiteYieldsMcpToolTarget() {
+        final McpDeploymentReferenceDto mcpRef =
+                McpDeploymentReferenceDto.builder().id("toolset").build();
+        final ToolReferenceDto toolRef =
+                ToolReferenceDto.builder().name("search").build();
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .suiteType(SuiteType.MCP_TOOL)
+                .mcpDeploymentRef(mcpRef)
+                .toolRef(toolRef)
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        final EvaluationContext context = factory.create(suite, 1, null, null);
+
+        assertThat(context.getTarget()).isEqualTo(new McpToolTarget(mcpRef, toolRef));
     }
 }

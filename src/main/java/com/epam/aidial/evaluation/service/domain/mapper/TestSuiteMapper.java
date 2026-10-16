@@ -46,7 +46,7 @@ public class TestSuiteMapper {
         List<ValidationWarningDto> validationWarnings =
                 warningsSerializer.deserializeWarnings(entity.getValidationWarnings());
 
-        SuiteType suiteType = entity.getSuiteType() != null ? entity.getSuiteType() : SuiteType.DEPLOYMENT;
+        SuiteType suiteType = entity.getSuiteType();
 
         return TestSuiteResponseDto.builder()
                 .id(entity.getId())
@@ -83,7 +83,7 @@ public class TestSuiteMapper {
         if (dto == null) {
             return null;
         }
-        SuiteType suiteType = dto.getSuiteType() != null ? dto.getSuiteType() : SuiteType.DEPLOYMENT;
+        SuiteType suiteType = dto.getSuiteType();
         return TestSuite.builder()
                 .name(dto.getName())
                 .description(dto.getDescription())
@@ -234,7 +234,7 @@ public class TestSuiteMapper {
         if (entity == null) {
             return null;
         }
-        SuiteType suiteType = entity.getSuiteType() != null ? entity.getSuiteType() : SuiteType.DEPLOYMENT;
+        SuiteType suiteType = entity.getSuiteType();
         return TestSuiteRequestDto.builder()
                 .name(entity.getName())
                 .description(entity.getDescription())

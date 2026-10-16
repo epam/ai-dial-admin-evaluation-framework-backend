@@ -13,9 +13,11 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyValidationException;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
@@ -102,7 +104,7 @@ public class TurnLoopExecutor {
      * Runs this request's turn loop, returning one {@link TestCaseRunResult} per executed turn (fewer than
      * planned {@code N} on early abort; exactly one for the {@code N = 1} case), the accumulated frame this
      * request ended with, and whether this request aborted (Decision 8/9/11 of the {@code
-     * add-multi-request-suite} change's {@code design.md}). {@code spec} carries this request's own
+     * add-multi-request-suite} change's {@code design.md}). {@code target} is the suite's HTTP target; {@code spec} carries this request's own
      * template/bindings/columns/endpoint; {@code initialFrame} is the frame accumulated by earlier requests
      * in the chain (empty for request #0); {@code traceId} is the test-case-run span's id (shared by every
      * row of every request).
@@ -110,6 +112,7 @@ public class TurnLoopExecutor {
     public RequestExecutionResult execute(
             TestCaseRunInput input,
             EvaluationContext context,
+            HttpTarget target,
             int runIndex,
             RequestExecutionSpec spec,
             Map<String, Object> initialFrame,
@@ -122,9 +125,6 @@ public class TurnLoopExecutor {
         final RequestTemplateDto template = input.getRequestTemplateOverride() != null
                 ? jsonbMapper.mapRequestTemplate(input.getRequestTemplateOverride())
                 : spec.requestTemplate();
-        final String deploymentId = context.getSnapshotDeploymentRef() != null
-                ? context.getSnapshotDeploymentRef().getId()
-                : null;
         final HttpMethod method =
                 spec.endpointRef() != null ? spec.endpointRef().getMethod() : null;
         final List<ResponseColumnDefinitionDto> responseColumns = spec.responseColumns();
@@ -172,13 +172,13 @@ public class TurnLoopExecutor {
                         template,
                         bindings,
                         turnData,
-                        deploymentId,
                         method,
                         responseColumns,
                         accumulated,
                         input.getTestCaseId(),
                         turnIndex,
-                        context);
+                        context,
+                        target);
                 final long turnEnd = clock.millis();
 
                 if (step.control() == TurnControl.CONTINUE) {
@@ -321,13 +321,13 @@ public class TurnLoopExecutor {
             RequestTemplateDto template,
             List<InputBindingDto> bindings,
             Map<String, Object> turnData,
-            String deploymentId,
             HttpMethod method,
             List<ResponseColumnDefinitionDto> responseColumns,
             Map<String, Object> frameBindings,
             UUID testCaseId,
             int turnIndex,
-            EvaluationContext context) {
+            EvaluationContext context,
+            HttpTarget target) {
 
         final ResolvedRequestDto resolved;
         try {
@@ -345,10 +345,10 @@ public class TurnLoopExecutor {
         final ResolvedBodyDto resolvedBody = resolved.getBody();
         final String requestBodyJson = serializeResolvedBodyForAnalytics(resolvedBody);
 
-        final SuiteType suiteType = context.getSuiteType() != null ? context.getSuiteType() : SuiteType.DEPLOYMENT;
-        if (suiteType == SuiteType.DEPLOYMENT) {
+        if (target instanceof DeploymentTarget d) {
             try {
-                requestModelValidator.validateForExecution(resolved.getUrl(), resolvedBody, deploymentId);
+                requestModelValidator.validateForExecution(
+                        resolved.getUrl(), resolvedBody, d.ref().getId());
             } catch (RequestBodyValidationException e) {
                 log.warn(
                         "Turn {} for test case {} failed resolved request-model validation: {}",
@@ -361,7 +361,7 @@ public class TurnLoopExecutor {
             }
         }
 
-        final String path = urlBuilder.buildUrl(suiteType, deploymentId, resolved.getUrl());
+        final String path = urlBuilder.buildUrl(target, resolved.getUrl());
         final HttpHeaders headers = buildHeaders(resolved.getHeaders());
         final MultiValueMap<String, String> queryParams =
                 DeploymentInvocationSupport.buildQueryParams(resolved.getQueryParams());

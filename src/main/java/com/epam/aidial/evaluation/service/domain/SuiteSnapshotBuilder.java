@@ -6,7 +6,10 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.DatasetReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
+import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
+import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -23,6 +26,7 @@ import org.springframework.stereotype.Component;
 public class SuiteSnapshotBuilder {
 
     private final JsonbMapper jsonbMapper;
+    private final SuiteTargetResolver suiteTargetResolver;
 
     public SuiteSnapshotDto build(TestSuite suite, Dataset dataset) {
         SuiteSnapshotDto.SuiteSnapshotDtoBuilder builder = SuiteSnapshotDto.builder()
@@ -40,24 +44,26 @@ public class SuiteSnapshotBuilder {
                 .overallScoreThreshold(suite.getOverallScoreThreshold())
                 .metricScoreAggregation(MetricScoreAggregation.orDefault(suite.getMetricScoreAggregation()))
                 // Request chain: additionalRequests is always '[]' for MCP_TOOL (enforced at write time by
-                // TestSuiteRequestValidator), so mapping it unconditionally is equivalent to gating it on
+                // SuiteTargetResolver.fromRequest via TestSuiteRequestValidator), so mapping it unconditionally is
+                // equivalent to gating it on
                 // suiteType and keeps this builder's common section the single place chain fields are set.
                 .additionalRequests(jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests()))
                 .requestName(suite.getRequestName());
 
-        if (suite.getSuiteType() == SuiteType.MCP_TOOL) {
-            builder.mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))
-                    .toolRef(jsonbMapper.mapToolRef(suite.getToolRef()))
-                    .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
-                    .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()));
-        } else {
-            builder.endpointRef(jsonbMapper.mapEndpointContract(suite.getEndpointRef()))
-                    .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
-                    .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()));
-            if (suite.getSuiteType() == SuiteType.ROUTE) {
-                builder.routesRef(jsonbMapper.mapRouteRef(suite.getRoutesRef()));
-            } else {
-                builder.deploymentRef(jsonbMapper.map(suite.getDeploymentRef()));
+        switch (suiteTargetResolver.fromEntity(suite)) {
+            case McpToolTarget _ ->
+                builder.mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))
+                        .toolRef(jsonbMapper.mapToolRef(suite.getToolRef()))
+                        .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
+                        .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()));
+            case HttpTarget http -> {
+                builder.endpointRef(jsonbMapper.mapEndpointContract(suite.getEndpointRef()))
+                        .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
+                        .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()));
+                switch (http) {
+                    case DeploymentTarget d -> builder.deploymentRef(d.ref());
+                    case RouteTarget r -> builder.routesRef(r.ref());
+                }
             }
         }
 

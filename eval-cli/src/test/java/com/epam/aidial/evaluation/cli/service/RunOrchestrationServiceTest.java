@@ -21,6 +21,9 @@ import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.io.File;
 import java.nio.file.Path;
@@ -82,8 +85,7 @@ class RunOrchestrationServiceTest {
 
         assertThatThrownBy(() -> service.run(bundle, null, tempDir.toString()))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("ROUTE")
-                .hasMessageContaining("not supported");
+                .hasMessage("ROUTE suite execution is not supported by eval-cli");
 
         verifyNoInteractions(
                 suiteContractValidator, evaluationContextFactory, testCaseRunnerFactory, testCaseRunInputMapper);
@@ -132,10 +134,7 @@ class RunOrchestrationServiceTest {
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .credential(CallerCredential.bearer("tok"))
                 .createdAtMs(0L)
-                .snapshotDeploymentRef(targetRef)
-                .snapshotResponseColumns(List.of())
-                .snapshotInputBindings(List.of())
-                .inputBindings(List.of())
+                .suite(httpSuite(targetRef))
                 .build();
 
         final TestCaseRunInput input = TestCaseRunInput.builder()
@@ -244,10 +243,7 @@ class RunOrchestrationServiceTest {
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .credential(CallerCredential.bearer("tok"))
                 .createdAtMs(0L)
-                .snapshotDeploymentRef(suiteDeploymentRef)
-                .snapshotResponseColumns(List.of())
-                .snapshotInputBindings(List.of())
-                .inputBindings(List.of())
+                .suite(httpSuite(suiteDeploymentRef))
                 .build();
 
         final TestCaseRunInput input = TestCaseRunInput.builder()
@@ -482,10 +478,13 @@ class RunOrchestrationServiceTest {
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .credential(CallerCredential.bearer("tok"))
                 .createdAtMs(0L)
-                .snapshotDeploymentRef(targetRef)
-                .snapshotResponseColumns(List.of())
-                .snapshotInputBindings(List.of())
-                .inputBindings(List.of())
+                .suite(httpSuite(targetRef))
                 .build();
+    }
+
+    private static HttpSuite httpSuite(DeploymentReferenceDto ref) {
+        return new HttpSuite(
+                new DeploymentTarget(ref),
+                SuiteDefinitions.httpChain(null, null, null, List.of(), List.of(), List.of()));
     }
 }

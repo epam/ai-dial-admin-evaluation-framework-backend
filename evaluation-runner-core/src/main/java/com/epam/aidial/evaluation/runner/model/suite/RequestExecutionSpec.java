@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.runner.job;
+package com.epam.aidial.evaluation.runner.model.suite;
 
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -8,9 +8,9 @@ import java.util.List;
 
 /**
  * One request's execution parameters within a suite's request chain (Decision 8 of the {@code
- * add-multi-request-suite} change's {@code design.md}) — a context-object carrier used to generalize {@link
+ * add-multi-request-suite} change's {@code design.md}) — a context-object carrier used to generalize {@code
  * TurnLoopExecutor#execute} instead of growing its parameter list past the point of maintainability. The
- * accumulated frame carried in from earlier requests in the chain is threaded separately, as {@link
+ * accumulated frame carried in from earlier requests in the chain is threaded separately, as {@code
  * TurnLoopExecutor#execute}'s own {@code initialFrame} parameter, rather than as a field here.
  *
  * @param requestIndex 0-based position of this request within the chain

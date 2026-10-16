@@ -1,6 +1,9 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.annotation.Nulls;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -13,7 +16,7 @@ import lombok.NoArgsConstructor;
 
 @Data
 @Builder
-@NoArgsConstructor
+@NoArgsConstructor(onConstructor_ = @JsonCreator)
 @AllArgsConstructor
 public class TestCaseRequestDto {
 
@@ -22,6 +25,8 @@ public class TestCaseRequestDto {
     @Schema(example = "Smoke test - happy path")
     private String testCaseName;
 
+    /** Omitted or explicit-null JSON yields an empty map (the no-args constructor is the Jackson creator). */
+    @JsonSetter(nulls = Nulls.SKIP)
     @Builder.Default
     @Schema(example = "{\"prompt\":\"Hello\",\"temperature\":0.7}")
     private Map<String, Object> data = Map.of();

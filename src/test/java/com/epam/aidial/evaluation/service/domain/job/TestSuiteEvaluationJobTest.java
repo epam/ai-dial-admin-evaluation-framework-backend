@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -26,12 +27,21 @@ import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputationExecutor;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
+import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
@@ -323,7 +333,8 @@ class TestSuiteEvaluationJobTest {
     class RequestChainWiring {
 
         @Test
-        @DisplayName("buildContext exposes snapshotAdditionalRequests and snapshotRequestName from the snapshot")
+        @DisplayName(
+                "buildContext exposes the snapshot's request chain (requestName + additionalRequests) via the suite")
         void buildContextExposesChain() {
             UUID suiteId = UUID.randomUUID();
             UUID datasetId = UUID.randomUUID();
@@ -376,13 +387,21 @@ class TestSuiteEvaluationJobTest {
                     Executors.newVirtualThreadPerTaskExecutor(),
                     CallerCredential.bearer("token"));
 
-            assertThat(context.getSnapshotRequestName()).isEqualTo("first");
-            assertThat(context.getSnapshotAdditionalRequests()).isEqualTo(additionalRequests);
+            final List<RequestExecutionSpec> chain = ((HttpSuite) context.getSuite()).chain();
+            assertThat(chain.getFirst().name()).isEqualTo("first");
+            assertThat(chain.subList(1, chain.size()))
+                    .extracting(
+                            RequestExecutionSpec::name,
+                            RequestExecutionSpec::endpointRef,
+                            RequestExecutionSpec::requestTemplate)
+                    .containsExactlyElementsOf(additionalRequests.stream()
+                            .map(r -> tuple(r.getName(), r.getEndpointRef(), r.getRequestTemplate()))
+                            .toList());
         }
 
         @Test
-        @DisplayName("buildContext yields an empty chain and null requestName for a legacy snapshot")
-        void buildContextEmptyChainForLegacySnapshot() {
+        @DisplayName("buildContext yields a single-request chain with null requestName for a legacy snapshot")
+        void buildContextSingleRequestChainForLegacySnapshot() {
             TestSuiteRun run = TestSuiteRun.builder()
                     .id(UUID.randomUUID())
                     .testSuiteId(UUID.randomUUID())
@@ -412,8 +431,9 @@ class TestSuiteEvaluationJobTest {
                     Executors.newVirtualThreadPerTaskExecutor(),
                     CallerCredential.bearer("token"));
 
-            assertThat(context.getSnapshotRequestName()).isNull();
-            assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
+            final List<RequestExecutionSpec> chain = ((HttpSuite) context.getSuite()).chain();
+            assertThat(chain.getFirst().name()).isNull();
+            assertThat(chain).hasSize(1);
         }
 
         @Test
@@ -547,6 +567,89 @@ class TestSuiteEvaluationJobTest {
                     Executors.newVirtualThreadPerTaskExecutor());
 
             assertThat(context.getOverallScoreDefinition()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("buildContext — SuiteTarget derivation")
+    class TargetWiring {
+
+        private EvaluationContext buildFor(SuiteSnapshotDto snapshot) {
+            final EvaluationRunProperties.Execution execution = new EvaluationRunProperties.Execution();
+            execution.setDefaultConcurrencyLevel(1);
+            execution.setDefaultRequestTimeoutMs(1000L);
+            execution.setResultBatchSize(10);
+            execution.setMaxResponseSizeBytes(1000L);
+            final EvaluationRunProperties.Retry retry = new EvaluationRunProperties.Retry();
+            retry.setDefaultMaxRetries(0);
+            retry.setDefaultRetryDelayMs(100L);
+            retry.setMaxRetryDelayMs(100L);
+            retry.setDefaultRetryBackoffMultiplier(1.0);
+            when(evaluationRunProperties.getExecution()).thenReturn(execution);
+            when(evaluationRunProperties.getRetry()).thenReturn(retry);
+            final TestSuiteRun run = TestSuiteRun.builder()
+                    .id(UUID.randomUUID())
+                    .testSuiteId(UUID.randomUUID())
+                    .numberOfTestCases(1)
+                    .createdAt(1000L)
+                    .build();
+            return (EvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job,
+                    "buildContext",
+                    run,
+                    snapshot,
+                    Executors.newVirtualThreadPerTaskExecutor(),
+                    CallerCredential.bearer("token"));
+        }
+
+        @Test
+        @DisplayName("DEPLOYMENT snapshot yields a DeploymentTarget carrying the deployment ref")
+        void deploymentSnapshot() {
+            final DeploymentReferenceDto ref =
+                    DeploymentReferenceDto.builder().id("gpt-4").build();
+            final EvaluationContext context = buildFor(SuiteSnapshotDto.builder()
+                    .suiteType("DEPLOYMENT")
+                    .deploymentRef(ref)
+                    .build());
+
+            assertThat(context.getTarget()).isEqualTo(new DeploymentTarget(ref));
+        }
+
+        @Test
+        @DisplayName("legacy snapshot without suiteType yields a DeploymentTarget")
+        void legacySnapshotDefaultsToDeployment() {
+            final EvaluationContext context =
+                    buildFor(SuiteSnapshotDto.builder().build());
+
+            assertThat(context.getTarget()).isInstanceOf(DeploymentTarget.class);
+        }
+
+        @Test
+        @DisplayName("ROUTE snapshot yields a RouteTarget carrying the route ref")
+        void routeSnapshot() {
+            final RouteReferenceDto ref = RouteReferenceDto.builder()
+                    .name("routes/platform/validate-route")
+                    .build();
+            final EvaluationContext context = buildFor(
+                    SuiteSnapshotDto.builder().suiteType("ROUTE").routesRef(ref).build());
+
+            assertThat(context.getTarget()).isEqualTo(new RouteTarget(ref));
+        }
+
+        @Test
+        @DisplayName("MCP_TOOL snapshot yields a McpToolTarget carrying the MCP deployment and tool refs")
+        void mcpSnapshot() {
+            final McpDeploymentReferenceDto mcpRef =
+                    McpDeploymentReferenceDto.builder().id("mcp-1").build();
+            final ToolReferenceDto toolRef =
+                    ToolReferenceDto.builder().name("search").build();
+            final EvaluationContext context = buildFor(SuiteSnapshotDto.builder()
+                    .suiteType("MCP_TOOL")
+                    .mcpDeploymentRef(mcpRef)
+                    .toolRef(toolRef)
+                    .build());
+
+            assertThat(context.getTarget()).isEqualTo(new McpToolTarget(mcpRef, toolRef));
         }
     }
 

@@ -17,7 +17,10 @@ public class TestSuite {
     private UUID id;
     private String name;
     private String description;
-    private SuiteType suiteType;
+    /** Never null: mirrors the DB column's NOT NULL DEFAULT 'DEPLOYMENT'. */
+    @Builder.Default
+    private SuiteType suiteType = SuiteType.DEPLOYMENT;
+
     private UUID datasetId;
     private String deploymentRef;
     private String routesRef;

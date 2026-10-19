@@ -309,7 +309,7 @@ Status: **Implemented**
 
 - ROUTE chains reuse `RequestChainExecutor`, `TurnLoopExecutor`, and `DialCoreUrlBuilder`; `additionalRequests` remains rejected only for `MCP_TOOL` suites.
 - New DTO: `com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto` (single copy in the shared module — `TestSuiteRequestDto` already references `RequestTemplateDto`, `InputBindingDto`, `ResponseColumnDefinitionDto` and `EndpointContractDto` from `runner.dto`).
-- New runner classes: `runner.job.RequestChainExecutor`, plus the `RequestExecutionSpec` / `RequestExecutionResult` carriers used to generalize `runner.job.TurnLoopExecutor`.
+- New runner classes: `runner.job.RequestChainExecutor`, plus the `RequestExecutionSpec` (in `runner.model.suite`, the element of `HttpSuite`'s chain) / `RequestExecutionResult` carriers used to generalize `runner.job.TurnLoopExecutor`.
 - New constants: `RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS = 10`, `RunnerValidationConstants.MAX_RESPONSE_COLUMNS = 50` (extracted from the current hardcoded `@Size(max = 50)` literal on `TestSuiteRequestDto.responseColumns`).
 - New shared component: a `ResponseColumnUnionResolver` `@Component` in `service.domain` producing the suite-wide union from a `TestSuiteRequestDto`, a `TestSuite` entity and a `SuiteSnapshotDto` — consumed by `TestSuiteRequestValidator`, `TestSuiteService.isResponseColumnsChanged`, `MetricDefinitionValidationService`, `EvalSummariesSchemaProvider` and `EvalSummaryExportColumnPlanner`.
 - Meta migration `V1.29__AddAdditionalRequestsToTestSuites.sql`; analytics migrations `V1.17__AddRequestColumnsToTestCaseRunResults.sql` and `V1.18__AddRequestColumnsToEvalSummaries.sql`, followed by `./gradlew generateJooq`.

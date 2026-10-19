@@ -23,6 +23,9 @@ import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.util.ArrayList;
 import java.util.List;
@@ -91,7 +94,9 @@ class InProcessEvaluationExecutorTest {
                 .maxResponseSizeBytes(5242880L)
                 .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(System.currentTimeMillis())
-                .snapshotResponseColumns(List.of());
+                .suite(new HttpSuite(
+                        new DeploymentTarget(null),
+                        SuiteDefinitions.httpChain(null, null, null, List.of(), List.of(), null)));
     }
 
     private TestCaseRunInput buildInput() {

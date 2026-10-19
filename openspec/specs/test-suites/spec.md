@@ -398,7 +398,7 @@ Status: **Implemented**
 
 ### Requirement: SuiteType enum in data model
 
-`TestSuite.suiteType` SHALL be typed as `SuiteType` enum (not `String`) in the data model class. `TestSuiteRecordMapper` SHALL call `SuiteType.fromValue(rs.getString("suite_type"))` to map the DB value. Callers of `testSuite.getSuiteType()` SHALL compare directly against enum constants (e.g. `SuiteType.MCP_TOOL`) rather than using string comparison or helper methods. `SuiteType.fromValue()` SHALL throw `IllegalArgumentException` on unrecognized values (fail-fast).
+`TestSuite.suiteType` SHALL be typed as `SuiteType` enum (not `String`) in the data model class, and SHALL never be null in Java (`@Builder.Default` = `DEPLOYMENT`, matching the column default). `TestSuiteRecordMapper` SHALL map the DB value via `SuiteType.fromValue`, which SHALL throw `IllegalArgumentException` on unrecognized values (fail-fast). Code SHALL NOT branch on the enum directly: the type is resolved once per entry point into the sealed `SuiteTarget` / `SuiteDefinition` hierarchy (`SuiteTargetResolver`, `SuiteDefinitionResolver`, `SuiteTargets`, `SuiteDefinitions`) and consumers switch exhaustively on those (see `docs/patterns/suite-target.md`). The only direct `SuiteType` comparison outside the target package is the update-time immutability check.
 Status: **Implemented**
 
 #### Scenario: DEPLOYMENT suite type mapped from DB
@@ -413,9 +413,13 @@ Status: **Implemented**
 - **WHEN** the DB row has an unrecognized `suite_type` value
 - **THEN** `SuiteType.fromValue()` throws `IllegalArgumentException`
 
-#### Scenario: MCP branching uses enum comparison
-- **WHEN** `EvaluationWorker` (or any service) needs to branch on MCP vs deployment
-- **THEN** it compares `testSuite.getSuiteType() == SuiteType.MCP_TOOL` directly (no string comparison or helper method)
+#### Scenario: ROUTE suite type mapped from DB
+- **WHEN** the DB row has `suite_type = 'ROUTE'`
+- **THEN** `TestSuite.suiteType` is `SuiteType.ROUTE`
+
+#### Scenario: Branching goes through the sealed target model
+- **WHEN** a component (worker, validation service, try-it-out, template variable service, CLI) needs to distinguish HTTP from MCP suites, or DEPLOYMENT from ROUTE targets
+- **THEN** it switches exhaustively on `SuiteDefinition` (`HttpSuite`/`McpSuite`) or `SuiteTarget` (`DeploymentTarget`/`RouteTarget`/`McpToolTarget`) with no `default` arm, rather than comparing `SuiteType` constants
 
 ---
 

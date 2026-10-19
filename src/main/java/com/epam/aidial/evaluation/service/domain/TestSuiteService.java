@@ -471,8 +471,8 @@ public class TestSuiteService {
      * Rejects update if suiteType is changed.
      */
     private void validateSuiteTypeImmutability(TestSuite existing, TestSuiteRequestDto dto) {
-        SuiteType existingType = existing.getSuiteType() != null ? existing.getSuiteType() : SuiteType.DEPLOYMENT;
-        SuiteType requestType = dto.getSuiteType() != null ? dto.getSuiteType() : SuiteType.DEPLOYMENT;
+        SuiteType existingType = existing.getSuiteType();
+        SuiteType requestType = dto.getSuiteType();
         if (existingType != requestType) {
             throw new ValidationException("Suite type cannot be changed. Current: " + existingType.getValue()
                     + ", requested: " + requestType.getValue());

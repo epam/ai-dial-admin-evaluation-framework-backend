@@ -40,16 +40,21 @@ import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
-import com.epam.aidial.evaluation.runner.job.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.job.SseEvent;
 import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
+import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
@@ -180,7 +185,7 @@ class TryItOutServiceTest {
                 mcpResponseSerializer,
                 urlBuilder,
                 new RequestModelValidator(),
-                jsonbMapper,
+                new SuiteDefinitionResolver(new SuiteTargetResolver(jsonbMapper), jsonbMapper),
                 objectMapperMock,
                 serializerRegistry,
                 openTelemetry,
@@ -203,7 +208,7 @@ class TryItOutServiceTest {
         // Default: a single-request single-turn plan (no response columns), so existing single-shot tests
         // take the pre-chain fast path unchanged. Chain/multi-turn tests override this stub explicitly.
         lenient()
-                .when(resolvedRequestService.planChain(any(), any(), any()))
+                .when(resolvedRequestService.planChain(any(), any(), any(HttpSuite.class)))
                 .thenReturn(new ResolvedRequestService.ChainPlan(List.of(new ResolvedRequestService.RequestPlan(
                         new RequestExecutionSpec(0, 1, null, null, null, List.of(), List.of()), List.of(Map.of())))));
         // Multi-turn frame-binding extraction serializes via the real mapper; delegate the mock accordingly.
@@ -227,6 +232,12 @@ class TryItOutServiceTest {
                 .validationWarnings("[]")
                 .valid(true)
                 .createdBy("test")
+                .build();
+    }
+
+    private RouteReferenceDto buildRouteRef() {
+        return RouteReferenceDto.builder()
+                .name("routes/platform/validate-route")
                 .build();
     }
 
@@ -309,7 +320,7 @@ class TryItOutServiceTest {
             when(jsonbMapper.map(suite.getDeploymentRef())).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract(suite.getEndpointRef())).thenReturn(buildEndpointRef());
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
@@ -331,17 +342,19 @@ class TryItOutServiceTest {
             suite.setSuiteType(SuiteType.ROUTE);
             suite.setRoutesRef("{\"name\":\"routes/platform/validate-route\"}");
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.mapRouteRef(suite.getRoutesRef())).thenReturn(buildRouteRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             ResolvedRequestDto resolved = fixedPathResolvedRequest(OPENAI_RESPONSES, "not-a-deployment");
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(resolved);
-            when(urlBuilder.buildUrl(SuiteType.ROUTE, null, OPENAI_RESPONSES)).thenReturn(OPENAI_RESPONSES);
+            when(urlBuilder.buildUrl(any(RouteTarget.class), eq(OPENAI_RESPONSES)))
+                    .thenReturn(OPENAI_RESPONSES);
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
 
             TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
 
             assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
-            verify(urlBuilder).buildUrl(SuiteType.ROUTE, null, OPENAI_RESPONSES);
+            verify(urlBuilder).buildUrl(any(RouteTarget.class), eq(OPENAI_RESPONSES));
             verify(deploymentInvoker).invokeWithStreaming(any(), eq(OPENAI_RESPONSES), any(), any(), any());
         }
 
@@ -365,6 +378,22 @@ class TryItOutServiceTest {
             assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("Deployment reference is required");
+        }
+
+        @Test
+        @DisplayName("ROUTE with a missing route reference throws 'Route reference is required for try-it-out'")
+        void shouldThrowForMissingRouteRef() {
+            TestSuite suite = buildSuite(null, "{}", "{}");
+            suite.setSuiteType(SuiteType.ROUTE);
+            suite.setRoutesRef(" ");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.mapRouteRef(" ")).thenReturn(null);
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("Route reference is required for try-it-out");
+            verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
         }
 
         @Test
@@ -464,7 +493,7 @@ class TryItOutServiceTest {
                     .hasMessageContaining("request template is required");
 
             verifyNoInteractions(deploymentInvoker);
-            verify(resolvedRequestService, never()).planChain(any(), any(), any());
+            verify(resolvedRequestService, never()).planChain(any(), any(), any(HttpSuite.class));
         }
 
         @Test
@@ -501,7 +530,8 @@ class TryItOutServiceTest {
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID))
                     .thenReturn(fixedPathResolvedRequest(OPENAI_RESPONSES, "gpt-4"));
-            when(urlBuilder.buildUrl("gpt-4", OPENAI_RESPONSES)).thenReturn(OPENAI_RESPONSES);
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq(OPENAI_RESPONSES)))
+                    .thenReturn(OPENAI_RESPONSES);
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
 
@@ -541,7 +571,7 @@ class TryItOutServiceTest {
         void shouldExecuteAllTurnsThreadingFrameBindings() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"), Map.of("q", "3"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             Map<String, Object> frame1 = Map.of("history", "after-turn-0");
@@ -553,7 +583,8 @@ class TryItOutServiceTest {
             when(requestResolver.resolveForRun(eq(template), eq(bindings), eq(turnData.get(2)), eq(frame2)))
                     .thenReturn(buildResolvedRequest());
 
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/gpt-4/chat/completions");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any()))
+                    .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 1)))
@@ -587,7 +618,7 @@ class TryItOutServiceTest {
         void shouldKeepEarlierTurnsColumnInFrameWhenLaterTurnReproducesNothing() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"), Map.of("q", "3"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             // Turn 0 extracts "history"; turn 1's extraction reproduces nothing for it (empty values map) —
@@ -602,7 +633,8 @@ class TryItOutServiceTest {
             when(requestResolver.resolveForRun(eq(template), eq(bindings), eq(turnData.get(2)), eq(frameAfterTurnZero)))
                     .thenReturn(buildResolvedRequest());
 
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/gpt-4/chat/completions");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any()))
+                    .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 1)))
@@ -623,12 +655,13 @@ class TryItOutServiceTest {
         void shouldStopAtFirstFailedTurn() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"), Map.of("q", "3"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             when(requestResolver.resolveForRun(eq(template), eq(bindings), any(), any()))
                     .thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/gpt-4/chat/completions");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any()))
+                    .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
                     .thenReturn(nonStreamingResult(500, Map.of("error", "boom")));
@@ -654,12 +687,12 @@ class TryItOutServiceTest {
         void shouldSkipExtractionOnFailedTurnDespiteResponseColumns() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             when(requestResolver.resolveForRun(eq(template), eq(bindings), any(), any()))
                     .thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
                     .thenReturn(nonStreamingResult(500, Map.of("error", "boom")));
@@ -687,12 +720,12 @@ class TryItOutServiceTest {
         void shouldOmitRequestStampsForSingleRequestMultiTurnSuite() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, List.of()));
 
             when(requestResolver.resolveForRun(eq(template), eq(bindings), any(), any()))
                     .thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 1)));
@@ -718,7 +751,7 @@ class TryItOutServiceTest {
         void shouldStopWhenRequestBodyEvaluationFails() {
             setUpDeploymentSuite();
             List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(turnData, responseColumns));
 
             when(requestResolver.resolveForRun(eq(template), eq(bindings), eq(turnData.get(0)), eq(Map.of())))
@@ -739,10 +772,10 @@ class TryItOutServiceTest {
         void shouldBehaveLikeSingleTurnWhenPlanCollapsesToSingleTurn() {
             setUpDeploymentSuite();
             // Empty response columns: the fast path must not touch the extractor at all (design D6).
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(List.of(Map.of("shared", "value")), List.of()));
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
@@ -847,7 +880,7 @@ class TryItOutServiceTest {
         @DisplayName("threads request #0's real extracted columns into request #1's frame")
         void shouldThreadExtractedColumnsFromRequestZeroIntoRequestOnesFrame() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, columns0, List.of()));
 
             when(requestResolver.resolveForRun(eq(template0), eq(bindings), eq(Map.of()), eq(Map.of())))
@@ -856,7 +889,7 @@ class TryItOutServiceTest {
             when(requestResolver.resolveForRun(eq(template1), eq(bindings), eq(Map.of()), eq(frameAfterRequestZero)))
                     .thenReturn(buildResolvedRequest());
 
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/gpt-4/req");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/openai/deployments/gpt-4/req");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("configId", "cfg-42")))
                     .thenReturn(nonStreamingResult(200, Map.of("done", true)));
@@ -874,11 +907,11 @@ class TryItOutServiceTest {
         @DisplayName("invokes each chain request with its own endpoint's HTTP method")
         void shouldInvokeEachRequestWithItsOwnHttpMethod() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.GET, List.of(), List.of()));
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 1)));
@@ -905,11 +938,11 @@ class TryItOutServiceTest {
                     new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec2, List.of(Map.of()))));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(plan);
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(500, Map.of("error", "boom")));
 
@@ -928,7 +961,7 @@ class TryItOutServiceTest {
             setUpDeploymentSuite();
             // objectMapperMock.createObjectNode() — use the real mapper to build the error envelope
             when(objectMapperMock.createObjectNode()).thenAnswer(inv -> realObjectMapper.createObjectNode());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
 
             // Request #0 succeeds on a non-canonical path; request #1 targets Anthropic Messages with a
@@ -937,7 +970,7 @@ class TryItOutServiceTest {
                     .thenReturn(buildResolvedRequest());
             when(requestResolver.resolveForRun(eq(template1), any(), any(), any()))
                     .thenReturn(fixedPathResolvedRequest(ANTHROPIC_MESSAGES, "other-deployment"));
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)));
 
@@ -960,11 +993,11 @@ class TryItOutServiceTest {
                 + "omitting turnIndex/totalTurns for its single-turn requests")
         void shouldStampIdentityOnTwoRequestChain() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 1)));
@@ -994,11 +1027,11 @@ class TryItOutServiceTest {
                 + "chain request defines response columns")
         void shouldOmitExtractionFieldsWhenNoRequestDefinesResponseColumns() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 1)));
@@ -1027,7 +1060,7 @@ class TryItOutServiceTest {
             ResolvedRequestService.ChainPlan plan = new ResolvedRequestService.ChainPlan(List.of(
                     new ResolvedRequestService.RequestPlan(spec0, turnData0),
                     new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of()))));
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(plan);
 
             when(requestResolver.resolveForRun(eq(template0), eq(bindings), eq(turnData0.get(0)), eq(Map.of())))
@@ -1040,7 +1073,7 @@ class TryItOutServiceTest {
             when(requestResolver.resolveForRun(eq(template1), eq(bindings), eq(Map.of()), eq(frameAfterTurnOne)))
                     .thenReturn(buildResolvedRequest());
 
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 1)))
@@ -1073,13 +1106,13 @@ class TryItOutServiceTest {
                     new RequestExecutionSpec(0, 2, null, buildEndpointRef(), template0, bindings, List.of());
             RequestExecutionSpec spec1 =
                     new RequestExecutionSpec(1, 2, "  ", buildEndpointRef(), template1, bindings, List.of());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("req", 0)))
                     .thenReturn(nonStreamingResult(200, Map.of("req", 1)));
@@ -1108,7 +1141,7 @@ class TryItOutServiceTest {
                     new RequestExecutionSpec(1, 3, "second", buildEndpointRef(), template1, bindings, columns1);
             RequestExecutionSpec spec2 =
                     new RequestExecutionSpec(2, 3, "third", buildEndpointRef(), template2, bindings, List.of());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())),
@@ -1124,7 +1157,7 @@ class TryItOutServiceTest {
             when(requestResolver.resolveForRun(eq(template2), eq(bindings), eq(Map.of()), eq(frameAfterRequestZero)))
                     .thenReturn(buildResolvedRequest());
 
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("configId", "cfg-42")))
                     .thenReturn(nonStreamingResult(200, Map.of("nothing", true)))
@@ -1154,12 +1187,12 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(new ResolvedRequestService.RequestPlan(
                             new RequestExecutionSpec(0, 1, null, null, null, List.of(), responseColumns),
                             List.of(Map.of())))));
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
         }
 
@@ -1219,7 +1252,7 @@ class TryItOutServiceTest {
                                     .build())
                             .build());
             when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
@@ -1238,6 +1271,7 @@ class TryItOutServiceTest {
             suite.setSuiteType(SuiteType.ROUTE);
             suite.setRoutesRef("{\"name\":\"routes/platform/validate-route\"}");
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.mapRouteRef(suite.getRoutesRef())).thenReturn(buildRouteRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             when(jsonbMapper.mapRequestTemplate("{}"))
                     .thenReturn(RequestTemplateDto.builder()
@@ -1246,7 +1280,8 @@ class TryItOutServiceTest {
             when(requestResolver.resolve(any(), anyList(), anyMap()))
                     .thenReturn(
                             ResolvedRequestDto.builder().url("/validate/items").build());
-            when(urlBuilder.buildUrl(SuiteType.ROUTE, null, "/validate/items")).thenReturn("/validate/items");
+            when(urlBuilder.buildUrl(any(RouteTarget.class), eq("/validate/items")))
+                    .thenReturn("/validate/items");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
 
@@ -1300,7 +1335,7 @@ class TryItOutServiceTest {
                                     .build())
                             .build());
             when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
@@ -1325,7 +1360,7 @@ class TryItOutServiceTest {
                             .urlTemplate("/chat/completions")
                             .build());
             when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, null));
 
@@ -1354,7 +1389,7 @@ class TryItOutServiceTest {
                             .urlTemplate("/chat/completions")
                             .build());
             when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, null));
 
@@ -1401,7 +1436,8 @@ class TryItOutServiceTest {
                     .warnings(List.of())
                     .build();
             when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(resolved);
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
+                    .thenReturn("/path");
 
             ArgumentCaptor<HttpHeaders> headersCaptor = ArgumentCaptor.forClass(HttpHeaders.class);
             @SuppressWarnings("unchecked")
@@ -1457,7 +1493,7 @@ class TryItOutServiceTest {
             ResolvedRequestService.ChainPlan plan = new ResolvedRequestService.ChainPlan(List.of(
                     new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of()))));
-            when(resolvedRequestService.planChainForVariables(eq(SUITE_ID), any()))
+            when(resolvedRequestService.planChainForVariables(any(HttpSuite.class)))
                     .thenReturn(plan);
 
             List<InputBindingDto> expectedBindings = List.of(InputBindingDto.builder()
@@ -1471,7 +1507,7 @@ class TryItOutServiceTest {
                             eq(template1), eq(expectedBindings), eq(Map.of()), eq(frameAfterRequestZero)))
                     .thenReturn(buildResolvedRequest());
 
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("configId", "cfg-42")))
                     .thenReturn(nonStreamingResult(200, Map.of("done", true)));
@@ -1638,14 +1674,14 @@ class TryItOutServiceTest {
             RequestExecutionSpec spec1 =
                     new RequestExecutionSpec(1, 2, null, buildEndpointRef(), template1, List.of(), List.of());
             lenient()
-                    .when(resolvedRequestService.planChainForVariables(eq(SUITE_ID), any()))
+                    .when(resolvedRequestService.planChainForVariables(any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
             lenient()
                     .when(requestResolver.resolveForRun(any(), any(), any(), any()))
                     .thenReturn(buildResolvedRequest());
-            lenient().when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            lenient().when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             lenient()
                     .when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, null));
@@ -1691,11 +1727,11 @@ class TryItOutServiceTest {
                     new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())),
                     new ResolvedRequestService.RequestPlan(spec2, List.of(Map.of()))));
-            when(resolvedRequestService.planChainForVariables(eq(SUITE_ID), any()))
+            when(resolvedRequestService.planChainForVariables(any(HttpSuite.class)))
                     .thenReturn(plan);
 
             when(requestResolver.resolveForRun(any(), any(), any(), any())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(500, Map.of("error", "boom")));
 
@@ -1719,7 +1755,8 @@ class TryItOutServiceTest {
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
+                    .thenReturn("/path");
 
             InputStream sseStream =
                     new ByteArrayInputStream("data: {\"msg\":\"hi\"}\n\n".getBytes(StandardCharsets.UTF_8));
@@ -1751,7 +1788,8 @@ class TryItOutServiceTest {
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
+                    .thenReturn("/path");
 
             InputStream emptyStream = new ByteArrayInputStream(new byte[0]);
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -1775,7 +1813,8 @@ class TryItOutServiceTest {
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
+                    .thenReturn("/path");
 
             InputStream sseStream =
                     new ByteArrayInputStream("data: {\"partial\":1}\n\n".getBytes(StandardCharsets.UTF_8));
@@ -1803,7 +1842,8 @@ class TryItOutServiceTest {
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
+                    .thenReturn("/path");
 
             InputStream sseStream = new ByteArrayInputStream(new byte[0]);
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -1864,10 +1904,10 @@ class TryItOutServiceTest {
         void shouldExtractFromAssembledDocumentWhileDtoKeepsEventsEnvelope() {
             setUpDeploymentSuite();
             // Single-request/single-turn fast path with response columns.
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(answerColumn));
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             stubStream(List.of(openAiDelta("Hel"), openAiDelta("lo")), ExecutionStatus.SUCCESS, null);
             when(responseColumnExtractor.extract(eq(answerColumn), anyString(), anyString()))
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult(
@@ -1905,7 +1945,7 @@ class TryItOutServiceTest {
                     new RequestExecutionSpec(0, 2, null, buildEndpointRef(), template0, bindings, answerColumn);
             RequestExecutionSpec spec1 =
                     new RequestExecutionSpec(1, 2, "followup", buildEndpointRef(), template1, bindings, List.of());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
@@ -1915,7 +1955,7 @@ class TryItOutServiceTest {
                     .thenReturn(buildResolvedRequest());
             when(requestResolver.resolveForRun(eq(template1), eq(bindings), eq(Map.of()), eq(frameAfterRequestZero)))
                     .thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
 
             InputStream sseStream = new ByteArrayInputStream("data: {}\n\n".getBytes(StandardCharsets.UTF_8));
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -1948,10 +1988,10 @@ class TryItOutServiceTest {
         @DisplayName("a non-OpenAI-mode stream extracts against the events envelope the run path would see")
         void shouldExtractFromEventsEnvelopeForStructuredStream() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(answerColumn));
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             stubStream(
                     List.of(new SseEvent("process_rules", realObjectMapper.readTree("{\"stage\":\"one\"}"))),
                     ExecutionStatus.SUCCESS,
@@ -1978,13 +2018,13 @@ class TryItOutServiceTest {
                     new RequestExecutionSpec(0, 2, null, buildEndpointRef(), template0, bindings, answerColumn);
             RequestExecutionSpec spec1 =
                     new RequestExecutionSpec(1, 2, "followup", buildEndpointRef(), template1, bindings, List.of());
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
             when(requestResolver.resolveForRun(eq(template0), eq(bindings), eq(Map.of()), eq(Map.of())))
                     .thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             stubStream(
                     List.of(openAiDelta("Hel")),
                     ExecutionStatus.ERROR,
@@ -2012,10 +2052,10 @@ class TryItOutServiceTest {
                 + "streamingStatus=TIMEOUT")
         void shouldSkipExtractionForTimedOutStreamOnFastPath() {
             setUpDeploymentSuite();
-            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(singleRequestPlan(answerColumn));
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             stubStream(List.of(openAiDelta("Hel")), ExecutionStatus.TIMEOUT, null);
 
             TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
@@ -2044,7 +2084,7 @@ class TryItOutServiceTest {
                             .urlTemplate("/chat/completions")
                             .build());
             when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, null));
 
@@ -2084,7 +2124,7 @@ class TryItOutServiceTest {
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
@@ -2102,7 +2142,7 @@ class TryItOutServiceTest {
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
@@ -2124,7 +2164,7 @@ class TryItOutServiceTest {
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
             when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
-            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));

@@ -14,7 +14,6 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RunnerValidationConstants;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -39,62 +38,11 @@ public class TestSuiteRequestValidator {
     private final ObjectMapper objectMapper;
     private final ValidationProperties validationProperties;
     private final ResponseColumnUnionResolver responseColumnUnionResolver;
+    private final SuiteTargetResolver suiteTargetResolver;
 
-    /**
-     * Validates type-specific hard-required fields (HTTP 400 if absent).
-     * DEPLOYMENT: only deploymentRef is hard-required.
-     * MCP_TOOL: mcpDeploymentRef and toolRef are hard-required.
-     */
+    /** Validates type-specific hard-required fields (HTTP 400); see {@link SuiteTargetResolver#fromRequest}. */
     public void validateSuiteTypeFields(TestSuiteRequestDto dto) {
-        SuiteType suiteType = resolveSuiteType(dto);
-        if (suiteType == SuiteType.DEPLOYMENT) {
-            if (dto.getDeploymentRef() == null) {
-                throw new ValidationException("deploymentRef is required for DEPLOYMENT suites");
-            }
-            rejectRoutesRef(dto, suiteType);
-        } else if (suiteType == SuiteType.MCP_TOOL) {
-            if (dto.getMcpDeploymentRef() == null) {
-                throw new ValidationException("mcpDeploymentRef is required for MCP_TOOL suites");
-            }
-            if (dto.getToolRef() == null) {
-                throw new ValidationException("toolRef is required for MCP_TOOL suites");
-            }
-            if (dto.getAdditionalRequests() != null
-                    && !dto.getAdditionalRequests().isEmpty()) {
-                throw new ValidationException("additionalRequests must be empty for MCP_TOOL suites");
-            }
-            rejectRoutesRef(dto, suiteType);
-        } else if (suiteType == SuiteType.ROUTE) {
-            validateRouteFields(dto);
-        }
-    }
-
-    private void validateRouteFields(TestSuiteRequestDto dto) {
-        if (dto.getRoutesRef() == null) {
-            throw new ValidationException("routesRef is required for ROUTE suites");
-        }
-        if (dto.getEndpointRef() == null) {
-            throw new ValidationException("endpointRef is required for ROUTE suites");
-        }
-        if (dto.getRequestTemplate() == null) {
-            throw new ValidationException("requestTemplate is required for ROUTE suites");
-        }
-        rejectRouteField(dto.getDeploymentRef(), "deploymentRef");
-        rejectRouteField(dto.getMcpDeploymentRef(), "mcpDeploymentRef");
-        rejectRouteField(dto.getToolRef(), "toolRef");
-        rejectRouteField(dto.getArgumentTemplate(), "argumentTemplate");
-    }
-
-    private void rejectRoutesRef(TestSuiteRequestDto dto, SuiteType suiteType) {
-        if (dto.getRoutesRef() != null) {
-            throw new ValidationException("routesRef must be empty for " + suiteType + " suites");
-        }
-    }
-
-    private void rejectRouteField(Object value, String fieldName) {
-        if (value != null) {
-            throw new ValidationException(fieldName + " must be empty for ROUTE suites");
-        }
+        suiteTargetResolver.fromRequest(dto);
     }
 
     /**
@@ -143,7 +91,7 @@ public class TestSuiteRequestValidator {
      * Rejects a null element anywhere in {@code additionalRequests} with a hard 400 naming the index.
      * Runs first in {@link #validateTestSuiteSchemas} — before any per-request field access — so this
      * is the single write-time gate every persistence path (create, update, and clone's effective-dto
-     * revalidation) passes through; {@code RequestChainExecutor.buildSpecs} at run time therefore never
+     * revalidation) passes through; {@code SuiteDefinitions.httpChain} at run time therefore never
      * needs to defend against a null chain element (see the comment there).
      */
     private void validateNoNullAdditionalRequests(List<RequestDefinitionDto> additionalRequests) {
@@ -333,10 +281,6 @@ public class TestSuiteRequestValidator {
 
     private static String additionalRequestPrefix(int index) {
         return "additionalRequests[" + index + "].";
-    }
-
-    private SuiteType resolveSuiteType(TestSuiteRequestDto dto) {
-        return dto.getSuiteType() != null ? dto.getSuiteType() : SuiteType.DEPLOYMENT;
     }
 
     private void validateJsonFieldSize(Object value, String fieldName) {

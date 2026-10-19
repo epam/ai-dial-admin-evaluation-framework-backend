@@ -11,10 +11,9 @@
 - [x] 2.4 `RequestResolver.resolve` / `resolveForRun` / `resolveInternal`: add the schema param, pass it to JSON and `TEXT`-part resolution (URL-encoded values stay stringify-only); in `resolveMultipartBody` pass **no schema** (`null`) for `FormPartType.FILE` parts (design Decision 4). Done: old signatures removed.
 - [x] 2.5 Update runner-core callers: `TurnLoopExecutor` (`requestResolver.resolveForRun(..., context.getSnapshotTestCaseSchema())`) and `EvaluationWorker` (`mcpRequestResolver.resolve(..., context.getSnapshotTestCaseSchema())`); fix compile errors in `eval-cli` if any. Done: `./gradlew :evaluation-runner-core:compileJava :eval-cli:compileJava` succeeds.
 
-## 3. Root-app call sites and validator
+## 3. Root-app call sites
 
 - [x] 3.1 `ResolvedRequestService:93` and `TryItOutService` (`tryWithTestCase` deployment + MCP, `runChain`/`resolveForRun`): pass the dataset schema (`DatasetSchemaProvider.getSchema(suite.getDatasetId())`, loaded once per call); `tryWithVariables` passes the dataset schema too and keeps FILE-column bindings via `TryItOutVariableBindings.bindToFileColumns` (design Decision 5). Done: `./gradlew compileJava` succeeds.
-- [x] 3.2 ~~`BindingValidator` `|file`-on-non-FILE-column warning~~ — dropped: explicit `|file` on a non-FILE column is a valid pattern (design Decision 3); `BindingValidator` unchanged.
 
 ## 4. Unit tests
 
@@ -27,7 +26,7 @@
 ## 5. Functional test and verification
 
 - [x] 5.1 Add a `@PostgresFunctionalTests` case (extend `TryItOutFunctionalTests` or the run functional test that already stubs DIAL Core/`DialFileClient`): dataset with a FILE column + suite template `"url": "${{file}}"` bound to it; resolve/try-out with a test case holding `@ef/datasets/{id}/x.pdf` and assert the outgoing request contains `files/<bucket>/datasets/{id}/x.pdf`; assert the suite validates with no warnings. Done: test boots the app context and passes (`./gradlew test --tests "com.epam.aidial.evaluation.functional.PostgresFunctionalTests\$<Nested>"`).
-- [x] 5.3 Run `./gradlew spotlessApply checkstyleMain checkstyleTest :evaluation-runner-core:test :eval-cli:test` and the unit tests touched above; run `LayeredArchitectureTest` and `RunnerModuleConstraintsTest`. Done: all green (report any failure verbatim).
+- [x] 5.2 Run `./gradlew spotlessApply checkstyleMain checkstyleTest :evaluation-runner-core:test :eval-cli:test` and the unit tests touched above; run `LayeredArchitectureTest` and `RunnerModuleConstraintsTest`. Done: all green (report any failure verbatim).
 
 ## 6. Docs and specs
 

@@ -10,9 +10,9 @@ A FILE column in a dataset schema stores a short EF reference (`@ef/suites/{id}/
 
 None of them sees the test-case schema, so `${{file}}` bound to a FILE column sends the raw `@ef/...` string and DIAL Core answers 400. Meanwhile `TemplateVariableService` already reports `effectiveType: FILE` for that variable (request-template spec, "Type inference priority": declared hint > `endpointRef` > binding's `testCaseSchema` column > `STRING`), and `BindingValidator` reports no problem, so the suite is "valid".
 
-The schema is already available on every run-path call site: `EvaluationContext.snapshotTestCaseSchema` (used by `TurnLoopExecutor` and set by both `TestSuiteEvaluationJob` and `eval-cli`'s `EvaluationContextFactory`), and `DatasetSchemaProvider.getSchema(datasetId)` on the preview/try-it-out side (`ResolvedRequestService:142`).
+The schema is already available on every run-path call site: `EvaluationContext.snapshotTestCaseSchema` (used by `TurnLoopExecutor` and set by both `TestSuiteEvaluationJob` and `eval-cli`'s `EvaluationContextFactory`), and `DatasetSchemaProvider.getSchema(datasetId)` on the preview/try-it-out side (`ResolvedRequestService`).
 
-Call sites that must receive the schema: `TurnLoopExecutor:333` (`requestResolver.resolveForRun`), `EvaluationWorker:164` (`mcpRequestResolver.resolve`), `TryItOutService` (`resolveForRun`, `resolve`, MCP `resolve`), `ResolvedRequestService:93` (`requestResolver.resolve`).
+Call sites that must receive the schema: `TurnLoopExecutor` (`requestResolver.resolveForRun`), `EvaluationWorker` (`mcpRequestResolver.resolve`), `TryItOutService` (`resolveForRun`, `resolve`, MCP `resolve`), `ResolvedRequestService` (`requestResolver.resolve`).
 
 ## Goals / Non-Goals
 
@@ -104,5 +104,7 @@ Single release, no flag, no data migration. Rollback = revert; no persisted stat
 
 ## Open Questions
 
-1. Explicit `|file` on a multipart `FILE` part currently fails in the serializer (`files/` prefix rejected). Fix in a follow-up, or add a validator warning here?
-2. Should an explicit non-file hint on a FILE column (`${{doc|string}}`) warn? Proposed: no (explicit author choice).
+None — resolved:
+
+1. Explicit `|file` on a multipart `FILE` part (currently rejected by the serializer because of the `files/` prefix) is out of scope (Decision 4); no validator warning is added here.
+2. An explicit non-file hint on a FILE column (`${{doc|string}}`) does not warn — explicit author choice (Decision 3).

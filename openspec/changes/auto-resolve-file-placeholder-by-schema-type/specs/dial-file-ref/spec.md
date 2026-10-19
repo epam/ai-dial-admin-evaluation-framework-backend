@@ -64,7 +64,7 @@ Note: Multipart `FormPartDto` FILE parts (`FormPartDto.type == FILE`) are exclud
 
 ### Requirement: Single FILE-placeholder decision rule shared by all template resolvers
 
-The system SHALL decide whether a full-value `${{...}}` placeholder is a FILE reference in exactly one component, `FilePlaceholderDetector` (`runner.service`, `evaluation-runner-core`), used by `TemplateContentResolver`, `JsonataSourcePreprocessor` and `McpRequestResolver`, and by `BindingValidator` for column-type lookup. The rule SHALL be:
+The system SHALL decide whether a full-value `${{...}}` placeholder is a FILE reference in exactly one component, `FilePlaceholderDetector` (`runner.service`, `evaluation-runner-core`), used by `TemplateContentResolver`, `JsonataSourcePreprocessor` and `McpRequestResolver`. The rule SHALL be:
 
 Status: Planned
 

@@ -64,6 +64,7 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Scope;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -186,17 +187,19 @@ public class TryItOutService {
      * extraction fails to re-produce a column does not erase the previous turn's value.
      *
      * <p>Each invocation uses its own spec's {@code endpointRef} HTTP method. When {@code
-     * bindingsByRequest} is non-null (variables mode, design D8) the entry for a request's {@code
-     * requestIndex} (empty when absent) wholesale-replaces that request's own {@code inputBindings}.
+     * variablesByRequest} is non-null (variables mode, design D8) the entry for a request's {@code
+     * requestIndex} (absent: no bindings, no data) wholesale-replaces that request's own {@code inputBindings}
+     * and supplies the data its bindings resolve against.
      *
-     * <p>{@code testCaseSchema} (the dataset schema in test-case mode, {@code null} in variables mode, whose
-     * constant bindings have no bound column) lets a placeholder bound to a FILE field resolve to a DIAL ref.
+     * <p>{@code testCaseSchema} (the dataset schema) lets a placeholder bound to a FILE field resolve to a
+     * DIAL ref; in variables mode the FILE-column bindings are kept by {@link
+     * TryItOutVariableBindings#bindToFileColumns}.
      */
     private TryItOutResponseDto runChain(
             ResolvedRequestService.ChainPlan plan,
             HttpTarget target,
             UUID testSuiteId,
-            Map<Integer, List<InputBindingDto>> bindingsByRequest,
+            Map<Integer, TryItOutVariableBindings.VariableResolution> variablesByRequest,
             List<FieldDefinitionDto> testCaseSchema) {
         Map<String, Object> frame = Map.of();
         final List<TryItOutResponseDto> history = new ArrayList<>();
@@ -210,13 +213,17 @@ public class TryItOutService {
         chain:
         for (ResolvedRequestService.RequestPlan requestPlan : plan.requestPlans()) {
             final RequestExecutionSpec spec = requestPlan.spec();
-            final List<InputBindingDto> bindings = bindingsByRequest != null
-                    ? bindingsByRequest.getOrDefault(spec.requestIndex(), List.of())
+            final TryItOutVariableBindings.VariableResolution variables =
+                    variablesByRequest != null ? variablesByRequest.get(spec.requestIndex()) : null;
+            final List<InputBindingDto> bindings = variablesByRequest != null
+                    ? (variables != null ? variables.bindings() : List.of())
                     : spec.inputBindings();
             final int totalTurns = requestPlan.turnDataList().size();
 
             for (int turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
-                final Map<String, Object> turnData = requestPlan.turnDataList().get(turnIndex);
+                final Map<String, Object> turnData = variables != null
+                        ? variables.data()
+                        : requestPlan.turnDataList().get(turnIndex);
                 boolean failed;
                 ResolvedRequestDto resolved = null;
                 try {
@@ -407,23 +414,23 @@ public class TryItOutService {
     public TryItOutResponseDto tryWithVariables(UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
         final TestSuite suite = loadSuite(testSuiteId);
         return switch (suiteDefinitionResolver.fromEntity(suite)) {
-            case McpSuite m -> tryMcpWithVariables(m, testSuiteId, variables);
+            case McpSuite m -> tryMcpWithVariables(suite, m, testSuiteId, variables);
             case HttpSuite h -> tryHttpWithVariables(suite, h, testSuiteId, variables);
         };
     }
 
     private TryItOutResponseDto tryMcpWithVariables(
-            McpSuite mcpSuite, UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
+            TestSuite suite, McpSuite mcpSuite, UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
         final McpDeploymentReferenceDto mcpRef = mcpSuite.target().ref();
         final ToolReferenceDto toolRef = mcpSuite.target().tool();
         final ArgumentTemplateDto argumentTemplate = mcpSuite.argumentTemplate();
         validateMcpPreconditions(mcpRef, toolRef);
 
-        final List<InputBindingDto> bindings =
-                variableBindings.toBindingsByRequest(variables, 1).get(0);
-        final Map<String, Object> requestVariables = variables.get(0) != null ? variables.get(0) : Map.of();
+        final List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(suite.getDatasetId());
+        final TryItOutVariableBindings.VariableResolution resolution = variableBindings.bindToFileColumns(
+                variableBindings.toBindingsByRequest(variables, 1).get(0), mcpSuite.inputBindings(), schema);
         McpRequestResolver.ResolutionResult resolutionResult =
-                mcpRequestResolver.resolveWithVariables(argumentTemplate, bindings, requestVariables);
+                mcpRequestResolver.resolve(argumentTemplate, resolution.bindings(), resolution.data(), schema);
         validateMcpResolutionResult(resolutionResult);
         return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
     }
@@ -435,14 +442,24 @@ public class TryItOutService {
         final EndpointContractDto endpointRef = first.endpointRef();
         validateChainPreconditions(target, endpointRef, suite.getRequestTemplate(), httpSuite.chain());
 
+        final List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(suite.getDatasetId());
         final Map<Integer, List<InputBindingDto>> bindingsByRequest = variableBindings.toBindingsByRequest(
                 variables, httpSuite.chain().size());
+        final Map<Integer, TryItOutVariableBindings.VariableResolution> variablesByRequest = new HashMap<>();
+        for (RequestExecutionSpec spec : httpSuite.chain()) {
+            variablesByRequest.put(
+                    spec.requestIndex(),
+                    variableBindings.bindToFileColumns(
+                            bindingsByRequest.get(spec.requestIndex()), spec.inputBindings(), schema));
+        }
 
         if (httpSuite.chain().size() == 1) {
             // Single-request fast path keeps the pre-existing lenient resolution (design D8), plus the
             // additive extraction fields (D6).
-            final ResolvedRequestDto resolved =
-                    requestResolver.resolve(first.requestTemplate(), bindingsByRequest.get(0), Map.of(), null);
+            final TryItOutVariableBindings.VariableResolution firstVariables =
+                    variablesByRequest.get(first.requestIndex());
+            final ResolvedRequestDto resolved = requestResolver.resolve(
+                    first.requestTemplate(), firstVariables.bindings(), firstVariables.data(), schema);
             validateResolutionResult(resolved);
             return invokeAndBuildResponse(
                     resolved, target, endpointRef.getMethod(), testSuiteId, first.responseColumns());
@@ -451,7 +468,7 @@ public class TryItOutService {
         // Multi-request suite: run the chain with every request single-turn and each request's own variables
         // wholesale-replacing that request's inputBindings (design D8).
         final ResolvedRequestService.ChainPlan plan = resolvedRequestService.planChainForVariables(httpSuite);
-        return runChain(plan, target, testSuiteId, bindingsByRequest, null);
+        return runChain(plan, target, testSuiteId, variablesByRequest, schema);
     }
 
     private TestSuite loadSuite(UUID testSuiteId) {

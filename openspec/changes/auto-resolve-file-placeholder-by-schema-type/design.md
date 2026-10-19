@@ -12,14 +12,13 @@ None of them sees the test-case schema, so `${{file}}` bound to a FILE column se
 
 The schema is already available on every run-path call site: `EvaluationContext.snapshotTestCaseSchema` (used by `TurnLoopExecutor` and set by both `TestSuiteEvaluationJob` and `eval-cli`'s `EvaluationContextFactory`), and `DatasetSchemaProvider.getSchema(datasetId)` on the preview/try-it-out side (`ResolvedRequestService:142`).
 
-Call sites that must receive the schema: `TurnLoopExecutor:333` (`requestResolver.resolveForRun`), `EvaluationWorker:164` (`mcpRequestResolver.resolve`), `TryItOutService` (`resolveForRun`, `resolve`, MCP `resolve`/`resolveWithVariables`), `ResolvedRequestService:93` (`requestResolver.resolve`).
+Call sites that must receive the schema: `TurnLoopExecutor:333` (`requestResolver.resolveForRun`), `EvaluationWorker:164` (`mcpRequestResolver.resolve`), `TryItOutService` (`resolveForRun`, `resolve`, MCP `resolve`), `ResolvedRequestService:93` (`requestResolver.resolve`).
 
 ## Goals / Non-Goals
 
 **Goals:**
 - A full-value placeholder bound via `dataField` to a `FILE` column resolves to a DIAL ref with no `|file` hint, in all three resolver paths, identically.
 - One decision point for "is this placeholder a file reference?" so the three paths cannot drift again.
-- `BindingValidator` flags `|file` bound to a non-FILE column (inverse mismatch).
 - Explicit `|file` (with/without default, nested, MCP) behaves exactly as before.
 
 **Non-Goals:**
@@ -49,17 +48,15 @@ The conversion itself stays `resolved instanceof String s → dialFileRefResolve
 
 ### 2. Thread the schema as an explicit parameter; remove the old overloads
 
-`List<FieldDefinitionDto> testCaseSchema` is added to `RequestResolver.resolve/resolveForRun`, `RequestBodyEvaluator.evaluate`, `JsonataSourcePreprocessor.preprocess`, `TemplateContentResolver.resolveObject`, and `McpRequestResolver.resolve/resolveWithVariables`. Old signatures are **deleted**, not kept as delegating overloads, so the compiler lists every caller; a forgotten call site would silently keep the bug. `null`/empty schema ⇒ only explicit hints convert (eval-cli with no schema, `resolveWithVariables`).
+`List<FieldDefinitionDto> testCaseSchema` is added to `RequestResolver.resolve/resolveForRun`, `RequestBodyEvaluator.evaluate`, `JsonataSourcePreprocessor.preprocess`, `TemplateContentResolver.resolveObject`, and `McpRequestResolver.resolve`. `McpRequestResolver.resolveWithVariables` (a pure alias of `resolve`) is deleted; variables-mode try-out calls `resolve`. Old signatures are **deleted**, not kept as delegating overloads, so the compiler lists every caller; a forgotten call site would silently keep the bug. `null`/empty schema ⇒ only explicit hints convert (eval-cli with no schema).
 
 *Alternative:* a `ResolutionContext` carrier bundling bindings + schema — cleaner long-term but a larger refactor across signatures this change does not otherwise touch; deferred.
 
-### 3. Validator: inverse mismatch warning in `BindingValidator`
+### 3. No validator warning for `|file` on a non-FILE column
 
-In the existing `Template → Binding` loop, add: `declaredType == FILE`, binding has non-blank `dataField`, the field exists in `schema`, and its type ≠ `FILE` ⇒ `ValidationWarningCode.TYPE` warning on `$.inputBindings` (or the additional-request prefix), message like `"Variable 'x' has a '|file' type hint but is bound to field 'y' of type STRING"`. Skipped when the schema is empty/field unknown (the existing `UNKNOWN` warning already covers that), and for `constantValue` bindings. `BindingValidator` obtains the column type from `FilePlaceholderDetector.boundFieldType`, so validator and runtime read the schema one way.
+`BindingValidator` is unchanged. An explicit `|file` hint on a variable bound to a non-FILE column (e.g. a STRING column holding `@ef/...` refs) is a legitimate pattern that works today, because the explicit hint wins (Decision 1, rule 1). Warning on it would make `SuiteValidationService` report such suites invalid (`valid = warnings.isEmpty()`) and block run creation although nothing is broken. The only new behaviour is at run time: a hintless placeholder bound to a FILE column resolves as a file reference.
 
-**Validity impact:** `SuiteValidationService` computes `valid = warnings.isEmpty()`, so *any* warning makes the suite invalid and (per the run-guard rules) blocks run creation. The new warning therefore turns suites that run today — `|file` on a STRING column that holds an `@ef/...` string — into invalid ones. That is what the issue asks for ("validation flags the config"), and the fix is a one-word template edit, but it is a deliberate behaviour change called out in the proposal and the Open Questions.
-
-*Alternative:* auto-resolve only, no warning — rejected by the change request; and silently converting STRING-column values contradicts the column type.
+*Alternative:* an inverse `TYPE` warning for `|file` on a non-FILE column — rejected: it invalidates working suites and flags a valid, explicit author choice.
 
 ### 4. Multipart: FILE parts opt out of auto-resolution
 
@@ -67,11 +64,11 @@ In the existing `Template → Binding` loop, add: `declaredType == FILE`, bindin
 
 Therefore `RequestResolver.resolveMultipartBody` passes **no schema** (auto-resolution off) when `part.getType() == FILE`; `TEXT` parts get the schema and behave like JSON/URL-encoded values. Explicit `|file` on a FILE part is unchanged by this change (it already conflicts with the serializer; recorded as an Open Question, not widened here).
 
-### 5. Try-out with variables is unchanged (explicit `|file` required)
+### 5. Try-out with variables keeps the suite's FILE-column bindings
 
-`tryWithVariables` converts each typed value into a `constantValue`-only binding that replaces the suite's bindings wholesale, so there is no bound column and the detector reports "not FILE" (rule 3). A hintless `${{file}}` therefore still needs `|file` in variables mode; only the test-case try-out (`tryWithTestCase`) and real runs use the schema-type rule. Accepted limitation, to be documented in the pattern docs and try-out spec note.
+`tryWithVariables` turns each typed value into a `constantValue` binding that replaces the suite's bindings wholesale, which would lose the column and make the detector report "not FILE". To keep variables mode equal to a real run without changing any resolver signature or `InputBindingDto` (which allows exactly one of `dataField`/`constantValue`), `TryItOutVariableBindings.bindToFileColumns` takes the request's constant bindings, the suite's own `inputBindings` for that request and the dataset schema: when the suite binds the variable via `dataField` to a `FILE` column, the constant binding becomes a `dataField` binding on that column and the value moves into the data map (`{column: value}`) passed to `resolve`/`resolveForRun`. The dataset schema is passed to all three variables-mode paths (HTTP single request, HTTP chain per request, MCP). Variables bound to non-FILE columns, to constants or to nothing stay constant bindings (explicit `|file` still needed); a second variable bound to an already-used column also stays constant.
 
-*Alternatives considered and rejected:* carrying the original binding's `dataField` onto the constant binding so the column type survives (extra coupling in `TryItOutVariableBindings`); a try-out-only warning.
+*Alternatives considered and rejected:* carrying `dataField` next to `constantValue` on one binding (violates the DTO's exactly-one rule); a typed column field on `InputBindingDto` or a FILE-variable set threaded through every resolver (signature/DTO growth); a try-out-only warning.
 
 ### 6. Docs/specs
 
@@ -87,27 +84,25 @@ run/preview/try-it-out ──schema──▶ RequestResolver / McpRequestResolve
                                      │ true & value is String
                                      ▼
                          DialFileRefResolver.resolveToDialRef ──▶ files/<bucket>/...
-suite save/validate ──schema──▶ BindingValidator ──▶ FilePlaceholderDetector.boundFieldType ──▶ TYPE warning on |file ↔ non-FILE
 ```
 
 Transaction boundaries: none touched (resolution is DB-free; validation runs inside existing service transactions). Error handling: unchanged — `ValidationException` from `DialFileRefResolver` (bad/disallowed ref) propagates exactly as for explicit `|file` and becomes an ERROR row via `TurnLoopExecutor`'s existing handling.
 
 ## Risks / Trade-offs
 
-- [New warning invalidates working suites that use `|file` on STRING columns] → documented behaviour change; message names the variable, column and fix; confirm acceptance (Open Question 1).
+- [Explicit `|file` on a STRING column] → no warning and no behaviour change; the explicit hint wins and the suite stays valid.
 - [A call site keeps the old behaviour] → old overloads removed so it is a compile error; one functional test covers the run path end to end; unit tests per resolver.
 - [Multipart FILE part regression] → Decision 4 plus a dedicated unit test (hintless FILE-bound placeholder in a FILE part still yields the raw `@ef/...`).
 - [Snapshot/eval-cli schema `null`] → treated as "no schema": explicit hints only; no NPE.
 - [`endpointRef` says a non-string type for a FILE column] → ignored at runtime; a file ref is a string, and the column type is the stronger signal. Mismatch is not warned (out of scope).
-- [Try-out with variables disagrees with a real run for a hintless FILE placeholder] → accepted and documented; variables mode has no bound column, explicit `|file` works there as today.
+- [Try-out with variables disagrees with a real run for a hintless FILE placeholder] → mitigated by `bindToFileColumns` (Decision 5); remaining gap: a variable not bound to a FILE column in the suite, or a shared column, needs explicit `|file`.
 - [Binding refers to a renamed/removed column] → `boundFieldType` is empty ⇒ no conversion; existing `UNKNOWN` warning covers it.
 
 ## Migration Plan
 
-Single release, no flag, no data migration. Rollback = revert; no persisted state changes. Suites relying on explicit `|file` are unaffected; suites newly flagged by the validator get a one-word fix.
+Single release, no flag, no data migration. Rollback = revert; no persisted state changes. Suites relying on explicit `|file` are unaffected.
 
 ## Open Questions
 
-1. Should the `|file`-on-non-FILE warning make the suite invalid (current `warnings.isEmpty()` semantics, recommended, matches the issue) or be non-blocking? A non-blocking variant needs a new warning severity concept.
-2. Explicit `|file` on a multipart `FILE` part currently fails in the serializer (`files/` prefix rejected). Fix in a follow-up, or add a validator warning here?
-3. Should an explicit non-file hint on a FILE column (`${{doc|string}}`) warn? Proposed: no (explicit author choice).
+1. Explicit `|file` on a multipart `FILE` part currently fails in the serializer (`files/` prefix rejected). Fix in a follow-up, or add a validator warning here?
+2. Should an explicit non-file hint on a FILE column (`${{doc|string}}`) warn? Proposed: no (explicit author choice).

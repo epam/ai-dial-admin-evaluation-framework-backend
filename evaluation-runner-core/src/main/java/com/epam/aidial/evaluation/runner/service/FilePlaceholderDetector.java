@@ -18,8 +18,7 @@ import org.springframework.stereotype.Component;
  * {@code constantValue}-only bindings) or an unknown field is "not FILE" — only an explicit hint converts.
  *
  * <p>Shared by {@link TemplateContentResolver}, {@link JsonataSourcePreprocessor} and
- * {@link McpRequestResolver} so the three paths cannot drift, and by the backend's {@code BindingValidator}
- * for the column-type lookup.
+ * {@link McpRequestResolver} so the three paths cannot drift.
  */
 @Component
 @LogExecution

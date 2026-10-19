@@ -93,16 +93,6 @@ public class McpRequestResolver {
         return ResolutionResult.builder().arguments(resolved).warnings(warnings).build();
     }
 
-    /**
-     * Resolves arguments using a direct variables map (for try-it-out with variables mode).
-     * Variables are treated as constant-value bindings — no data lookup indirection, and no bound schema
-     * column, so only an explicit {@code |file} hint converts a value to a DIAL ref.
-     */
-    public ResolutionResult resolveWithVariables(
-            ArgumentTemplateDto argumentTemplate, List<InputBindingDto> bindings, Map<String, Object> variables) {
-        return resolve(argumentTemplate, bindings, variables, null);
-    }
-
     private Object resolveValue(
             Object value,
             Map<String, InputBindingDto> bindingByVar,

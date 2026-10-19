@@ -11,8 +11,13 @@ Status: Planned
 - **AND** a run resolves a test case whose `input_doc` is `@ef/datasets/abc/report.pdf`
 - **THEN** the resolved request SHALL contain `files/{realBucket}/datasets/abc/report.pdf` for that placeholder
 
-#### Scenario: Try-out with variables requires an explicit hint
-- **WHEN** try-out is invoked with `variables = {0: {"doc": "@ef/datasets/abc/report.pdf"}}` (variables become `constantValue` bindings with no column)
+#### Scenario: Try-out with variables resolves a variable bound to a FILE column like a real run
+- **WHEN** try-out is invoked with `variables = {0: {"doc": "@ef/suites/abc/report.pdf"}}`
+- **AND** the template placeholder is `${{doc}}` (no hint) and the suite binds `doc` via `dataField` to a `FILE` schema field
+- **THEN** the value SHALL be converted to a DIAL ref, as in a run
+
+#### Scenario: Try-out with variables for a variable not bound to a FILE column requires an explicit hint
+- **WHEN** the suite does not bind the variable to a `FILE` column (constant binding, other column type or no binding)
 - **AND** the template placeholder is `${{doc}}` (no hint)
 - **THEN** the value SHALL be passed through unconverted
 - **AND** with `${{doc|file}}` it SHALL be converted to a DIAL ref

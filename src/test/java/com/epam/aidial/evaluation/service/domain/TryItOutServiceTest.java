@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -31,6 +32,7 @@ import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingPro
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
@@ -41,6 +43,7 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
@@ -56,6 +59,7 @@ import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
+import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
@@ -195,7 +199,7 @@ class TryItOutServiceTest {
                 openTelemetry,
                 grafanaLinkBuilder,
                 FIXED_CLOCK,
-                new TryItOutVariableBindings(),
+                new TryItOutVariableBindings(new FilePlaceholderDetector()),
                 sseEventParser,
                 evaluationRunProperties,
                 dialCoreProperties,
@@ -1534,8 +1538,9 @@ class TryItOutServiceTest {
             assertThat(result.getHistory()).hasSize(2);
             assertThat(result.getHistory().get(0).getRequestIndex()).isEqualTo(0);
             assertThat(result.getHistory().get(1).getRequestName()).isEqualTo("followup");
-            verify(requestResolver).resolveForRun(template0, List.of(), Map.of(), Map.of(), null);
-            verify(requestResolver).resolveForRun(template1, expectedBindings, Map.of(), frameAfterRequestZero, null);
+            verify(requestResolver).resolveForRun(template0, List.of(), Map.of(), Map.of(), List.of());
+            verify(requestResolver)
+                    .resolveForRun(template1, expectedBindings, Map.of(), frameAfterRequestZero, List.of());
             verify(requestResolver, never()).resolveForRun(any(), eq(ignoredBindings), any(), any(), any());
         }
 
@@ -1547,8 +1552,10 @@ class TryItOutServiceTest {
             service.tryWithVariables(
                     SUITE_ID, Map.of(0, Map.of("user_message", "first"), 1, Map.of("user_message", "second")));
 
-            verify(requestResolver).resolveForRun(chain.template0(), userMessage("first"), Map.of(), Map.of(), null);
-            verify(requestResolver).resolveForRun(chain.template1(), userMessage("second"), Map.of(), Map.of(), null);
+            verify(requestResolver)
+                    .resolveForRun(chain.template0(), userMessage("first"), Map.of(), Map.of(), List.of());
+            verify(requestResolver)
+                    .resolveForRun(chain.template1(), userMessage("second"), Map.of(), Map.of(), List.of());
         }
 
         @Test
@@ -1558,8 +1565,9 @@ class TryItOutServiceTest {
 
             service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("user_message", "first")));
 
-            verify(requestResolver).resolveForRun(chain.template0(), userMessage("first"), Map.of(), Map.of(), null);
-            verify(requestResolver).resolveForRun(chain.template1(), List.of(), Map.of(), Map.of(), null);
+            verify(requestResolver)
+                    .resolveForRun(chain.template0(), userMessage("first"), Map.of(), Map.of(), List.of());
+            verify(requestResolver).resolveForRun(chain.template1(), List.of(), Map.of(), Map.of(), List.of());
         }
 
         @Test
@@ -1604,7 +1612,7 @@ class TryItOutServiceTest {
         }
 
         @Test
-        @DisplayName("MCP suite resolves with index-0 bindings and the index-0 inner map as data")
+        @DisplayName("MCP suite resolves with index-0 constant bindings, no column data and the dataset schema")
         void shouldUseIndexZeroForMcpSuite() {
             stubMcpSuite();
             final Map<String, Object> inner = Map.of("search_query", "MCP");
@@ -1612,7 +1620,7 @@ class TryItOutServiceTest {
                     .code(ValidationWarningCode.REQUIRED)
                     .fieldName("other")
                     .build();
-            when(mcpRequestResolver.resolveWithVariables(any(), anyList(), anyMap()))
+            when(mcpRequestResolver.resolve(any(), anyList(), anyMap(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
                             .arguments(Map.of())
                             .warnings(List.of(required))
@@ -1623,13 +1631,91 @@ class TryItOutServiceTest {
                     .isInstanceOf(TryItOutValidationException.class);
 
             verify(mcpRequestResolver)
-                    .resolveWithVariables(
+                    .resolve(
                             any(),
                             eq(List.of(InputBindingDto.builder()
                                     .templateVariable("search_query")
                                     .constantValue("MCP")
                                     .build())),
-                            eq(inner));
+                            eq(Map.of()),
+                            any());
+        }
+
+        @Test
+        @DisplayName("MCP variable bound to a FILE column in the suite resolves through the column and schema")
+        void shouldBindMcpVariableToSuiteFileColumn() {
+            stubMcpSuite();
+            final List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
+                    .name("attachment")
+                    .type(SchemaFieldType.FILE)
+                    .build());
+            when(jsonbMapper.mapInputBindings(nullable(String.class)))
+                    .thenReturn(List.of(InputBindingDto.builder()
+                            .templateVariable("doc")
+                            .dataField("attachment")
+                            .build()));
+            when(datasetSchemaProvider.getSchema(any())).thenReturn(schema);
+            when(mcpRequestResolver.resolve(any(), anyList(), anyMap(), any()))
+                    .thenReturn(McpRequestResolver.ResolutionResult.builder()
+                            .arguments(Map.of())
+                            .warnings(List.of(ValidationWarningDto.builder()
+                                    .code(ValidationWarningCode.REQUIRED)
+                                    .fieldName("other")
+                                    .build()))
+                            .build());
+
+            assertThatThrownBy(() -> service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("doc", "@ef/suites/x/a.pdf"))))
+                    .isInstanceOf(TryItOutValidationException.class);
+
+            verify(mcpRequestResolver)
+                    .resolve(
+                            any(),
+                            eq(List.of(InputBindingDto.builder()
+                                    .templateVariable("doc")
+                                    .dataField("attachment")
+                                    .build())),
+                            eq(Map.of("attachment", "@ef/suites/x/a.pdf")),
+                            eq(schema));
+        }
+
+        @Test
+        @DisplayName("HTTP variable bound to a FILE column in the suite resolves through the column and schema")
+        void shouldBindHttpVariableToSuiteFileColumn() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            when(jsonbMapper.mapRequestTemplate("{}"))
+                    .thenReturn(RequestTemplateDto.builder()
+                            .urlTemplate("/chat/completions")
+                            .build());
+            final List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
+                    .name("attachment")
+                    .type(SchemaFieldType.FILE)
+                    .build());
+            when(jsonbMapper.mapInputBindings(anyString()))
+                    .thenReturn(List.of(InputBindingDto.builder()
+                            .templateVariable("doc")
+                            .dataField("attachment")
+                            .build()));
+            when(datasetSchemaProvider.getSchema(any())).thenReturn(schema);
+            when(requestResolver.resolve(any(), anyList(), anyMap(), any())).thenReturn(buildResolvedRequest());
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
+                    .thenReturn("/openai/deployments/gpt-4/chat/completions");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("doc", "@ef/suites/x/a.pdf")));
+
+            verify(requestResolver)
+                    .resolve(
+                            any(),
+                            eq(List.of(InputBindingDto.builder()
+                                    .templateVariable("doc")
+                                    .dataField("attachment")
+                                    .build())),
+                            eq(Map.of("attachment", "@ef/suites/x/a.pdf")),
+                            eq(schema));
         }
 
         @Test

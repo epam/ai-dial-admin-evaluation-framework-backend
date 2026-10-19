@@ -64,7 +64,7 @@
 ## 10. Docs & specs
 
 - [x] 10.1 `docs/database-schema.md` updated (see 1.5)
-- [ ] 10.2 Sync delta specs into `openspec/specs` via `/opsx:sync` at archive time
-- [ ] 10.3 Update `openspec/specs/README.md` per Spec Index Maintenance Policy (done: test-suites, multi-request-suite and test-suite-clone summaries mention ROUTE / the suite HTTP target / inherited routesRef; index reflects current specs)
+- [x] 10.2 Sync delta specs into `openspec/specs` via `/opsx:sync` at archive time
+- [x] 10.3 Update `openspec/specs/README.md` per Spec Index Maintenance Policy (done: test-suites, multi-request-suite and test-suite-clone summaries mention ROUTE / the suite HTTP target / inherited routesRef; index reflects current specs)
 
 Note: no `config.yaml` or `AGENTS.md` task; the feature follows the existing suite-type pattern and adds no new package, layer or convention.

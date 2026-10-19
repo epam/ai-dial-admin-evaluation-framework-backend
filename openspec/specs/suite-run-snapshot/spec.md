@@ -16,6 +16,8 @@ Status: **Implemented**
 ### Requirement: SuiteSnapshotDto model
 `SuiteSnapshotDto` SHALL be the canonical frozen representation of suite configuration for a run. `CURRENT_VERSION` SHALL be `"2"`. The Jackson `@Builder.Default` on `snapshotVersion` SHALL be `CURRENT_VERSION` (i.e., `"2"`) so that any JSON missing the field deserializes as the current version (treating the omission as a producer bug, not as a legacy-shape row). New writes performed by `SuiteSnapshotBuilder` SHALL explicitly stamp `snapshotVersion = "2"`. After the V1.22 backfill, no stored snapshot is shaped as v1; the `UnsupportedSnapshotVersionException` path in `resolveSnapshot` remains in place as defense-in-depth for any future producer (e.g., a hypothetical v3) writing an unsupported version.
 
+The DTO SHALL additionally carry `routesRef` (`RouteReferenceDto` `{ name }`, nullable), captured from the suite's `routesRef` at snapshot time; it is non-null only for `ROUTE` suites. This addition SHALL be **additive-optional**: `snapshotVersion` SHALL REMAIN `"2"`, a snapshot JSON written before this field existed SHALL deserialize with `routesRef = null`, and no backfill of stored snapshots SHALL be performed. For a `ROUTE` suite the snapshot is an HTTP snapshot — it carries `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `requestName` and `additionalRequests` — but `deploymentRef` SHALL be null.
+
 The DTO SHALL additionally carry the suite's request chain: `additionalRequests` (a list of `RequestDefinitionDto`, defaulting to an empty list) and `requestName` (`String`, nullable — the label of the suite's own request). Both additions SHALL be **additive-optional**: `snapshotVersion` SHALL REMAIN `"2"`, and a snapshot JSON written before these fields existed SHALL deserialize unchanged, yielding an empty `additionalRequests` and a null `requestName` (a one-request chain). No backfill of stored snapshots SHALL be performed.
 
 The DTO SHALL additionally carry `overallScoreThreshold` (`Double`, nullable), captured from the suite's `overallScoreThreshold` at snapshot time, alongside the existing `overallScore` field. This addition SHALL also be **additive-optional**: a snapshot JSON written before this field existed SHALL deserialize with `overallScoreThreshold = null`, and no backfill of stored snapshots SHALL be performed. Once captured, `overallScoreThreshold` SHALL remain fixed for the life of the run regardless of subsequent edits to the live suite's threshold.
@@ -26,6 +28,20 @@ Status: **Implemented**
 #### Scenario: DEPLOYMENT suite snapshot fields
 - **WHEN** snapshot is built for a DEPLOYMENT suite
 - **THEN** snapshot SHALL include `snapshotVersion = "2"` (explicitly stamped by `SuiteSnapshotBuilder`), `suiteType = "DEPLOYMENT"`, `datasetRef` (`{id, version, name}` for the dataset referenced by the suite at snapshot time), `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `requestName`, `additionalRequests`, `testCaseSchema` (sourced from the dataset, not the suite), `overallScore`, `overallScoreThreshold`, and `testCaseOverallScore`; MCP-specific fields SHALL be null/absent
+- **AND** `routesRef` SHALL be null
+
+#### Scenario: ROUTE suite snapshot
+- **WHEN** snapshot is built for a ROUTE suite
+- **THEN** snapshot SHALL include `snapshotVersion = "2"`, `suiteType = "ROUTE"`, `datasetRef`, `routesRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `requestName`, `additionalRequests` (as configured on the suite), `testCaseSchema` (sourced from the dataset), `overallScore`, `overallScoreThreshold`, and `testCaseOverallScore`
+- **AND** `deploymentRef` SHALL be null and MCP-specific fields SHALL be null/absent
+
+#### Scenario: Older snapshot without routesRef deserialises with routesRef null
+- **WHEN** a stored `suite_snapshot` JSON has no `routesRef` key
+- **THEN** it SHALL deserialize successfully with `routesRef = null` and `snapshotVersion = "2"`
+
+#### Scenario: ROUTE run snapshots routesRef and executes against the resolved root path
+- **WHEN** a run is created for a ROUTE suite whose `requestTemplate.urlTemplate` is `/validate/${{path}}` and an input binding maps template variable `path` to dataset field `routePath` and the test case has `routePath = "items"`
+- **THEN** the run SHALL complete, `GET /api/v1/test-suite-runs/{id}` SHALL return `suiteSnapshot.suiteType = "ROUTE"` with `suiteSnapshot.routesRef` equal to the suite's `routesRef` and a null `suiteSnapshot.deploymentRef`, and DIAL Core SHALL receive the path `/validate/items`
 
 #### Scenario: MCP_TOOL suite snapshot fields
 - **WHEN** snapshot is built for an MCP_TOOL suite
@@ -221,6 +237,8 @@ Status: **Implemented**
 - **THEN** the backfill step SHALL leave it as NULL; the legacy-fallback synthesis path in `resolveSnapshot` (which builds a transient v2 snapshot from the live suite + dataset) continues to handle it
 
 ## Implementation Notes
+
+- `SuiteSnapshotDto`, `SuiteSnapshotBuilder`, and `JsonbMapper` add nullable `routesRef` while retaining snapshot version `2`; ROUTE snapshots use the HTTP fields and omit `deploymentRef`.
 - `TestSuiteEvaluationJob.attemptSnapshot` selects via
   `RunnableTestCaseSelector.loadRunnablePage(datasetId, filterJson, offset, limit)` (translation-layer
   reuse); a null `testCaseFilter` short-circuits to the plain valid predicate

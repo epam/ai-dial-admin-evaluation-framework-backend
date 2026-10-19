@@ -324,9 +324,11 @@ Each `InputBindingDto` SHALL have: `templateVariable` (String, required, non-bla
 ### Requirement: Soft validation of template and bindings
 The service SHALL perform soft validation when saving a TestSuite. Validation failures produce warnings (not hard rejection) and are stored in the **TestSuite's** `isValid` and `validationWarnings` fields (see test-suites spec). These suite-level warnings are independent of test case data and are accessible even when no test cases exist.
 
-**This validation SHALL apply to both DEPLOYMENT and MCP_TOOL suite types.** For DEPLOYMENT suites, variables are extracted from `requestTemplate`. For MCP_TOOL suites, variables are extracted from `argumentTemplate` using `TemplateVariableExtractor.extractFromArgumentTemplateWithWarnings()`. The binding cross-validation logic (required variable, unknown field, orphan binding, `|file` constant-value validation) SHALL be shared between both suite types via a `BindingValidator` component.
+**This validation SHALL apply to all suite types (DEPLOYMENT, ROUTE and MCP_TOOL).** For DEPLOYMENT and ROUTE suites, variables are extracted from `requestTemplate`. For MCP_TOOL suites, variables are extracted from `argumentTemplate` using `TemplateVariableExtractor.extractFromArgumentTemplateWithWarnings()`. The binding cross-validation logic (required variable, unknown field, orphan binding, `|file` constant-value validation) SHALL be shared between all suite types via a `BindingValidator` component.
 
 **Scope clarification:** The shared binding cross-validation covers: required variable without binding, binding to unknown schema field, orphan binding detection, and `|file` constant-value validation. DEPLOYMENT-only checks (endpoint schema conformance, content-type mismatch, header blacklist, FILE form part validation) remain in `validateDeploymentSuite()` and do NOT apply to MCP suites.
+
+Status: **Implemented**
 
 #### Scenario: Required template variable without binding
 - **WHEN** a `${{var}}` (no default) exists in the template and no binding has `templateVariable == var`
@@ -856,6 +858,8 @@ Status: **Implemented**
 
 ## Implementation Notes
 
+
+- `BindingValidator` remains shared across suite types; ROUTE suites use the same HTTP `requestTemplate` validation path as DEPLOYMENT suites.
 - Shared binding validation logic extracted into a `BindingValidator` `@Component` in `service.domain` — injected by `SuiteValidationService`. Method: `validate(variables, bindings, schema, suiteId)` returning `List<ValidationWarningDto>`
 - `validateDeploymentSuite()` calls `bindingValidator.validate(...)` with variables from `TemplateVariableExtractor.extractWithWarnings(requestTemplate)`
 - `validateMcpSuite()` calls `bindingValidator.validate(...)` with variables from `TemplateVariableExtractor.extractFromArgumentTemplateWithWarnings(argumentTemplate)` — new method that returns `ExtractionResult` (same as `extractWithWarnings()`)

@@ -41,6 +41,7 @@ The `test_suite_runs` entity SHALL expose exactly the following flat **queryable
 | `deployment_ref::name` | `string` | `suite_snapshot` | |
 | `deployment_ref::version` | `string` | `suite_snapshot` | |
 | `deployment_ref::type` | `string` | `suite_snapshot` | |
+| `routes_ref::name` | `string` | `suite_snapshot` | `suite_snapshot -> 'routesRef' ->> 'name'` |
 | `mcp_deployment_ref::id` | `string` | `suite_snapshot` | `suite_snapshot -> 'mcpDeploymentRef' ->> 'id'` |
 | `mcp_deployment_ref::name` | `string` | `suite_snapshot` | |
 | `mcp_deployment_ref::type` | `string` | `suite_snapshot` | |
@@ -81,7 +82,7 @@ Status: **Implemented**
 - **THEN** `number_of_runs` is null for that run and the query succeeds
 
 ### Requirement: Deployment reference fields come from the run's own snapshot only
-`suite_type`, `deployment_ref::*` and `mcp_deployment_ref::*` SHALL be read from the run's `suite_snapshot` — the configuration the run actually executed against — and SHALL NOT fall back to the current `test_suites` row. A run whose `suite_snapshot` is null (legacy run, or a run that has not reached the snapshot phase) SHALL yield null for all of these fields. A `DEPLOYMENT` run SHALL yield nulls for `mcp_deployment_ref::*` and an `MCP` run SHALL yield nulls for `deployment_ref::*`.
+`suite_type`, `deployment_ref::*`, `routes_ref::name` and `mcp_deployment_ref::*` SHALL be read from the run's `suite_snapshot` — the configuration the run actually executed against — and SHALL NOT fall back to the current `test_suites` row. A run whose `suite_snapshot` is null (legacy run, or a run that has not reached the snapshot phase) SHALL yield null for all of these fields. A `DEPLOYMENT` run SHALL yield nulls for `mcp_deployment_ref::*` and `routes_ref::name`, an `MCP` run SHALL yield nulls for `deployment_ref::*` and `routes_ref::name`, and a `ROUTE` run SHALL yield nulls for `deployment_ref::*` and `mcp_deployment_ref::*`.
 Status: **Implemented**
 
 #### Scenario: Snapshot ref survives a later suite edit
@@ -90,7 +91,15 @@ Status: **Implemented**
 
 #### Scenario: Run without a snapshot yields null refs
 - **WHEN** a run row has `suite_snapshot IS NULL`
-- **THEN** the query returns null for `suite_type`, every `deployment_ref::*` and every `mcp_deployment_ref::*` field, and the request does not fail
+- **THEN** the query returns null for `suite_type`, every `deployment_ref::*`, `routes_ref::name` and every `mcp_deployment_ref::*` field, and the request does not fail
+
+#### Scenario: ROUTE run exposes and filters by routes_ref::name from its own snapshot
+- **WHEN** a run's `suite_snapshot` is `{"snapshotVersion":"2","suiteType":"ROUTE","routesRef":{"name":"routes/platform/route-X"}}` and a query filters `{"op":"eq","args":[{"field":"routes_ref::name"},{"type":"string","value":"routes/platform/route-X"}]}` selecting `id`, `suite_type` and `routes_ref::name`
+- **THEN** only that run is returned, with `suite_type = "ROUTE"` and `routes_ref::name = "routes/platform/route-X"`; runs whose snapshot names a different route are not returned
+
+#### Scenario: Non-ROUTE run yields null routes_ref::name
+- **WHEN** a query selects `routes_ref::name` for a run whose snapshot has no `routesRef` (a DEPLOYMENT or MCP run)
+- **THEN** the value is null and the request does not fail
 
 #### Scenario: Refs are filterable and sortable
 - **WHEN** a query filters `{"op":"eq","args":[{"field":"deployment_ref::id"},{"type":"string","value":"deploy-001"}]}` and sorts by `deployment_ref::name`
@@ -263,6 +272,8 @@ Status: **Implemented**
 
 ## Implementation notes
 
+
+- `TestSuiteRunQueryFields` registers the `routes_ref` descriptor over snapshot key `routesRef` between deployment and MCP descriptors; `PostgresTestSuiteRunEntityResolver` and `TestSuiteRunsSchemaProvider` consume that vocabulary.
 - Entity resolver (derived table `tsr`, `run_config` scalar extraction, correlated `metric_names` scalar subquery): `src/main/java/com/epam/aidial/evaluation/query/service/repository/PostgresTestSuiteRunEntityResolver.java`
 - Base schema provider: `src/main/java/com/epam/aidial/evaluation/query/service/TestSuiteRunsSchemaProvider.java`
 - Shared field vocabulary (entity name, excluded columns, ref descriptors, `number_of_runs`, `metric_names`): `src/main/java/com/epam/aidial/evaluation/query/service/TestSuiteRunQueryFields.java`

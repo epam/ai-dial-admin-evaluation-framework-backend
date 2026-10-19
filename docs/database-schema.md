@@ -148,6 +148,15 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 }
 ```
 
+**`routes_ref`** (RouteReferenceDto):
+```json
+{
+  "name": "string (required canonical identity, e.g. routes/platform/validate-route)"
+}
+```
+
+The canonical identity uses `routes/platform/<name>` form. It is metadata only; ROUTE invocation paths come from the resolved root-relative request URL.
+
 **`endpoint_ref`** (EndpointContractDto):
 ```json
 {
@@ -291,7 +300,7 @@ The `endpoint_ref.requestBodySchema` field uses a `contentType` discriminator. V
   }
 ]
 ```
-Deliberately excludes `deploymentRef`, MCP fields, `testCaseFilter` and `overallScore` — those stay suite-level (1-to-1 suite↔deployment relationship). Response-column names across `response_columns` and every `additional_requests[*].responseColumns` form one flat, globally-unique namespace (no per-request prefixing).
+Deliberately excludes `deploymentRef`, `routesRef`, MCP fields, `testCaseFilter` and `overallScore` — those stay suite-level (one HTTP target per suite: a deployment or global route). Response-column names across `response_columns` and every `additional_requests[*].responseColumns` form one flat, globally-unique namespace (no per-request prefixing).
 
 **`mcp_deployment_ref`** (McpDeploymentReferenceDto):
 ```json
@@ -1090,6 +1099,7 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 | V1.34 | `V1.34__ReplaceRunMetricSnapshotsRunIndex.sql` | Replaced the single-column `idx_run_metric_snapshots_run` on `run_metric_snapshots` with composite index `idx_run_metric_snapshots_run_computed_at` on `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)`, for the `test_suite_runs` query entity's `metric_names` lookup and `findLatestComputationId`; the old index was a strict prefix of the new one, so every existing `WHERE test_suite_run_id = ?` reader remains served. |
 | V1.35 | `V1.35__AddMetricScoreAggregationToTestSuites.sql` | Added `metric_score_aggregation` VARCHAR(10) NOT NULL DEFAULT 'AVG' to test_suites (`AVG`/`MIN`/`MAX`: per-test-case leaf of the aggregated metric scores used by built-in statistics, overall score, per-test-case score and run comparison) |
 | V1.36 | `V1.36__AddIdsToDatasetSchemaFields.sql` | Data-only backfill: adds a server-assigned string `id` (UUID) to every field of `datasets.test_case_schema` that lacks one or has `"id": null`. Preserves array order; leaves existing ids and non-array values untouched; idempotent; does not bump `version`/`updated_at_ms`. |
+| V1.37 | `V1.37__AddRoutesRefToTestSuites.sql` | Added nullable `routes_ref` JSONB to `test_suites` for canonical global DIAL Core Route identity metadata on ROUTE suites. |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

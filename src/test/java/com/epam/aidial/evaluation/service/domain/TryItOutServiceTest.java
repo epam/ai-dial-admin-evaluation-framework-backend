@@ -917,7 +917,8 @@ class TryItOutServiceTest {
             when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.GET, List.of(), List.of()));
 
-            when(requestResolver.resolveForRun(any(), any(), any(), any(), any())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolveForRun(any(), any(), any(), any(), any()))
+                    .thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
@@ -948,7 +949,8 @@ class TryItOutServiceTest {
             when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(plan);
 
-            when(requestResolver.resolveForRun(any(), any(), any(), any(), any())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolveForRun(any(), any(), any(), any(), any()))
+                    .thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(500, Map.of("error", "boom")));
@@ -1003,7 +1005,8 @@ class TryItOutServiceTest {
             when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
 
-            when(requestResolver.resolveForRun(any(), any(), any(), any(), any())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolveForRun(any(), any(), any(), any(), any()))
+                    .thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
@@ -1037,7 +1040,8 @@ class TryItOutServiceTest {
             when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
                     .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
 
-            when(requestResolver.resolveForRun(any(), any(), any(), any(), any())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolveForRun(any(), any(), any(), any(), any()))
+                    .thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
@@ -1118,7 +1122,8 @@ class TryItOutServiceTest {
                             new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
                             new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
 
-            when(requestResolver.resolveForRun(any(), any(), any(), any(), any())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolveForRun(any(), any(), any(), any(), any()))
+                    .thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("req", 0)))
@@ -1286,7 +1291,7 @@ class TryItOutServiceTest {
                     .thenReturn(RequestTemplateDto.builder()
                             .urlTemplate("/validate/${{path}}")
                             .build());
-            when(requestResolver.resolve(any(), anyList(), anyMap()))
+            when(requestResolver.resolve(any(), anyList(), anyMap(), any()))
                     .thenReturn(
                             ResolvedRequestDto.builder().url("/validate/items").build());
             when(urlBuilder.buildUrl(any(RouteTarget.class), eq("/validate/items")))
@@ -1739,7 +1744,8 @@ class TryItOutServiceTest {
             when(resolvedRequestService.planChainForVariables(any(HttpSuite.class)))
                     .thenReturn(plan);
 
-            when(requestResolver.resolveForRun(any(), any(), any(), any(), any())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolveForRun(any(), any(), any(), any(), any()))
+                    .thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(500, Map.of("error", "boom")));

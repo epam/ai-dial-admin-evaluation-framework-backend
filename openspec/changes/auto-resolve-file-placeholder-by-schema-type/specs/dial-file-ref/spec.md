@@ -4,11 +4,11 @@
 
 The system SHALL resolve FILE-typed binding values (both constant values and values from test case data fields) to DIAL data ref format (`files/{realBucket}/path`) in `ResolvedRequestService` before passing to request body serializers.
 
-Status: Planned (extends the Implemented `|file`-hint behaviour with schema-type-driven resolution)
+Status: Implemented
 
-This ensures `JsonRequestBodySerializer` and `UrlEncodedFormRequestBodySerializer` forward DIAL-resolvable paths (not `@ef` aliases) when embedding file references as string values in deployment request payloads.
+This ensures `JsonRequestBodySerializer` forwards DIAL-resolvable paths (not `@ef` aliases) when embedding file references as string values in deployment request payloads.
 
-A full-value placeholder SHALL be treated as FILE-typed per the `FilePlaceholderDetector` rule: it carries a `|file` type hint (e.g., `${{attachment|file}}`), **or** it carries no type hint and its binding's `dataField` names a schema field of type `FILE`. Resolution applies at any nesting depth in the JSON body — the resolver recurses into nested objects and arrays. Applies to JSON (structural `content` and `jsonataContent`) and URL-encoded form bodies, and to `TEXT` multipart form parts.
+A full-value placeholder SHALL be treated as FILE-typed per the `FilePlaceholderDetector` rule: it carries a `|file` type hint (e.g., `${{attachment|file}}`), **or** it carries no type hint and its binding's `dataField` names a schema field of type `FILE`. Resolution applies at any nesting depth in the JSON body — the resolver recurses into nested objects and arrays. Applies to JSON (structural `content` and `jsonataContent`) bodies and to `TEXT` multipart form parts. URL-encoded form values are always stringified (the `|file` hint is ignored there too), so a FILE-bound placeholder in a URL-encoded value is not converted.
 
 Note: Multipart `FormPartDto` FILE parts (`FormPartDto.type == FILE`) are excluded from schema-type-driven resolution — they remain as short-format refs in `ResolvedFormPartDto.resolvedValue` and are materialized as file bytes directly by `MultipartFormDataRequestBodySerializer`.
 
@@ -66,7 +66,7 @@ Note: Multipart `FormPartDto` FILE parts (`FormPartDto.type == FILE`) are exclud
 
 The system SHALL decide whether a full-value `${{...}}` placeholder is a FILE reference in exactly one component, `FilePlaceholderDetector` (`runner.service`, `evaluation-runner-core`), used by `TemplateContentResolver`, `JsonataSourcePreprocessor` and `McpRequestResolver`. The rule SHALL be:
 
-Status: Planned
+Status: Implemented
 
 1. If the placeholder carries a type hint, the hint decides (case-insensitive `file` ⇒ FILE; any other hint ⇒ not FILE).
 2. Otherwise the placeholder is FILE iff its binding has a non-blank `dataField` and the test case schema declares that field with type `FILE`.

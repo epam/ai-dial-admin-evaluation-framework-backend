@@ -27,10 +27,12 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutWithVariablesRequestDto;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,12 +42,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import tools.jackson.databind.JsonNode;
 
 @DisplayName("Try It Out Functional Tests")
@@ -80,6 +85,82 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         assertThat(response.getBody().getResponse()).isNotNull();
         assertThat(response.getBody().getResponse().getStatusCode()).isEqualTo(200);
         assertThat(response.getBody().getDurationMs()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should resolve a hintless placeholder bound to a FILE column to a DIAL ref and keep the suite valid")
+    void shouldResolveHintlessFileColumnPlaceholderToDialRef() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("document")
+                .type(SchemaFieldType.FILE)
+                .required(true)
+                .build()));
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("Hintless FILE Suite " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("D1")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/chat/completions")
+                        .build())
+                .datasetId(datasetId)
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/chat/completions")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("attachment", "${{doc}}"))
+                                .build())
+                        .build())
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("doc")
+                        .dataField("document")
+                        .build()))
+                .build();
+        ResponseEntity<TestSuiteResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto suite = created.getBody();
+        assertThat(suite).isNotNull();
+        assertThat(suite.isValid()).isTrue();
+        assertThat(suite.getValidationWarnings()).isEmpty();
+
+        FileMetadataDto file = uploadDatasetFile(datasetId, "x.pdf");
+        TestCaseResponseDto testCase = createTestCase(suite.getId(), "FILE case", Map.of("document", file.getPath()));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(200, false, Map.of("ok", true), null, new HttpHeaders()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + testCase.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        Object attachment = ((ResolvedJsonBodyDto)
+                        response.getBody().getResolvedRequest().getBody())
+                .getContent()
+                .get("attachment");
+        assertThat(attachment)
+                .isEqualTo("files/test-bucket"
+                        + file.getPath().substring(file.getPath().indexOf("/datasets/")));
+    }
+
+    private FileMetadataDto uploadDatasetFile(UUID datasetId, String filename) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", new ByteArrayResource("pdf".getBytes(StandardCharsets.UTF_8)) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        });
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        ResponseEntity<FileMetadataDto> uploaded = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/files"), new HttpEntity<>(body, headers), FileMetadataDto.class);
+        assertThat(uploaded.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return uploaded.getBody();
     }
 
     @Test

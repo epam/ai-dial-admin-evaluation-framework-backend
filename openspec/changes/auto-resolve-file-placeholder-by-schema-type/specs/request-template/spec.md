@@ -4,7 +4,7 @@
 
 A template variable whose `TemplateVariableDto.effectiveType` is `FILE` because of its binding's `testCaseSchema` column (declared type absent) SHALL be treated as a file reference at run time and in try-it-out/preview resolution, identically to a variable declared `|file`. The system SHALL NOT report a variable as `FILE` in `TemplateVariableDto` while sending its raw `@ef/...` value to the deployment or MCP tool. This applies to full-value placeholders only; interpolated placeholders are unchanged.
 
-Status: Planned
+Status: Implemented
 
 #### Scenario: Effective FILE type from the binding is honoured at run time
 - **WHEN** a suite's template contains `"${{doc}}"` and a binding maps `doc` → `dataField: "input_doc"` where `input_doc` has `type: FILE` in the schema (so the variable reports `declaredType: null`, `effectiveType: "FILE"`)

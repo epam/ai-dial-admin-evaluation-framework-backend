@@ -9,7 +9,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -139,6 +141,81 @@ class JsonataSourcePreprocessorTest {
             String result = preprocessor.preprocess("\"${{obj}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("{\"key\":null}");
+        }
+    }
+
+    @Nested
+    @DisplayName("Schema-type FILE detection")
+    class SchemaTypeFileDetection {
+
+        private static final String SHORT_REF = "@ef/datasets/abc/doc.pdf";
+        private static final String DIAL_REF = "files/real-bucket/datasets/abc/doc.pdf";
+
+        private final List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
+                .name("attachment")
+                .type(SchemaFieldType.FILE)
+                .build());
+
+        private final InputBindingDto fileBinding = InputBindingDto.builder()
+                .templateVariable("doc")
+                .dataField("attachment")
+                .build();
+
+        private void stubDocValue() {
+            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(fileBinding), anyMap(), any()))
+                    .thenReturn(SHORT_REF);
+        }
+
+        @Test
+        @DisplayName("hintless full-value placeholder bound to a FILE column is converted to a DIAL ref")
+        void hintlessFullValueFileColumnConverted() {
+            setUp();
+            stubDocValue();
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            String result = preprocessor.preprocess(
+                    "{\"document\": \"${{doc}}\"}", Map.of("doc", fileBinding), Map.of(), warnings, schema);
+
+            assertThat(result).isEqualTo("{\"document\": \"" + DIAL_REF + "\"}");
+        }
+
+        @Test
+        @DisplayName("hintless bare placeholder bound to a FILE column is converted to a DIAL ref string literal")
+        void hintlessBareFileColumnConverted() {
+            setUp();
+            stubDocValue();
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            String result = preprocessor.preprocess(
+                    "$append($docs, ${{doc}})", Map.of("doc", fileBinding), Map.of(), warnings, schema);
+
+            assertThat(result).isEqualTo("$append($docs, \"" + DIAL_REF + "\")");
+        }
+
+        @Test
+        @DisplayName("FILE-column placeholder embedded in surrounding text is stringified, not converted")
+        void embeddedFileColumnNotConverted() {
+            setUp();
+            stubDocValue();
+
+            String result =
+                    preprocessor.preprocess("\"see ${{doc}}\"", Map.of("doc", fileBinding), Map.of(), warnings, schema);
+
+            assertThat(result).isEqualTo("\"see " + SHORT_REF + "\"");
+            verifyNoInteractions(dialFileRefResolver);
+        }
+
+        @Test
+        @DisplayName("null schema converts only an explicit |file hint")
+        void nullSchemaOnlyExplicitHint() {
+            setUp();
+            stubDocValue();
+
+            String result =
+                    preprocessor.preprocess("\"${{doc}}\"", Map.of("doc", fileBinding), Map.of(), warnings, null);
+
+            assertThat(result).isEqualTo("\"" + SHORT_REF + "\"");
+            verifyNoInteractions(dialFileRefResolver);
         }
     }
 

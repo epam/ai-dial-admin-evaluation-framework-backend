@@ -14,6 +14,8 @@ Binary file storage uses DIAL Core file storage API, accessed via a dedicated EF
 
 `DialFileRefResolver` exposes `buildEfRef(suiteId, filename)` and `buildDatasetEfRef(datasetId, filename)` for constructing short refs; `resolveToRealPath` / `resolveToDialRef` are segment-agnostic and pass any whitelisted prefix through unchanged. Prefix whitelist: `@ef`, `public`. Inner `@ef/{segment}/` whitelist is enforced by `FileRefValidator` and limited to `suites/` and `datasets/`.
 
+**Request-payload conversion**: a file reference reaches a request payload as a DIAL data ref via `resolveToDialRef`. For a full-value placeholder that happens with an explicit `|file` hint **or** with no hint when the variable is bound to a `FILE` schema column (decided by `FilePlaceholderDetector`; multipart `FILE` parts and URL-encoded values are excluded). See [jsonata-evaluation-seam](jsonata-evaluation-seam.md#file-placeholders-one-decision-point).
+
 **REST endpoint families**:
 - `POST/GET /api/v1/test-suites/{suiteId}/files` (+ `/{filename}` GET/DELETE) — suite-scoped uploads
 - `POST/GET /api/v1/datasets/{datasetId}/files` (+ `/{filename}` GET/DELETE) — dataset-scoped uploads (use this for files referenced from test-case `data`)

@@ -4,7 +4,7 @@ A FILE column in a dataset schema stores a short EF reference (`@ef/suites/{id}/
 
 | Place | Code | Scope |
 |---|---|---|
-| `TemplateContentResolver.resolveObject` | full-value branch, `typeHint` equalsIgnoreCase `FILE` | URL-encoded + multipart part values + legacy Map `content` body |
+| `TemplateContentResolver.resolveObject` | full-value branch, `typeHint` equalsIgnoreCase `FILE` | multipart `TEXT` part values + legacy Map `content` body (URL-encoded values use `resolveString`, which ignores hints, so they never convert) |
 | `JsonataSourcePreprocessor.resolveTypedValue` | same check | `jsonataContent` bodies and (via `RequestBodyEvaluator`) the JSONata path |
 | `McpRequestResolver.resolveFileRef` | same check, `typeHint.trim()` | MCP_TOOL `argumentTemplate` |
 
@@ -62,7 +62,7 @@ The conversion itself stays `resolved instanceof String s → dialFileRefResolve
 
 `MultipartFormDataRequestBodySerializer.addFilePart` takes the resolved value and calls `dialFileRefResolver.resolveToRealPath(fileRef)` itself, which **throws** for a `files/` prefix, and uploads the downloaded bytes. So for a `FormPartType.FILE` part the correct template is the hintless `${{doc}}`, resolved to the raw `@ef/...`. Naively applying "FILE column ⇒ convert" would turn that working case into `files/...` and break it.
 
-Therefore `RequestResolver.resolveMultipartBody` passes **no schema** (auto-resolution off) when `part.getType() == FILE`; `TEXT` parts get the schema and behave like JSON/URL-encoded values. Explicit `|file` on a FILE part is unchanged by this change (it already conflicts with the serializer; recorded as an Open Question, not widened here).
+Therefore `RequestResolver.resolveMultipartBody` passes **no schema** (auto-resolution off) when `part.getType() == FILE`; `TEXT` parts get the schema and behave like JSON values. URL-encoded body values are out of scope: they are stringify-only (`resolveString`) and ignore even an explicit `|file`, so hintless detection is deliberately not added there either (rule: hintless resolving applies only where the explicit hint already works). Explicit `|file` on a FILE part is unchanged by this change (it already conflicts with the serializer; recorded as an Open Question, not widened here).
 
 ### 5. Try-out with variables keeps the suite's FILE-column bindings
 
@@ -72,7 +72,7 @@ Therefore `RequestResolver.resolveMultipartBody` passes **no schema** (auto-reso
 
 ### 6. Docs/specs
 
-Update `docs/patterns/jsonata-evaluation-seam.md` and `docs/patterns/dial-file-storage.md` (rule + helper), the four delta specs, and add the helper to `docs/key-packages.md` if it lists `runner.service` classes. No `config.yaml`/`AGENTS.md` change: this follows existing patterns (new component in an existing package, no new convention).
+Update `docs/patterns/jsonata-evaluation-seam.md` and `docs/patterns/dial-file-storage.md` (rule + helper), the three delta specs (`dial-file-ref`, `mcp-tool-invocation`, `request-template`), and add the helper to `docs/key-packages.md` if it lists `runner.service` classes. `file-ref-validation` is unaffected (its FILE form-part skip is consistent with Decision 4). The `try-it-out` baseline sentence on variables is amended directly (Decision 5), without a delta. No `config.yaml`/`AGENTS.md` change: this follows existing patterns (new component in an existing package, no new convention).
 
 ## Component flow
 

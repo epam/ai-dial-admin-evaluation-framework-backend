@@ -22,6 +22,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.job.PerTurnBindingDetector;
 import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
 import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
@@ -83,6 +84,38 @@ class ResolvedRequestServiceTest {
 
     @InjectMocks
     private ResolvedRequestService service;
+
+    @Test
+    @DisplayName("passes the dataset schema to RequestResolver so FILE-column placeholders resolve in preview")
+    void resolveRequest_passesDatasetSchemaToRequestResolver() {
+        TestSuite suite = TestSuite.builder()
+                .id(SUITE_ID)
+                .datasetId(DATASET_ID)
+                .requestTemplate("{}")
+                .inputBindings("[]")
+                .build();
+        when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+        TestCase testCase = TestCase.builder().id(TEST_CASE_ID).data("{}").build();
+        when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
+
+        RequestTemplateDto template = RequestTemplateDto.builder().build();
+        List<InputBindingDto> bindings = List.of();
+        Map<String, Object> data = Map.of();
+        List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
+                .name("attachment")
+                .type(SchemaFieldType.FILE)
+                .build());
+        when(jsonbMapper.mapRequestTemplate("{}")).thenReturn(template);
+        when(jsonbMapper.mapInputBindings("[]")).thenReturn(bindings);
+        when(warningsSerializer.deserializeMap("{}")).thenReturn(data);
+        when(datasetSchemaProvider.getSchema(DATASET_ID)).thenReturn(schema);
+        when(requestResolver.resolve(template, bindings, data, schema))
+                .thenReturn(ResolvedRequestDto.builder().url("/resolved").build());
+
+        service.resolveRequest(SUITE_ID, TEST_CASE_ID);
+
+        verify(requestResolver).resolve(template, bindings, data, schema);
+    }
 
     @Test
     @DisplayName("loads suite and test case, then delegates resolution to RequestResolver")

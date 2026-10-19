@@ -530,6 +530,46 @@ class TryItOutServiceTest {
         }
 
         @Test
+        @DisplayName("MCP suite resolves the test case's arguments with the dataset schema")
+        void shouldPassDatasetSchemaToMcpResolution() {
+            final TestSuite suite = TestSuite.builder()
+                    .id(SUITE_ID)
+                    .datasetId(UUID.randomUUID())
+                    .suiteType(SuiteType.MCP_TOOL)
+                    .mcpDeploymentRef("{}")
+                    .toolRef("{}")
+                    .argumentTemplate("{}")
+                    .build();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.mapMcpDeploymentRef("{}"))
+                    .thenReturn(McpDeploymentReferenceDto.builder().id("mcp").build());
+            when(jsonbMapper.mapToolRef("{}"))
+                    .thenReturn(ToolReferenceDto.builder().name("search").build());
+            when(jsonbMapper.mapArgumentTemplate("{}"))
+                    .thenReturn(ArgumentTemplateDto.builder().build());
+            when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, suite.getDatasetId()))
+                    .thenReturn(Optional.of(TestCase.builder().id(TEST_CASE_ID).build()));
+            final List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
+                    .name("attachment")
+                    .type(SchemaFieldType.FILE)
+                    .build());
+            when(datasetSchemaProvider.getSchema(suite.getDatasetId())).thenReturn(schema);
+            when(mcpRequestResolver.resolve(any(), any(), anyMap(), any()))
+                    .thenReturn(McpRequestResolver.ResolutionResult.builder()
+                            .arguments(Map.of())
+                            .warnings(List.of(ValidationWarningDto.builder()
+                                    .code(ValidationWarningCode.REQUIRED)
+                                    .fieldName("other")
+                                    .build()))
+                            .build());
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+                    .isInstanceOf(TryItOutValidationException.class);
+
+            verify(mcpRequestResolver).resolve(any(), any(), anyMap(), eq(schema));
+        }
+
+        @Test
         @DisplayName("should invoke DIAL Core normally when the resolved model equals the suite's deployment ID")
         void shouldInvokeDeploymentForMatchingResolvedModel() {
             TestSuite suite = buildSuite("{}", "{}", "{}");
@@ -932,6 +972,29 @@ class TryItOutServiceTest {
 
             verify(deploymentInvoker).invokeWithStreaming(eq(HttpMethod.POST), any(), any(), any(), any());
             verify(deploymentInvoker).invokeWithStreaming(eq(HttpMethod.GET), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("passes the dataset schema to every request's resolution in the chain")
+        void shouldPassDatasetSchemaToChainResolution() {
+            setUpDeploymentSuite();
+            final List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
+                    .name("attachment")
+                    .type(SchemaFieldType.FILE)
+                    .build());
+            when(datasetSchemaProvider.getSchema(any())).thenReturn(schema);
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
+                    .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
+            when(requestResolver.resolveForRun(any(), any(), any(), any(), any()))
+                    .thenReturn(buildResolvedRequest());
+            when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("ok", true)));
+
+            service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+
+            verify(requestResolver).resolveForRun(eq(template0), any(), any(), any(), eq(schema));
+            verify(requestResolver).resolveForRun(eq(template1), any(), any(), any(), eq(schema));
         }
 
         @Test
@@ -1542,6 +1605,37 @@ class TryItOutServiceTest {
             verify(requestResolver)
                     .resolveForRun(template1, expectedBindings, Map.of(), frameAfterRequestZero, List.of());
             verify(requestResolver, never()).resolveForRun(any(), eq(ignoredBindings), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("binds a request-1 variable to the FILE column its additional request uses, with the schema")
+        void shouldBindChainVariableToAdditionalRequestFileColumn() {
+            final TwoRequestChain chain = stubTwoRequestChain();
+            final InputBindingDto fileBinding = InputBindingDto.builder()
+                    .templateVariable("doc")
+                    .dataField("attachment")
+                    .build();
+            when(jsonbMapper.mapAdditionalRequests("[{}]"))
+                    .thenReturn(List.of(RequestDefinitionDto.builder()
+                            .endpointRef(buildEndpointRef())
+                            .requestTemplate(chain.template1())
+                            .inputBindings(List.of(fileBinding))
+                            .build()));
+            final List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
+                    .name("attachment")
+                    .type(SchemaFieldType.FILE)
+                    .build());
+            when(datasetSchemaProvider.getSchema(any())).thenReturn(schema);
+
+            service.tryWithVariables(SUITE_ID, Map.of(1, Map.of("doc", "@ef/suites/x/a.pdf")));
+
+            verify(requestResolver)
+                    .resolveForRun(
+                            chain.template1(),
+                            List.of(fileBinding),
+                            Map.of("attachment", "@ef/suites/x/a.pdf"),
+                            Map.of(),
+                            schema);
         }
 
         @Test

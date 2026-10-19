@@ -112,8 +112,7 @@ Status: **Implemented**
 The system SHALL provide a `McpRequestResolver` component in `service.domain` that resolves an MCP argument template by substituting `${{variable}}` placeholders with values from input bindings and test case data. The resolver SHALL produce a `Map<String, Object>` of resolved tool arguments. The resolver is a stateless transformer — it receives the argument template, input bindings, and test case data as method parameters and does NOT perform any DB I/O. The caller (worker or try-it-out service) is responsible for loading data before calling the resolver.
 
 Method signatures:
-- `resolve(ArgumentTemplateDto argumentTemplate, List<InputBindingDto> bindings, Map<String, Object> testCaseData)` — used by test-case try-it-out and evaluation worker
-- `resolveWithVariables(ArgumentTemplateDto argumentTemplate, List<InputBindingDto> bindings, Map<String, Object> variables)` — used by variables try-it-out (delegates to `resolve`)
+- `resolve(ArgumentTemplateDto argumentTemplate, List<InputBindingDto> bindings, Map<String, Object> testCaseData, List<FieldDefinitionDto> testCaseSchema)` — used by test-case try-it-out, variables try-it-out and evaluation worker; `testCaseSchema` is nullable (`null`/empty ⇒ only explicit type hints convert)
 
 Resolution priority per variable:
 1. Binding `constantValue` (if a binding exists for the variable and has `constantValue`)
@@ -208,7 +207,7 @@ Status: **Implemented**
 #### Scenario: |FILE uppercase type hint resolves as file ref (case-insensitive)
 - **WHEN** the argument template contains `{"document": "${{contract|FILE}}"}`
 - **AND** the resolved value for `contract` is `"@ef/suites/abc/contract.pdf"`
-- **THEN** the resolver SHALL treat `FILE` the same as `file` (case-insensitive match via `SchemaFieldType.FILE.name().equalsIgnoreCase()`)
+- **THEN** the resolver SHALL treat `FILE` the same as `file` (case-insensitive match, decided by `FilePlaceholderDetector`)
 - **AND** return the value resolved via `DialFileRefResolver.resolveToDialRef()`
 
 #### Scenario: Multiple |file variables in same argument template resolved independently
@@ -216,6 +215,41 @@ Status: **Implemented**
 - **AND** the resolved value for `a` is `"@ef/suites/abc/first.pdf"` and for `b` is `"@ef/suites/abc/second.pdf"`
 - **THEN** the resolver SHALL resolve each independently via `DialFileRefResolver.resolveToDialRef()`
 - **AND** return `{"doc1": "files/real-bucket/suites/abc/first.pdf", "doc2": "files/real-bucket/suites/abc/second.pdf"}`
+
+### Requirement: MCP argument resolution converts placeholders bound to FILE columns without a type hint
+
+In addition to the `|file` type-hint behaviour of `McpRequestResolver`, a full-value placeholder with **no** type hint whose binding `dataField` names a schema field of type `FILE` SHALL be resolved via `DialFileRefResolver.resolveToDialRef()` when the resolved value is a `String`, using the shared `FilePlaceholderDetector` rule (see `dial-file-ref` spec). The resolver's `resolve` method SHALL receive the test case schema (`List<FieldDefinitionDto>`, nullable) as an additional parameter; `null`/empty schema means only explicit hints convert. `resolveWithVariables` (an alias of `resolve`) SHALL be removed; variables-mode try-out SHALL call `resolve` with the dataset schema, and a supplied variable that the suite binds via `dataField` to a `FILE` column SHALL be passed as a `dataField` binding with the value in the data map, so it converts like in a run. Embedded (mixed-text) placeholders SHALL remain string-concatenated without conversion.
+
+Status: Implemented
+
+#### Scenario: Hintless placeholder bound to a FILE column resolves to DIAL ref
+- **WHEN** the argument template contains `{"document": "${{contract}}"}`
+- **AND** a binding maps `contract` to `dataField: "contract_file"` and the schema declares `contract_file` as `FILE`
+- **AND** test case data contains `{"contract_file": "@ef/datasets/abc/contract.pdf"}`
+- **THEN** the resolver SHALL return `{"document": "files/real-bucket/datasets/abc/contract.pdf"}`
+
+#### Scenario: Hintless placeholder bound to a non-FILE column is unchanged
+- **WHEN** the argument template contains `{"query": "${{q}}"}`
+- **AND** `q` is bound to a `STRING` schema field whose value is `@ef/datasets/abc/contract.pdf`
+- **THEN** the resolver SHALL return `{"query": "@ef/datasets/abc/contract.pdf"}`
+
+#### Scenario: Hintless placeholder with no binding and a matching field name is unchanged
+- **WHEN** the argument template contains `{"document": "${{contract}}"}`
+- **AND** bindings is `null` or empty, and test case data contains `{"contract": "@ef/datasets/abc/contract.pdf"}`
+- **THEN** the resolver SHALL return the value unchanged (the direct-name lookup fallback carries no column type)
+
+#### Scenario: Embedded placeholder bound to a FILE column is not converted
+- **WHEN** the argument template contains `{"path": "prefix/${{doc}}/suffix"}`
+- **AND** `doc` is bound to a `FILE` schema field with value `@ef/datasets/abc/data.csv`
+- **THEN** the resolver SHALL return `{"path": "prefix/@ef/datasets/abc/data.csv/suffix"}`
+
+#### Scenario: Null schema keeps explicit-hint behaviour
+- **WHEN** `resolve` is called with a `null` schema
+- **AND** the argument template contains `{"document": "${{contract|file}}"}`
+- **THEN** the resolver SHALL still convert the value via `DialFileRefResolver.resolveToDialRef()`
+
+#### Implementation notes
+- `McpRequestResolver.resolveFileRef` delegates to `FilePlaceholderDetector`; callers: `EvaluationWorker` (schema from `EvaluationContext.snapshotTestCaseSchema`) and `TryItOutService` (dataset schema).
 
 ### Requirement: McpResponseSerializer converts CallToolResult to JSON
 

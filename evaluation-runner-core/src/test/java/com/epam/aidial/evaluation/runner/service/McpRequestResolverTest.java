@@ -8,7 +8,9 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import java.util.LinkedHashMap;
@@ -532,6 +534,89 @@ class McpRequestResolverTest {
             McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, Map.of(), null);
 
             assertThat(result.getArguments()).containsEntry("attachment", "files/real-bucket/suites/abc/report.pdf");
+        }
+    }
+
+    @Nested
+    @DisplayName("Schema-type FILE placeholder resolution")
+    class SchemaTypeFileResolution {
+
+        private static final String SHORT_REF = "@ef/datasets/abc/doc.pdf";
+        private static final String DIAL_REF = "files/real-bucket/datasets/abc/doc.pdf";
+
+        private final List<FieldDefinitionDto> schema = List.of(
+                FieldDefinitionDto.builder()
+                        .name("attachment")
+                        .type(SchemaFieldType.FILE)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("title")
+                        .type(SchemaFieldType.STRING)
+                        .build());
+
+        private ArgumentTemplateDto template(String value) {
+            ArgumentTemplateDto template = new ArgumentTemplateDto();
+            template.setArguments(Map.of("document", value));
+            return template;
+        }
+
+        private List<InputBindingDto> binding(String dataField) {
+            return List.of(InputBindingDto.builder()
+                    .templateVariable("doc")
+                    .dataField(dataField)
+                    .build());
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a FILE column resolves via DialFileRefResolver")
+        void hintlessFileColumnIsConverted() {
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            McpRequestResolver.ResolutionResult result = resolver.resolve(
+                    template("${{doc}}"), binding("attachment"), Map.of("attachment", SHORT_REF), schema);
+
+            assertThat(result.getArguments()).containsEntry("document", DIAL_REF);
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a STRING column is returned raw")
+        void hintlessStringColumnIsUnchanged() {
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("${{doc}}"), binding("title"), Map.of("title", SHORT_REF), schema);
+
+            assertThat(result.getArguments()).containsEntry("document", SHORT_REF);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
+        }
+
+        @Test
+        @DisplayName("hintless placeholder with no binding still uses the direct data lookup and stays raw")
+        void noBindingDirectLookupIsUnchanged() {
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("${{attachment}}"), null, Map.of("attachment", SHORT_REF), schema);
+
+            assertThat(result.getArguments()).containsEntry("document", SHORT_REF);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
+        }
+
+        @Test
+        @DisplayName("null schema with an explicit |file hint is still converted")
+        void nullSchemaExplicitFileHintIsConverted() {
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            McpRequestResolver.ResolutionResult result = resolver.resolve(
+                    template("${{doc|file}}"), binding("attachment"), Map.of("attachment", SHORT_REF), null);
+
+            assertThat(result.getArguments()).containsEntry("document", DIAL_REF);
+        }
+
+        @Test
+        @DisplayName("null schema with a hintless FILE-column placeholder stays raw")
+        void nullSchemaHintlessIsUnchanged() {
+            McpRequestResolver.ResolutionResult result = resolver.resolve(
+                    template("${{doc}}"), binding("attachment"), Map.of("attachment", SHORT_REF), null);
+
+            assertThat(result.getArguments()).containsEntry("document", SHORT_REF);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
     }
 }

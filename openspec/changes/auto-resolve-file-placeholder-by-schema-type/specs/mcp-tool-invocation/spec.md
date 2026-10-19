@@ -4,7 +4,7 @@
 
 In addition to the `|file` type-hint behaviour of `McpRequestResolver`, a full-value placeholder with **no** type hint whose binding `dataField` names a schema field of type `FILE` SHALL be resolved via `DialFileRefResolver.resolveToDialRef()` when the resolved value is a `String`, using the shared `FilePlaceholderDetector` rule (see `dial-file-ref` spec). The resolver's `resolve` method SHALL receive the test case schema (`List<FieldDefinitionDto>`, nullable) as an additional parameter; `null`/empty schema means only explicit hints convert. `resolveWithVariables` (an alias of `resolve`) SHALL be removed; variables-mode try-out SHALL call `resolve` with the dataset schema, and a supplied variable that the suite binds via `dataField` to a `FILE` column SHALL be passed as a `dataField` binding with the value in the data map, so it converts like in a run. Embedded (mixed-text) placeholders SHALL remain string-concatenated without conversion.
 
-Status: Planned
+Status: Implemented
 
 #### Scenario: Hintless placeholder bound to a FILE column resolves to DIAL ref
 - **WHEN** the argument template contains `{"document": "${{contract}}"}`

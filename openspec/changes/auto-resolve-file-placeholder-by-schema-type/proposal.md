@@ -4,7 +4,7 @@ GitHub issue #218: a test suite whose request template binds a placeholder to a 
 
 ## What Changes
 
-- **Runtime**: a full-value placeholder whose variable is bound via `dataField` to a schema field of type `FILE` is resolved to a DIAL ref exactly as if it carried `|file`, even when the hint is absent. Applies to DEPLOYMENT request templates (JSON / URL-encoded bodies, nested at any depth), MCP_TOOL argument templates, and JSONata-mode templates.
+- **Runtime**: a full-value placeholder whose variable is bound via `dataField` to a schema field of type `FILE` is resolved to a DIAL ref exactly as if it carried `|file`, even when the hint is absent. Applies to DEPLOYMENT request templates (JSON bodies nested at any depth, multipart `TEXT` parts; URL-encoded values stay stringify-only), MCP_TOOL argument templates, and JSONata-mode templates.
 - **One shared decision point**: the "is this placeholder a FILE reference?" decision (explicit `|file` hint **or** bound-column type `FILE`) moves into a single injectable helper in `evaluation-runner-core`, replacing the three independent hint checks in `TemplateContentResolver`, `McpRequestResolver` and `JsonataSourcePreprocessor`. The resolvers receive the test-case schema (field name → type) alongside the bindings so the helper can look the bound column up.
 - **No new validation warning**: an explicit `|file` hint on a non-FILE column (e.g. a STRING column holding `@ef/...` refs) is a legitimate, working pattern — the explicit hint wins at run time — so `BindingValidator` is unchanged and such suites stay valid.
 - **Unchanged scope**: only full-value placeholders (the entire string is one placeholder) are converted; embedded/interpolated placeholders keep today's stringify behaviour. Explicit `|file` keeps working exactly as before (including defaults and `constantValue` validation). Multipart `FILE` form parts are reviewed for the same gap; any fix is limited to what the design confirms.
@@ -18,7 +18,7 @@ GitHub issue #218: a test suite whose request template binds a placeholder to a 
 <!-- None: the change tightens existing behaviour. -->
 
 ### Modified Capabilities
-- `dial-file-ref`: FILE-typed value resolution to DIAL ref format is triggered by the bound schema column type as well as the `|file` hint (JSON and URL-encoded bodies, any nesting depth).
+- `dial-file-ref`: FILE-typed value resolution to DIAL ref format is triggered by the bound schema column type as well as the `|file` hint (JSON bodies at any nesting depth and multipart `TEXT` parts; URL-encoded values are unchanged).
 - `request-template`: runtime/preview resolution must agree with the existing `effectiveType: FILE` inference (new requirement; the existing "declared type overrides binding inference" scenario is unchanged).
 - `mcp-tool-invocation`: MCP argument-template resolution converts hintless placeholders bound to FILE columns to DIAL refs (new requirement alongside the `|file` hint behaviour).
 

@@ -10,6 +10,9 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
 import java.util.ArrayList;
@@ -110,6 +113,99 @@ class RequestBodyEvaluatorTest {
             Map<String, Object> result = evaluator.evaluate(null, null, Map.of(), Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("Schema-type FILE detection")
+    class SchemaTypeFileDetection {
+
+        private static final String SHORT_REF = "@ef/datasets/abc/doc.pdf";
+        private static final String DIAL_REF = "files/real-bucket/datasets/abc/doc.pdf";
+
+        private final List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
+                .name("attachment")
+                .type(SchemaFieldType.FILE)
+                .build());
+
+        private final InputBindingDto fileBinding = InputBindingDto.builder()
+                .templateVariable("doc")
+                .dataField("attachment")
+                .build();
+
+        private void stubDocValue() {
+            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(fileBinding), anyMap(), any()))
+                    .thenReturn(SHORT_REF);
+        }
+
+        @Test
+        @DisplayName("jsonataContent: hintless full-value FILE-column placeholder evaluates to a DIAL ref")
+        void jsonataContentHintlessFileColumnConverted() {
+            stubDocValue();
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            Map<String, Object> result = evaluator.evaluate(
+                    null,
+                    "{\"document\": \"${{doc}}\"}",
+                    Map.of("doc", fileBinding),
+                    Map.of(),
+                    Map.of(),
+                    warnings,
+                    schema);
+
+            assertThat(result).containsEntry("document", DIAL_REF);
+        }
+
+        @Test
+        @DisplayName("jsonataContent: embedded FILE-column placeholder is not converted")
+        void jsonataContentEmbeddedNotConverted() {
+            stubDocValue();
+
+            Map<String, Object> result = evaluator.evaluate(
+                    null,
+                    "{\"message\": \"see ${{doc}}\"}",
+                    Map.of("doc", fileBinding),
+                    Map.of(),
+                    Map.of(),
+                    warnings,
+                    schema);
+
+            assertThat(result).containsEntry("message", "see " + SHORT_REF);
+        }
+
+        @Test
+        @DisplayName("jsonataContent: null schema keeps the raw ref for a hintless placeholder")
+        void jsonataContentNullSchemaKeepsRawRef() {
+            stubDocValue();
+
+            Map<String, Object> result = evaluator.evaluate(
+                    null,
+                    "{\"document\": \"${{doc}}\"}",
+                    Map.of("doc", fileBinding),
+                    Map.of(),
+                    Map.of(),
+                    warnings,
+                    null);
+
+            assertThat(result).containsEntry("document", SHORT_REF);
+        }
+
+        @Test
+        @DisplayName("Map content: hintless full-value FILE-column placeholder is converted to a DIAL ref")
+        void mapContentHintlessFileColumnConverted() {
+            stubDocValue();
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            Map<String, Object> result = evaluator.evaluate(
+                    Map.of("document", "${{doc}}"),
+                    null,
+                    Map.of("doc", fileBinding),
+                    Map.of(),
+                    Map.of(),
+                    warnings,
+                    schema);
+
+            assertThat(result).containsEntry("document", DIAL_REF);
         }
     }
 

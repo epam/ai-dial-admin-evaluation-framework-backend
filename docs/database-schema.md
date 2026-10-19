@@ -97,10 +97,11 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `name` | VARCHAR(255) | NOT NULL | - | Suite name |
 | `description` | VARCHAR(2000) | NULL | - | Optional description |
 | `created_by` | VARCHAR(255) | NOT NULL | - | User who created the suite |
-| `suite_type` | VARCHAR(20) | NOT NULL | `'DEPLOYMENT'` | Suite type discriminator: `DEPLOYMENT` or `MCP_TOOL` |
+| `suite_type` | VARCHAR(20) | NOT NULL | `'DEPLOYMENT'` | Suite type discriminator: `DEPLOYMENT`, `ROUTE`, or `MCP_TOOL` |
 | `dataset_id` | VARCHAR(36) | NULL | - | Optional FK to `datasets.id` (RESTRICT on delete; PRIVATE-bound suites are cascade-deleted via service-layer logic, see `tg_test_suites_private_binding_guard` for binding-uniqueness). When NULL the suite is in the **unbound** state — editable but `POST /api/v1/test-suites/{id}/runs` returns HTTP 409 `SUITE_HAS_NO_DATASET`. The `tg_test_suites_private_binding_guard` BEFORE INSERT OR UPDATE OF `dataset_id` trigger rejects a second concurrent binding to any PRIVATE dataset (raises `ERRCODE='P0001'` MESSAGE `'PRIVATE_DATASET_ALREADY_BOUND'` → HTTP 409). |
 | `disabled_test_case_ids` | JSONB | NOT NULL | `'[]'::jsonb` | Legacy per-suite exclude list (array of UUIDs). Retained in the schema for backward compatibility but **no longer read or written by application code** — the runnable set (run-creation count, snapshot materialization) is defined solely by `is_valid` and `test_case_filter`. Inserts omit the column and rely on the DDL default; existing rows keep whatever stale content they had. Column removal is a pending follow-up change. |
-| `deployment_ref` | JSONB | NULL | - | Deployment reference (DeploymentReferenceDto) — HTTP suites |
+| `deployment_ref` | JSONB | NULL | - | Deployment reference (DeploymentReferenceDto) — DEPLOYMENT suites |
+| `routes_ref` | JSONB | NULL | - | Canonical global DIAL Core Route reference (`RouteReferenceDto.name`, e.g. `routes/platform/validate-route`) — ROUTE suites; metadata only, not used to build the invocation path |
 | `endpoint_ref` | JSONB | NULL | - | Endpoint contract definition (EndpointContractDto) — HTTP suites |
 | `response_columns` | JSONB | NOT NULL | `'[]'::jsonb` | Response column definitions (List of ResponseColumnDefinitionDto) |
 | `request_template` | JSONB | NULL | - | Postman-style request template (RequestTemplateDto) — HTTP suites |
@@ -113,7 +114,7 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `test_case_filter` | JSONB | NULL | - | Per-suite test-case selection filter — a serialized Structured Query DSL `filter` subtree authored over the dataset's test-case fields (base columns and flattened `data::<field>` fields). Settable and readable via the suite API (`testCaseFilter` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time against the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). NULL = no filter (run every valid test case). When set, it is AND-combined with `is_valid` to select the runnable test cases at run-creation count and snapshot. Does not affect suite validity. See V1.24. |
 | `overall_score_threshold` | DOUBLE PRECISION | NULL | - | Optional per-suite threshold, same numeric type as the computed run-level `overall` metric score result (`metric_score_result.value`). Settable and readable via the suite API (`overallScoreThreshold` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time to be within `[0.0, 1.0]` inclusive (HTTP 400 `VALIDATION_ERROR` otherwise). NULL = no threshold configured. Captured into the suite snapshot per run (`SuiteSnapshotDto.overallScoreThreshold`), so a run's per-row `passed` (`test_case_eval_scores.passed`) stays stable even if the suite's live threshold is edited afterward; the run-level `overall` metric score result itself is still compared client-side. See V1.25. |
 | `metric_score_aggregation` | VARCHAR(10) | NOT NULL | `'AVG'` | Per-suite choice of which per-test-case leaf (`AVG`, `MIN` or `MAX`) of `test_case_metric_scores_aggregated.metric_scores` is read wherever the aggregated table is used: the built-in per-metric statistics (AVG/P10/P90/MIN/MAX are taken across test cases of that leaf), `Mean`/`WeightedMean` overall scores, per-test-case score, and run comparison. Settable and readable via the suite API (`metricScoreAggregation` on `POST`/`PUT`/`GET /api/v1/test-suites`; omitted on create = `AVG`, omitted on update = unchanged). Captured into the suite snapshot per run (`SuiteSnapshotDto.metricScoreAggregation`; absent in older snapshots = `AVG`). See V1.35. |
-| `additional_requests` | JSONB | NOT NULL | `'[]'::jsonb` | Ordered chain of requests 1..N executed after request #0 (the suite's own `endpoint_ref`/`request_template`/`response_columns`/`input_bindings`), against the same `deployment_ref` (List of RequestDefinitionDto). Response columns across request #0 and every additional request share one flat, globally-unique namespace capped at `RunnerValidationConstants.MAX_RESPONSE_COLUMNS` (50) in total; chain length capped at `RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS` (10). Rejected (400) when non-empty on an `MCP_TOOL` suite. Settable and readable via the suite API (`additionalRequests` on `POST`/`PUT`/`GET /api/v1/test-suites`); rewritten (`@ef/suites/{id}/` prefix) on clone. Captured into the suite snapshot per run. See V1.29. |
+| `additional_requests` | JSONB | NOT NULL | `'[]'::jsonb` | Ordered chain of requests 1..N executed after request #0 (the suite's own `endpoint_ref`/`request_template`/`response_columns`/`input_bindings`), against the same suite HTTP target (List of RequestDefinitionDto). Response columns across request #0 and every additional request share one flat, globally-unique namespace capped at `RunnerValidationConstants.MAX_RESPONSE_COLUMNS` (50) in total; chain length capped at `RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS` (10). Rejected (400) when non-empty on an `MCP_TOOL` suite. Settable and readable via the suite API (`additionalRequests` on `POST`/`PUT`/`GET /api/v1/test-suites`); rewritten (`@ef/suites/{id}/` prefix) on clone. Captured into the suite snapshot per run. See V1.29. |
 | `request_name` | VARCHAR(255) | NULL | - | Optional user-facing label for request #0, mirroring `RequestDefinitionDto.name` on each additional request, so every request in the chain is labellable (e.g. for a metric `condition`'s `request.name`). NULL = request #0 unlabelled. Settable and readable via the suite API (`requestName` on `POST`/`PUT`/`GET /api/v1/test-suites`); captured into the suite snapshot per run. See V1.29. |
 | `is_valid` | BOOLEAN | NOT NULL | TRUE | Suite-level validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
@@ -146,6 +147,15 @@ Test suite definitions that bind to a dataset for their test cases and schema.
   "type": "string (optional, e.g. dial-model / dial-application)"
 }
 ```
+
+**`routes_ref`** (RouteReferenceDto):
+```json
+{
+  "name": "string (required canonical identity, e.g. routes/platform/validate-route)"
+}
+```
+
+The canonical identity uses `routes/platform/<name>` form. It is metadata only; ROUTE invocation paths come from the resolved root-relative request URL.
 
 **`endpoint_ref`** (EndpointContractDto):
 ```json
@@ -290,7 +300,7 @@ The `endpoint_ref.requestBodySchema` field uses a `contentType` discriminator. V
   }
 ]
 ```
-Deliberately excludes `deploymentRef`, MCP fields, `testCaseFilter` and `overallScore` — those stay suite-level (1-to-1 suite↔deployment relationship). Response-column names across `response_columns` and every `additional_requests[*].responseColumns` form one flat, globally-unique namespace (no per-request prefixing).
+Deliberately excludes `deploymentRef`, `routesRef`, MCP fields, `testCaseFilter` and `overallScore` — those stay suite-level (one HTTP target per suite: a deployment or global route). Response-column names across `response_columns` and every `additional_requests[*].responseColumns` form one flat, globally-unique namespace (no per-request prefixing).
 
 **`mcp_deployment_ref`** (McpDeploymentReferenceDto):
 ```json
@@ -1089,6 +1099,7 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 | V1.34 | `V1.34__ReplaceRunMetricSnapshotsRunIndex.sql` | Replaced the single-column `idx_run_metric_snapshots_run` on `run_metric_snapshots` with composite index `idx_run_metric_snapshots_run_computed_at` on `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)`, for the `test_suite_runs` query entity's `metric_names` lookup and `findLatestComputationId`; the old index was a strict prefix of the new one, so every existing `WHERE test_suite_run_id = ?` reader remains served. |
 | V1.35 | `V1.35__AddMetricScoreAggregationToTestSuites.sql` | Added `metric_score_aggregation` VARCHAR(10) NOT NULL DEFAULT 'AVG' to test_suites (`AVG`/`MIN`/`MAX`: per-test-case leaf of the aggregated metric scores used by built-in statistics, overall score, per-test-case score and run comparison) |
 | V1.36 | `V1.36__AddIdsToDatasetSchemaFields.sql` | Data-only backfill: adds a server-assigned string `id` (UUID) to every field of `datasets.test_case_schema` that lacks one or has `"id": null`. Preserves array order; leaves existing ids and non-array values untouched; idempotent; does not bump `version`/`updated_at_ms`. |
+| V1.37 | `V1.37__AddRoutesRefToTestSuites.sql` | Added nullable `routes_ref` JSONB to `test_suites` for canonical global DIAL Core Route identity metadata on ROUTE suites. |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

@@ -36,6 +36,7 @@ public class OpenApiExampleCustomizer implements OpenApiCustomizer {
             "full",
             "multi-turn",
             "mcp",
+            "route",
             "sse",
             "subset",
             "with-bodies",

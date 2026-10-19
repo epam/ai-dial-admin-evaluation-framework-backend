@@ -33,6 +33,9 @@ class PostgresTestSuiteEntityResolverTest {
         assertThat(bindings).containsKey("deployment_ref");
         assertThat(bindings.get("deployment_ref").type()).isEqualTo(QueryFieldType.OBJECT);
 
+        assertThat(bindings).containsKey("routes_ref");
+        assertThat(bindings.get("routes_ref").type()).isEqualTo(QueryFieldType.OBJECT);
+
         assertThat(bindings).containsKey("mcp_deployment_ref");
         assertThat(bindings.get("mcp_deployment_ref").type()).isEqualTo(QueryFieldType.OBJECT);
     }
@@ -46,6 +49,14 @@ class PostgresTestSuiteEntityResolverTest {
         assertThat(bindings.get("deployment_ref::name").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("deployment_ref::version").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("deployment_ref::type").type()).isEqualTo(QueryFieldType.STRING);
+    }
+
+    @Test
+    @DisplayName("exposes routes_ref::name as a STRING virtual sub-field binding")
+    void shouldExposeRouteRefName() {
+        final Map<String, QueryFieldBinding> bindings = resolver.bindings(mock(StructuredQuery.class));
+
+        assertThat(bindings.get("routes_ref::name").type()).isEqualTo(QueryFieldType.STRING);
     }
 
     @Test

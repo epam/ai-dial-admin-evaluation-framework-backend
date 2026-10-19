@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyValidationException;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
@@ -344,20 +345,23 @@ public class TurnLoopExecutor {
         final ResolvedBodyDto resolvedBody = resolved.getBody();
         final String requestBodyJson = serializeResolvedBodyForAnalytics(resolvedBody);
 
-        try {
-            requestModelValidator.validateForExecution(resolved.getUrl(), resolvedBody, deploymentId);
-        } catch (RequestBodyValidationException e) {
-            log.warn(
-                    "Turn {} for test case {} failed resolved request-model validation: {}",
-                    turnIndex,
-                    testCaseId,
-                    e.getMessage(),
-                    e);
-            return TurnStepResult.abortBeforeRequest(
-                    ExecutionStatus.ERROR, requestBodyJson, buildBodyValidationErrorOutcome(e));
+        final SuiteType suiteType = context.getSuiteType() != null ? context.getSuiteType() : SuiteType.DEPLOYMENT;
+        if (suiteType == SuiteType.DEPLOYMENT) {
+            try {
+                requestModelValidator.validateForExecution(resolved.getUrl(), resolvedBody, deploymentId);
+            } catch (RequestBodyValidationException e) {
+                log.warn(
+                        "Turn {} for test case {} failed resolved request-model validation: {}",
+                        turnIndex,
+                        testCaseId,
+                        e.getMessage(),
+                        e);
+                return TurnStepResult.abortBeforeRequest(
+                        ExecutionStatus.ERROR, requestBodyJson, buildBodyValidationErrorOutcome(e));
+            }
         }
 
-        final String path = urlBuilder.buildUrl(deploymentId, resolved.getUrl());
+        final String path = urlBuilder.buildUrl(suiteType, deploymentId, resolved.getUrl());
         final HttpHeaders headers = buildHeaders(resolved.getHeaders());
         final MultiValueMap<String, String> queryParams =
                 DeploymentInvocationSupport.buildQueryParams(resolved.getQueryParams());

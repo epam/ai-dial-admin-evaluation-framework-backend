@@ -66,6 +66,30 @@ class RunOrchestrationServiceTest {
     }
 
     @Test
+    @DisplayName("rejects ROUTE before deployment resolution or runner setup")
+    void rejectsRouteBeforeExecutionSetup() {
+        TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .name("Route Suite")
+                .suiteType(SuiteType.ROUTE)
+                .build();
+        SuiteFetchBundle bundle = SuiteFetchBundle.builder()
+                .sourceSuiteId(suite.getId())
+                .destinationSuiteId(UUID.randomUUID())
+                .suite(suite)
+                .testCases(List.of())
+                .build();
+
+        assertThatThrownBy(() -> service.run(bundle, null, tempDir.toString()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ROUTE")
+                .hasMessageContaining("not supported");
+
+        verifyNoInteractions(
+                suiteContractValidator, evaluationContextFactory, testCaseRunnerFactory, testCaseRunInputMapper);
+    }
+
+    @Test
     @DisplayName("delegates to TestCaseRunner submit and awaitCompletion — does not reimplement concurrency")
     void delegatesToTestCaseRunner() throws Exception {
         final UUID sourceSuiteId = UUID.randomUUID();

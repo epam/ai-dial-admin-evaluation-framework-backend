@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RunnerValidationConstants;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
@@ -43,7 +44,7 @@ public class TestSuiteRequestDto {
     @Schema(example = "Suite for endpoint smoke tests")
     private String description;
 
-    @Schema(example = "DEPLOYMENT", description = "Suite type: DEPLOYMENT (default) or MCP_TOOL")
+    @Schema(example = "DEPLOYMENT", description = "Suite type: DEPLOYMENT (default), MCP_TOOL, or ROUTE")
     private SuiteType suiteType;
 
     @Schema(
@@ -55,6 +56,10 @@ public class TestSuiteRequestDto {
 
     @Valid
     private DeploymentReferenceDto deploymentRef;
+
+    @Valid
+    @Schema(description = "Canonical global DIAL Core Route reference (required for ROUTE suites)")
+    private RouteReferenceDto routesRef;
 
     @Valid
     private EndpointContractDto endpointRef;
@@ -84,7 +89,7 @@ public class TestSuiteRequestDto {
                     + " entries")
     @Schema(
             description = "Ordered chain of requests 1..N executed after request #0 against the same "
-                    + "`deploymentRef`. Response columns across request #0 and every additional request share one "
+                    + "suite HTTP target. Response columns across request #0 and every additional request share one "
                     + "flat, globally-unique namespace, capped at " + RunnerValidationConstants.MAX_RESPONSE_COLUMNS
                     + " columns in total. Rejected (400) when non-empty on an `MCP_TOOL` suite. Capped at "
                     + RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS + " entries.",

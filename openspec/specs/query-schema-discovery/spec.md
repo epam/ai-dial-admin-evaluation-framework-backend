@@ -46,7 +46,7 @@ field the executor rejects. Consumers of the schema SHALL therefore treat a row'
 superset of the published fields, not an exact match.
 
 For the `test_suites` entity, the base schema SHALL additionally include the following virtual
-sub-field entries sourced from the `deployment_ref` and `mcp_deployment_ref` JSONB columns. These
+sub-field entries sourced from the `deployment_ref`, `routes_ref` and `mcp_deployment_ref` JSONB columns. These
 entries SHALL appear alongside (not instead of) the opaque `object`-typed column entries:
 
 | Field name | Type | Source |
@@ -55,6 +55,7 @@ entries SHALL appear alongside (not instead of) the opaque `object`-typed column
 | `deployment_ref::name` | `string` | `deployment_ref` |
 | `deployment_ref::version` | `string` | `deployment_ref` |
 | `deployment_ref::type` | `string` | `deployment_ref` |
+| `routes_ref::name` | `string` | `routes_ref` |
 | `mcp_deployment_ref::id` | `string` | `mcp_deployment_ref` |
 | `mcp_deployment_ref::name` | `string` | `mcp_deployment_ref` |
 | `mcp_deployment_ref::type` | `string` | `mcp_deployment_ref` |
@@ -73,6 +74,7 @@ sourced from the run's `suite_snapshot`, not from `test_suites`:
 | `deployment_ref::name` | `string` | `suite_snapshot` |
 | `deployment_ref::version` | `string` | `suite_snapshot` |
 | `deployment_ref::type` | `string` | `suite_snapshot` |
+| `routes_ref::name` | `string` | `suite_snapshot` |
 | `mcp_deployment_ref::id` | `string` | `suite_snapshot` |
 | `mcp_deployment_ref::name` | `string` | `suite_snapshot` |
 | `mcp_deployment_ref::type` | `string` | `suite_snapshot` |
@@ -93,6 +95,11 @@ Status: **Implemented**
   `deployment_ref::version`, `deployment_ref::type` each typed `string` with source `deployment_ref`,
   AND the plain `deployment_ref` entry typed `object`
 
+#### Scenario: test_suites base schema includes routes_ref sub-field
+- **WHEN** `GET /api/v1/queries/entities/schema/test_suites` is called
+- **THEN** the response includes `routes_ref::name` typed `string` with source `routes_ref`,
+  AND the plain `routes_ref` entry typed `object`
+
 #### Scenario: test_suites base schema includes mcp_deployment_ref sub-fields
 - **WHEN** `GET /api/v1/queries/entities/schema/test_suites` is called
 - **THEN** the response includes `mcp_deployment_ref::id`, `mcp_deployment_ref::name`,
@@ -102,7 +109,7 @@ Status: **Implemented**
 #### Scenario: test_suite_runs base schema excludes heavy JSONB columns and adds snapshot-derived fields
 - **WHEN** `GET /api/v1/queries/entities/schema/test_suite_runs` is called
 - **THEN** the response contains no `suite_snapshot`, `run_config` or `error_details` entry of its own, contains
-  `suite_type` and the eight `deployment_ref::*`/`mcp_deployment_ref::*` entries each typed `string`
+  `suite_type` and the nine `deployment_ref::*`/`routes_ref::name`/`mcp_deployment_ref::*` entries each typed `string`
   with source `suite_snapshot`, contains `number_of_runs` typed `integer` with source `run_config`
   (a derived scalar, which is why the `run_config` column itself stays unpublished), and contains
   `metric_names` typed `array` with source `run_metric_snapshots`
@@ -237,6 +244,8 @@ providing a non-UUID value, SHALL be rejected with HTTP 400.
 
 ## Implementation notes
 
+
+- `TestSuitesSchemaProvider`, `TestSuiteRunsSchemaProvider`, and `TestSuiteRunQueryFields` publish reference descriptors in deployment → route → MCP order, including `routes_ref::name`.
 - Controller: `query.web.QuerySchemaController` (`/api/v1/queries`).
 - Registry + SPI: `query.service.QueryEntityRegistry`, `QueryableEntitySchemaProvider`.
 - Base schema derivation: `query.service.JooqTableSchemaResolver` (+ `QueryFieldBinding`).

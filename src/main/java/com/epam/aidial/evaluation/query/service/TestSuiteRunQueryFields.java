@@ -76,11 +76,13 @@ public final class TestSuiteRunQueryFields {
     public static final RefDescriptor DEPLOYMENT_REF =
             new RefDescriptor("deployment_ref", "deploymentRef", List.of("id", "name", "version", "type"));
 
+    public static final RefDescriptor ROUTES_REF = new RefDescriptor("routes_ref", "routesRef", List.of("name"));
+
     public static final RefDescriptor MCP_DEPLOYMENT_REF =
             new RefDescriptor("mcp_deployment_ref", "mcpDeploymentRef", List.of("id", "name", "type", "transport"));
 
-    /** The two snapshot-backed reference descriptors, in publication order. */
-    public static final List<RefDescriptor> REF_DESCRIPTORS = List.of(DEPLOYMENT_REF, MCP_DEPLOYMENT_REF);
+    /** Snapshot-backed reference descriptors, in publication order. */
+    public static final List<RefDescriptor> REF_DESCRIPTORS = List.of(DEPLOYMENT_REF, ROUTES_REF, MCP_DEPLOYMENT_REF);
 
     private TestSuiteRunQueryFields() {}
 

@@ -14,12 +14,14 @@ import com.epam.aidial.evaluation.runner.dto.ParameterLocation;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -95,6 +97,63 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
         assertSuiteConfigValid(response.getBody());
         assertThat(response.getBody().getVersion()).isNotNull();
         assertThat(response.getBody().getCreatedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should persist and return a ROUTE suite reference")
+    void shouldPersistAndReturnRouteSuiteReference() {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("Global Route Suite")
+                .suiteType(SuiteType.ROUTE)
+                .routesRef(RouteReferenceDto.builder()
+                        .name("routes/platform/validate-route")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/validate/{kind}")
+                        .build())
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/validate/${{kind}}")
+                        .build())
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        assertThat(created.getBody().getSuiteType()).isEqualTo(SuiteType.ROUTE);
+        assertThat(created.getBody().getDeploymentRef()).isNull();
+        assertThat(created.getBody().getRoutesRef()).isEqualTo(request.getRoutesRef());
+
+        ResponseEntity<TestSuiteResponseDto> fetched = restTemplate.getForEntity(
+                apiUrl("/test-suites/" + created.getBody().getId()), TestSuiteResponseDto.class);
+        assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(fetched.getBody()).isNotNull();
+        assertThat(fetched.getBody().getRoutesRef()).isEqualTo(request.getRoutesRef());
+    }
+
+    @Test
+    @DisplayName("OpenAPI publishes ROUTE suite request and response examples")
+    void shouldPublishRouteExamples() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        var root = objectMapper.readTree(apiDocs.getBody());
+        var post = root.path("paths").path("/api/v1/test-suites").path("post");
+        assertThat(post.path("requestBody")
+                        .path("content")
+                        .path("application/json")
+                        .path("examples")
+                        .has("route"))
+                .isTrue();
+        assertThat(post.path("responses")
+                        .path("201")
+                        .path("content")
+                        .path("application/json")
+                        .path("examples")
+                        .has("route"))
+                .isTrue();
     }
 
     @Test

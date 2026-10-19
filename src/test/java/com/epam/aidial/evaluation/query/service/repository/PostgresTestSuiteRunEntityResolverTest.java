@@ -39,6 +39,7 @@ class PostgresTestSuiteRunEntityResolverTest {
             "deployment_ref::name",
             "deployment_ref::version",
             "deployment_ref::type",
+            "routes_ref::name",
             "mcp_deployment_ref::id",
             "mcp_deployment_ref::name",
             "mcp_deployment_ref::type",
@@ -55,7 +56,7 @@ class PostgresTestSuiteRunEntityResolverTest {
     }
 
     @Test
-    @DisplayName("bindings contain exactly the 21 spec'd field names and none of the excluded columns")
+    @DisplayName("bindings contain exactly the 22 spec'd field names and none of the excluded columns")
     void shouldExposeExactlyTheSpecFieldSet() {
         final Map<String, QueryFieldBinding> bindings = resolver.bindings(mock(StructuredQuery.class));
 
@@ -106,6 +107,7 @@ class PostgresTestSuiteRunEntityResolverTest {
         assertThat(bindings.get("deployment_ref::name").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("deployment_ref::version").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("deployment_ref::type").type()).isEqualTo(QueryFieldType.STRING);
+        assertThat(bindings.get("routes_ref::name").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("mcp_deployment_ref::id").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("mcp_deployment_ref::name").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("mcp_deployment_ref::type").type()).isEqualTo(QueryFieldType.STRING);
@@ -114,7 +116,7 @@ class PostgresTestSuiteRunEntityResolverTest {
     }
 
     @Test
-    @DisplayName("derived table projects exactly the 21 spec'd field names")
+    @DisplayName("derived table projects exactly the 22 spec'd field names")
     void shouldProjectExactlyTheSpecFieldSet() {
         final List<String> fieldNames =
                 List.of(resolver.table().fields()).stream().map(Field::getName).toList();

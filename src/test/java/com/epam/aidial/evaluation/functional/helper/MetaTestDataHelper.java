@@ -206,6 +206,24 @@ public class MetaTestDataHelper {
         return testSuiteRepository.save(suite);
     }
 
+    /** Creates a suite with a global DIAL Core Route reference for Query DSL tests. */
+    @Transactional("metaTransactionManager")
+    public TestSuite createTestSuiteWithRoutesRef(String name, String routesRefJson) {
+        Dataset dataset = createDataset("DATASET_" + name);
+        TestSuite suite = TestSuite.builder()
+                .name(name)
+                .createdBy("test-user")
+                .datasetId(dataset.getId())
+                .routesRef(routesRefJson)
+                .responseColumns("[]")
+                .inputBindings("[]")
+                .additionalRequests("[]")
+                .validationWarnings("[]")
+                .valid(true)
+                .build();
+        return testSuiteRepository.save(suite);
+    }
+
     @Transactional("metaTransactionManager")
     public TestSuiteRun createTestSuiteRun(UUID suiteId) {
         return createTestSuiteRun(suiteId, RunStatus.COMPLETED);

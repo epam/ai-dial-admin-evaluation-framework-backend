@@ -176,8 +176,32 @@ Status: **Implemented**
 - **WHEN** no override is supplied for a canonical fixed-path request
 - **THEN** the resolved `model` SHALL be validated against the fetched suite's recorded deployment ID
 
+### Requirement: ROUTE Suites Are Rejected Pre-Flight
+The CLI SHALL fail fast when the suite to be run is a ROUTE suite (`suiteType = ROUTE`). The `run` command rejects it before anything else. The `evaluate` command rejects it before suite contract validation, deployment-reference resolution, runner setup or any target invocation, but after its clone and fetch steps have completed (a clone of the ROUTE suite may have been created or reused on the source EF); import is not reached, and the exception aborts the per-suite loop so remaining selected suites are not processed. The CLI executes test cases against a deployment reference only; a ROUTE suite targets a global DIAL Core route and is therefore excluded from `Test Case Execution Against a Configured Target Deployment`. The `clone`, `fetch` and `import` commands SHALL NOT be affected: the fetched suite JSON carries `routesRef` like any other suite field.
+
+Status: **Implemented**
+
+#### Scenario: ROUTE suite is rejected before execution
+- **WHEN** the `run` or `evaluate` command targets a ROUTE suite
+- **THEN** the CLI aborts with a non-zero exit code and the error `ROUTE suite execution is not supported by eval-cli`
+- **AND** no suite contract validation, deployment resolution or runner setup happens, no target is invoked and no results CSV is written
+
+#### Scenario: evaluate stops after clone and fetch
+- **WHEN** the `evaluate` command processes a ROUTE suite among several selected suites
+- **THEN** its clone and fetch steps have already completed, the ROUTE rejection error is raised, import is not reached, and the remaining selected suites are not processed
+
+#### Scenario: ROUTE suite is rejected even with a target deployment supplied
+- **WHEN** the `run` command targets a ROUTE suite and `--deployment-id` is supplied
+- **THEN** the CLI SHALL still reject the suite with the same error
+
+#### Scenario: Fetching a ROUTE suite still works
+- **WHEN** the `fetch` command targets a ROUTE suite
+- **THEN** the CLI fetches the suite and its test cases as for any other suite, and the stored suite JSON includes `routesRef`
+
 ## Implementation notes
 
+
+- ROUTE execution rejection is the first step of `RunOrchestrationService.run`; `FetchService` remains suite-type agnostic and preserves `routesRef`.
 The `eval-cli` Gradle subproject consumes `evaluation-runner-core`'s `TestCaseRunnerFactory`/`TestCaseRunner` batch execution path via `RunOrchestrationService`, with `CloneService`/`FetchService`/`ImportService` implementing the clone/fetch/import steps and `EvaluateCommand` chaining clone → fetch → run → import for each configured suite. `CsvResultBatchWriter` implements `evaluation-runner-core`'s `ResultBatchWriter`, writing the CSV export contract described above. Shared `evaluation-runner-core` DTOs (plus one deliberate local subset, `TestSuiteUpdateResultDto`, under `client/source/dto`) are used for the source EF's existing `test-suite-clone`, `test-cases`, and `test-suite-runs` (`runs/import`) REST endpoints. See `design.md` for the full technical approach.
 
 Resolved request-model validation for the two fixed-path model-selecting APIs is inherited from `evaluation-runner-core` (`RequestModelValidator`, applied by `TurnLoopExecutor`); the CLI's only contribution is `EvaluationContextFactory` placing the effective target — the `--deployment-id` override, else the fetched suite's recorded `deploymentRef` resolved by `RunOrchestrationService` — into `EvaluationContext.snapshotDeploymentRef`. `SuiteContractValidator` is unchanged.

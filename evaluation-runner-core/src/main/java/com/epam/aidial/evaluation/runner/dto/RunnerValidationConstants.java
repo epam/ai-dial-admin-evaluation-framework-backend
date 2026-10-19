@@ -30,6 +30,16 @@ public final class RunnerValidationConstants {
     public static final String NAME_NO_TWO_COLON_MESSAGE =
             "Name must not contain '::' (reserved as CSV export column separator)";
 
+    /** Canonical API-managed DIAL Core Route identity. */
+    public static final String ROUTE_REFERENCE_NAME_PATTERN = "^routes/platform/[A-Za-z0-9._%:@\\[\\]()-]+$";
+
+    /** Message paired with {@link #ROUTE_REFERENCE_NAME_PATTERN}. */
+    public static final String ROUTE_REFERENCE_NAME_MESSAGE =
+            "Name must be a canonical DIAL Core Route identity: routes/platform/<name>";
+
+    /** Max length enforced on a DIAL Core Route identity. */
+    public static final int MAX_ROUTE_REFERENCE_NAME_LENGTH = 255;
+
     /** Max length enforced on a test suite run's user-provided {@code testRunName}. */
     public static final int MAX_TEST_RUN_NAME_LENGTH = 255;
 

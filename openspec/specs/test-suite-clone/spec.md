@@ -89,12 +89,12 @@ Status: **Implemented**
 - **AND** system SHALL attempt best-effort deletion of the files copied to the new dataset's folder
 
 ### Requirement: Clone request DTO
-The system SHALL use a dedicated `TestSuiteCloneRequestDto` with `name` as `@NotBlank @Size(max = 255)` and all other suite-level fields as optional (nullable). Null fields SHALL mean "inherit from source." The DTO SHALL NOT include `suiteType` (always inherited), SHALL NOT include `testCaseSchema` (schema lives on the dataset; suite has no schema field), and SHALL NOT include any test-case exclusion list. The DTO SHALL include an optional `datasetId` field; when supplied, the cloned suite SHALL reference the supplied dataset; when null/absent, it SHALL inherit the source suite's `datasetId`.
+The system SHALL use a dedicated `TestSuiteCloneRequestDto` with `name` as `@NotBlank @Size(max = 255)` and all other suite-level fields as optional (nullable). Null fields SHALL mean "inherit from source." The DTO SHALL NOT include `suiteType` (always inherited), SHALL NOT include `routesRef` (always inherited from the source suite), SHALL NOT include `testCaseSchema` (schema lives on the dataset; suite has no schema field), and SHALL NOT include any test-case exclusion list. The DTO SHALL include an optional `datasetId` field; when supplied, the cloned suite SHALL reference the supplied dataset; when null/absent, it SHALL inherit the source suite's `datasetId`.
 Status: **Implemented**
 
 Overridable fields: `description`, `datasetId`, `deploymentRef`, `endpointRef`, `responseColumns`, `requestTemplate`, `inputBindings`, `mcpDeploymentRef`, `toolRef`, `argumentTemplate`.
 
-**Note:** `suiteType` is always inherited from the source suite and is not user-overridable. `testCaseSchema` is no longer on the suite — it lives on the dataset; users who want to clone a suite onto a fresh schema should create a new dataset (via `POST /api/v1/datasets`) and pass its id as `datasetId` in the clone request.
+**Note:** `suiteType` and `routesRef` are always inherited from the source suite and are not user-overridable (a clone of a ROUTE suite targets the same route reference; `routesRef` is not in the overridable list above). `testCaseSchema` is no longer on the suite — it lives on the dataset; users who want to clone a suite onto a fresh schema should create a new dataset (via `POST /api/v1/datasets`) and pass its id as `datasetId` in the clone request.
 
 #### Scenario: Null override field inherits from source
 - **WHEN** clone request has `description: null` (or absent) and source suite has `description: "Original"`
@@ -111,6 +111,14 @@ Overridable fields: `description`, `datasetId`, `deploymentRef`, `endpointRef`, 
 #### Scenario: suiteType is always inherited from source
 - **WHEN** source suite is `MCP_TOOL`
 - **THEN** cloned suite SHALL have `suiteType = MCP_TOOL` (suiteType cannot be overridden via clone request)
+
+#### Scenario: routesRef inherited when cloning a ROUTE suite
+- **WHEN** client clones a ROUTE suite with `routesRef.name = "routes/platform/validate-route"` using `{"name": "Copy"}`
+- **THEN** the cloned suite SHALL have `suiteType = ROUTE` and `routesRef` equal to the source's `routesRef`
+
+#### Scenario: deploymentRef override on a ROUTE suite is rejected
+- **WHEN** client clones a ROUTE suite and supplies a non-null `deploymentRef` override
+- **THEN** the effective-suite hard validation SHALL reject the request with HTTP 400 `VALIDATION_ERROR` and message `deploymentRef must be empty for ROUTE suites`, and no clone SHALL be created
 
 #### Scenario: datasetId inherited from source when absent
 - **WHEN** clone request has `datasetId: null` (or absent)
@@ -281,6 +289,8 @@ The clone endpoint SHALL have OpenAPI annotations including operation summary, r
 - **THEN** the clone endpoint SHALL appear with description, request body schema, and response examples
 
 ## Implementation Notes
+
+- `TestSuiteMapper.toCloneEntity` inherits `routesRef`; `TestSuiteCloneService` validates the effective cloned suite through the shared write-time validator before persistence.
 - Endpoint: `TestSuiteController.cloneTestSuite`; orchestration in `TestSuiteCloneService`; suite entity built
   field-by-field by `TestSuiteMapper.toCloneEntity` (no `INSERT … SELECT`).
 - `DatasetCloneService.cloneRowAndTestCases` returns `void`: no suite-level state references individual

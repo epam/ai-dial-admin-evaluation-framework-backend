@@ -36,6 +36,10 @@ public class TestSuiteResponseDto {
     private UUID datasetId;
 
     private DeploymentReferenceDto deploymentRef;
+
+    @Schema(description = "Canonical global DIAL Core Route reference (ROUTE suites only)")
+    private RouteReferenceDto routesRef;
+
     private EndpointContractDto endpointRef;
     private List<ResponseColumnDefinitionDto> responseColumns;
     private RequestTemplateDto requestTemplate;
@@ -47,8 +51,9 @@ public class TestSuiteResponseDto {
     private String requestName;
 
     @Schema(
-            description = "Ordered chain of requests 1..N executed after request #0 against the same "
-                    + "`deploymentRef`. Empty when the suite is a single-request suite.",
+            description =
+                    "Ordered chain of requests 1..N executed after request #0 against the same suite HTTP target. "
+                            + "Empty when the suite is a single-request suite.",
             example = "[]")
     private List<RequestDefinitionDto> additionalRequests;
 

@@ -1,0 +1,51 @@
+{
+  "id": "550e8400-e29b-41d4-a716-446655440010",
+  "name": "Global Validation Route Suite",
+  "description": "Evaluates a global DIAL Core Route",
+  "suiteType": "ROUTE",
+  "routesRef": {
+    "name": "routes/platform/validate-route"
+  },
+  "endpointRef": {
+    "method": "POST",
+    "relativeUrlPattern": "/validate/{kind}",
+    "operationId": "validateItem"
+  },
+  "requestTemplate": {
+    "urlTemplate": "/validate/${{kind}}",
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "input": "${{input}}"
+      }
+    }
+  },
+  "inputBindings": [
+    {
+      "templateVariable": "kind",
+      "constantValue": "items"
+    },
+    {
+      "templateVariable": "input",
+      "dataField": "input"
+    }
+  ],
+  "responseColumns": [
+    {
+      "name": "valid",
+      "displayName": "Valid",
+      "expression": "valid",
+      "type": "BOOLEAN"
+    }
+  ],
+  "requestName": null,
+  "additionalRequests": [],
+  "valid": true,
+  "validationWarnings": [],
+  "version": 1,
+  "createdBy": "user@example.com",
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000,
+  "datasetId": "660e8400-e29b-41d4-a716-446655440000",
+  "metricScoreAggregation": "AVG"
+}

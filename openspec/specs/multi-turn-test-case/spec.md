@@ -36,7 +36,7 @@ Status: **Implemented**
 - **THEN** it is persisted with `is_valid=false` and a warning, and it is excluded from runnable selection
 
 ### Requirement: Turn count is driven by per-turn bindings, not a fixed array length
-Turn count `N` for a DEPLOYMENT HTTP suite SHALL be decided **per request in the suite's chain**, from that request's own effective input bindings. For a given request, `N` SHALL be `multiTurnData.length` if and only if **that request's** input bindings reference at least one dataset field declared `perTurn: true`; otherwise `N = 1` for that request. Requests in one chain MAY therefore have different turn counts — none, some, or all of them multi-turn. A single-turn test case (`multiTurnData` absent/null) is always the `N = 1` case for every request, unaffected by this rule. A multi-turn test case (`multiTurnData` non-empty) executed by a request with no per-turn binding SHALL execute that request as one call built from the case's shared `data`, not `multiTurnData.length` repeated calls. A single-turn test case executed by a request that references a `perTurn: true` field SHALL run that request with `N = 1` and resolve that placeholder using the same unresolved-variable behavior as any other unbound template variable (there is no turn array to source a per-turn value from). For a suite with no `additionalRequests` the chain is one request and this rule is exactly the pre-existing suite-level rule.
+Turn count `N` for an HTTP suite (DEPLOYMENT or ROUTE) SHALL be decided **per request in the suite's chain**, from that request's own effective input bindings. For a given request, `N` SHALL be `multiTurnData.length` if and only if **that request's** input bindings reference at least one dataset field declared `perTurn: true`; otherwise `N = 1` for that request. Requests in one chain MAY therefore have different turn counts — none, some, or all of them multi-turn. A single-turn test case (`multiTurnData` absent/null) is always the `N = 1` case for every request, unaffected by this rule. A multi-turn test case (`multiTurnData` non-empty) executed by a request with no per-turn binding SHALL execute that request as one call built from the case's shared `data`, not `multiTurnData.length` repeated calls. A single-turn test case executed by a request that references a `perTurn: true` field SHALL run that request with `N = 1` and resolve that placeholder using the same unresolved-variable behavior as any other unbound template variable (there is no turn array to source a per-turn value from). For a suite with no `additionalRequests` the chain is one request and this rule is exactly the pre-existing suite-level rule.
 Status: **Implemented**
 
 #### Scenario: Multi-turn dataset with a per-turn binding runs N turns
@@ -330,14 +330,20 @@ Status: **Implemented**
 - **THEN** it SHALL coerce and validate exactly as before, with the same guarded-update and skip behavior
 
 ### Requirement: MCP suites reject multi-turn datasets
-Multi-turn is supported only for HTTP chat-completions deployment suites. A run creation for an MCP suite bound to a dataset containing any multi-turn case SHALL be rejected.
+Multi-turn is supported only for HTTP suites (DEPLOYMENT and ROUTE). A run creation for an MCP suite bound to a dataset containing any multi-turn case SHALL be rejected.
 Status: **Implemented**
 
 #### Scenario: MCP + multi-turn rejected at run creation
 - **WHEN** a run is created for an `MCP_TOOL` suite whose dataset contains at least one case with `multi_turn_data`
 - **THEN** it is rejected with HTTP 409 `INVALID_OPERATION`
 
+#### Scenario: ROUTE suite with a multi-turn dataset is not rejected at run creation
+- **WHEN** a run is created for a ROUTE suite bound to a dataset containing multi-turn cases
+- **THEN** run creation SHALL NOT be rejected on that ground; the MCP-only guard does not apply
+
 ## Implementation Notes
+
+- `TestSuiteRunService` applies the multi-turn dataset rejection only to `MCP_TOOL`; DEPLOYMENT and ROUTE share `TurnLoopExecutor`.
 - Executor: `runner.job.TurnLoopExecutor` (replaces the fixed-`N` loop previously in `MultiTurnExecutor`), `PerTurnBindingDetector` (turn-count decision), `RequestBodyEvaluator` (JSONata evaluation + object-contract check), `DeploymentTurnInvoker` (now streaming), `CustomContentAccumulator` (DIAL `custom_content` chunk merge), dispatched from `EvaluationWorker.execute`.
 - CSV grouping in `service.domain.CsvImportService` / `CsvExportService` — unchanged by this change.
 - Guard via `existsMultiTurnByDatasetId` in `TestCaseRepository`, wired into `TestSuiteRunService` run-creation guards — unchanged; MCP + multi-turn rejection is independent of turn-loop mechanics.

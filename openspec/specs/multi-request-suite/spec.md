@@ -19,13 +19,13 @@ Status: **Implemented**
 
 ### Requirement: A suite defines an ordered request chain
 
-A test suite SHALL execute, for each test-case repetition, an ordered chain of requests against its single `deploymentRef`. The chain SHALL be `[request #0] ++ additionalRequests` where request #0 is built from the suite's own `endpointRef`, `requestTemplate`, `responseColumns` and `inputBindings`, and `additionalRequests` is an ordered list of `RequestDefinitionDto`. `deploymentRef` SHALL remain suite-level — a chain SHALL NOT target more than one deployment. Requests SHALL execute strictly sequentially in list order under a single concurrency permit (concurrency applies across test cases, not within a chain). `totalRequests` SHALL be `1 + additionalRequests.size()`.
+A test suite SHALL execute, for each test-case repetition, an ordered chain of requests against its single HTTP target — the suite's `deploymentRef` (DEPLOYMENT suite) or the global DIAL Core route addressed from the DIAL Core root (ROUTE suite). The chain SHALL be `[request #0] ++ additionalRequests` where request #0 is built from the suite's own `endpointRef`, `requestTemplate`, `responseColumns` and `inputBindings`, and `additionalRequests` is an ordered list of `RequestDefinitionDto`. The target SHALL remain suite-level — a chain SHALL NOT target more than one target. Requests SHALL execute strictly sequentially in list order under a single concurrency permit (concurrency applies across test cases, not within a chain). `totalRequests` SHALL be `1 + additionalRequests.size()`.
 
 Status: **Implemented**
 
 #### Scenario: Two-request chain executes in order
 - **WHEN** a suite has one entry in `additionalRequests` and a test case runs
-- **THEN** request #0 SHALL be invoked first and the additional request second, both against the suite's `deploymentRef`
+- **THEN** request #0 SHALL be invoked first and the additional request second, both against the suite's HTTP target
 
 #### Scenario: Empty additionalRequests is a one-element chain
 - **WHEN** a suite's `additionalRequests` is absent, null or `[]`
@@ -34,6 +34,11 @@ Status: **Implemented**
 #### Scenario: Requests of one chain are not parallelised
 - **WHEN** a chain of three requests executes for one test case
 - **THEN** the three calls SHALL be issued sequentially, each completing before the next begins
+
+#### Scenario: ROUTE suite chain executes every request from the DIAL Core root
+- **WHEN** a ROUTE suite has one entry in `additionalRequests` and a test case runs
+- **THEN** request #0 SHALL be invoked first and the additional request second
+- **AND** each request SHALL be sent to its own resolved root-relative `urlTemplate` path on DIAL Core, with no deployment prefix, subject to the root-relative path rules of the engine requirement `ROUTE suite invocation path validation`
 
 ### Requirement: Request definition shape
 
@@ -301,6 +306,8 @@ Status: **Implemented**
 
 ## Implementation Notes
 
+
+- ROUTE chains reuse `RequestChainExecutor`, `TurnLoopExecutor`, and `DialCoreUrlBuilder`; `additionalRequests` remains rejected only for `MCP_TOOL` suites.
 - New DTO: `com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto` (single copy in the shared module — `TestSuiteRequestDto` already references `RequestTemplateDto`, `InputBindingDto`, `ResponseColumnDefinitionDto` and `EndpointContractDto` from `runner.dto`).
 - New runner classes: `runner.job.RequestChainExecutor`, plus the `RequestExecutionSpec` / `RequestExecutionResult` carriers used to generalize `runner.job.TurnLoopExecutor`.
 - New constants: `RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS = 10`, `RunnerValidationConstants.MAX_RESPONSE_COLUMNS = 50` (extracted from the current hardcoded `@Size(max = 50)` literal on `TestSuiteRequestDto.responseColumns`).

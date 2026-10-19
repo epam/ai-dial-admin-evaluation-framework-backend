@@ -145,11 +145,11 @@ The placeholder detection SHALL use the same `PLACEHOLDER_PATTERN` regex used by
 
 ### Requirement: File ref validation at suite save time — typed constant bindings
 
-Status: Implemented
+Status: **Implemented**
 
 The system SHALL validate `InputBindingDto.constantValue` as a file reference when the bound template variable carries a `|file` type hint (e.g., `${{attachment|file}}`). Validation SHALL occur in `SuiteValidationService` during binding validation pass and SHALL produce a validation warning for invalid values.
 
-**This validation SHALL apply to both DEPLOYMENT and MCP_TOOL suite types.** The shared binding validation helper extracts `declaredType` from template variables; when `declaredType == FILE` and the binding has `constantValue`, the value is validated via `FileRefValidator.validateSuiteOwnership(constantValue, suiteId)`. Dataset-shaped constant binding values SHALL produce a warning indicating that suite-level fields require suite-shaped refs.
+**This validation SHALL apply to all suite types (DEPLOYMENT, ROUTE and MCP_TOOL).** The shared binding validation helper extracts `declaredType` from template variables; when `declaredType == FILE` and the binding has `constantValue`, the value is validated via `FileRefValidator.validateSuiteOwnership(constantValue, suiteId)`. Dataset-shaped constant binding values SHALL produce a warning indicating that suite-level fields require suite-shaped refs.
 
 #### Scenario: Valid file ref in constant binding for |file template variable accepted
 - **WHEN** a request template contains `${{dataset|file}}`
@@ -269,6 +269,8 @@ Implementation: build a `Map<String, SchemaFieldType>` from the schema before th
 
 ## Implementation Notes
 
+
+- `BindingValidator` remains the shared typed-constant validator; ROUTE suites use the same HTTP request-template path as DEPLOYMENT suites.
 - `FileRefValidator` — `com.epam.aidial.evaluation.service.domain.FileRefValidator`
 - `SuiteValidationService` — `com.epam.aidial.evaluation.service.domain.SuiteValidationService`
 - `TestCaseValidationService` — `com.epam.aidial.evaluation.service.domain.TestCaseValidationService`

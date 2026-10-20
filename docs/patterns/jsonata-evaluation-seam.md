@@ -25,7 +25,7 @@ Exceptions, deliberately outside the rule (hintless detection applies only where
 - **Multipart `FILE` parts**: `RequestResolver.resolveMultipartBody` passes no schema. The multipart serializer materializes the raw `@ef/...` ref itself and rejects a `files/` ref, so the correct template is the hintless `${{doc}}`. `TEXT` parts get the schema.
 - **URL-encoded values**: resolved with `resolveString` (stringify-only, hints ignored), so they never convert.
 
-**Try-it-out with variables**: variables mode turns each typed value into a `constantValue` binding, which has no column. `TryItOutVariableBindings.bindToFileColumns` restores a `dataField` binding (value moved into the data map) when the suite binds that variable to a `FILE` column, so variables mode matches a real run. Variables bound to non-FILE columns, constants or nothing keep needing an explicit `|file`.
+**Try-it-out with variables**: variables mode turns each typed value into a `constantValue` binding, which has no column. `TryItOutVariableBindings.bindToFileColumns` adds the column back as `dataField` (the binding keeps its `constantValue`, which the resolver reads first, while the FILE detector reads the column type) when the suite binds that variable to a `FILE` column, so variables mode matches a real run and variables sharing one column each keep their own value. Variables bound to non-FILE columns, constants or nothing keep needing an explicit `|file`.
 
 ## Response-column extraction bindings
 

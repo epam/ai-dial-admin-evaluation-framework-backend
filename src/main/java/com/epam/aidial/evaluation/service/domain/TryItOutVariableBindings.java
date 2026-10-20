@@ -26,11 +26,6 @@ public class TryItOutVariableBindings {
     private final FilePlaceholderDetector filePlaceholderDetector;
 
     /**
-     * Bindings plus the data map they resolve against for one request of a variables-mode try-out.
-     */
-    public record VariableResolution(List<InputBindingDto> bindings, Map<String, Object> data) {}
-
-    /**
      * Returns request index to constant bindings for every index {@code 0..requestCount-1}; an absent or
      * null entry yields an empty list. Blank names and null values are skipped.
      *
@@ -79,17 +74,18 @@ public class TryItOutVariableBindings {
 
     /**
      * Keeps a supplied variable bound to the suite's FILE column so it resolves like in a real run: when the
-     * suite's own binding for the variable names a {@code FILE} schema field, the constant binding becomes
-     * a {@code dataField} binding on that field and the value moves into the returned data map under the
-     * field name, letting {@code FilePlaceholderDetector} see the column type. Every other variable stays
-     * a constant binding (and needs an explicit {@code |file} hint, as before). A second variable bound to
-     * a column whose data entry is already taken also stays constant.
+     * suite's own binding for the variable names a {@code FILE} schema field, the constant binding also
+     * carries that field as its {@code dataField}. The resolver takes the value from the constant (it wins
+     * over {@code dataField}), while {@code FilePlaceholderDetector} reads the {@code dataField} to see the
+     * column type and convert the value to a DIAL ref. Because the value never goes through a per-field
+     * data slot, any number of variables can share one FILE column, each keeping its own value. Every other
+     * variable stays a plain constant binding (and needs an explicit {@code |file} hint, as before).
      *
      * @param constantBindings the request's constant bindings built from the supplied variables
      * @param suiteBindings    the request's own {@code inputBindings} as saved on the suite (nullable)
      * @param schema           the dataset test case schema (nullable)
      */
-    public VariableResolution bindToFileColumns(
+    public List<InputBindingDto> bindToFileColumns(
             List<InputBindingDto> constantBindings,
             List<InputBindingDto> suiteBindings,
             List<FieldDefinitionDto> schema) {
@@ -103,23 +99,21 @@ public class TryItOutVariableBindings {
         }
 
         final List<InputBindingDto> bindings = new ArrayList<>();
-        final Map<String, Object> data = new HashMap<>();
         for (InputBindingDto constant : constantBindings) {
             final InputBindingDto suiteBinding = suiteBindingByVariable.get(constant.getTemplateVariable());
             final boolean fileColumn = filePlaceholderDetector
                     .boundFieldType(suiteBinding, schema)
                     .filter(SchemaFieldType.FILE::equals)
                     .isPresent();
-            if (fileColumn && !data.containsKey(suiteBinding.getDataField())) {
-                data.put(suiteBinding.getDataField(), constant.getConstantValue());
-                bindings.add(InputBindingDto.builder()
-                        .templateVariable(constant.getTemplateVariable())
-                        .dataField(suiteBinding.getDataField())
-                        .build());
-            } else {
-                bindings.add(constant);
-            }
+            bindings.add(
+                    fileColumn
+                            ? InputBindingDto.builder()
+                                    .templateVariable(constant.getTemplateVariable())
+                                    .dataField(suiteBinding.getDataField())
+                                    .constantValue(constant.getConstantValue())
+                                    .build()
+                            : constant);
         }
-        return new VariableResolution(bindings, data);
+        return bindings;
     }
 }

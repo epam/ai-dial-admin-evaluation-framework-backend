@@ -112,15 +112,15 @@ class TryItOutVariableBindingsTest {
     }
 
     @Test
-    @DisplayName("Variable bound to a FILE column in the suite becomes a dataField binding with the value as data")
+    @DisplayName("Variable bound to a FILE column in the suite keeps its constant value and gains the column as "
+            + "dataField")
     void shouldBindFileColumnVariableToDataField() {
-        final TryItOutVariableBindings.VariableResolution result = bindings.bindToFileColumns(
+        final List<InputBindingDto> result = bindings.bindToFileColumns(
                 List.of(constant("doc", "@ef/suites/x/a.pdf")),
                 List.of(column("doc", "attachment")),
                 List.of(field("attachment", SchemaFieldType.FILE)));
 
-        assertThat(result.bindings()).containsExactly(column("doc", "attachment"));
-        assertThat(result.data()).containsEntry("attachment", "@ef/suites/x/a.pdf");
+        assertThat(result).containsExactly(fileColumn("doc", "attachment", "@ef/suites/x/a.pdf"));
     }
 
     @Test
@@ -129,25 +129,24 @@ class TryItOutVariableBindingsTest {
         final List<InputBindingDto> constants =
                 List.of(constant("title", "t"), constant("fixed", "f"), constant("free", "x"));
 
-        final TryItOutVariableBindings.VariableResolution result = bindings.bindToFileColumns(
+        final List<InputBindingDto> result = bindings.bindToFileColumns(
                 constants,
                 List.of(column("title", "title_col"), constant("fixed", "suiteConst")),
                 List.of(field("title_col", SchemaFieldType.STRING)));
 
-        assertThat(result.bindings()).isEqualTo(constants);
-        assertThat(result.data()).isEmpty();
+        assertThat(result).isEqualTo(constants);
     }
 
     @Test
-    @DisplayName("Second variable bound to the same FILE column stays a constant binding")
-    void shouldKeepSecondVariableOnSharedColumnConstant() {
-        final TryItOutVariableBindings.VariableResolution result = bindings.bindToFileColumns(
+    @DisplayName("Variables sharing one FILE column each keep their own value")
+    void shouldKeepEachValueWhenVariablesShareFileColumn() {
+        final List<InputBindingDto> result = bindings.bindToFileColumns(
                 List.of(constant("a", "first"), constant("b", "second")),
                 List.of(column("a", "attachment"), column("b", "attachment")),
                 List.of(field("attachment", SchemaFieldType.FILE)));
 
-        assertThat(result.bindings()).containsExactly(column("a", "attachment"), constant("b", "second"));
-        assertThat(result.data()).containsOnlyKeys("attachment").containsEntry("attachment", "first");
+        assertThat(result)
+                .containsExactly(fileColumn("a", "attachment", "first"), fileColumn("b", "attachment", "second"));
     }
 
     @Test
@@ -155,10 +154,16 @@ class TryItOutVariableBindingsTest {
     void shouldKeepConstantsWithoutSuiteBindingsOrSchema() {
         final List<InputBindingDto> constants = List.of(constant("doc", "v"));
 
-        assertThat(bindings.bindToFileColumns(constants, null, List.of()).bindings())
+        assertThat(bindings.bindToFileColumns(constants, null, List.of())).isEqualTo(constants);
+        assertThat(bindings.bindToFileColumns(constants, List.of(column("doc", "attachment")), null))
                 .isEqualTo(constants);
-        assertThat(bindings.bindToFileColumns(constants, List.of(column("doc", "attachment")), null)
-                        .bindings())
-                .isEqualTo(constants);
+    }
+
+    private static InputBindingDto fileColumn(String variable, String dataField, Object value) {
+        return InputBindingDto.builder()
+                .templateVariable(variable)
+                .dataField(dataField)
+                .constantValue(value)
+                .build();
     }
 }

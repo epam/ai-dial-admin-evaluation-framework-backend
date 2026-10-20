@@ -32,7 +32,6 @@ import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutWithVariablesRequestDto;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,15 +41,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import tools.jackson.databind.JsonNode;
 
 @DisplayName("Try It Out Functional Tests")
@@ -145,22 +141,6 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         assertThat(attachment)
                 .isEqualTo("files/test-bucket"
                         + file.getPath().substring(file.getPath().indexOf("/datasets/")));
-    }
-
-    private FileMetadataDto uploadDatasetFile(UUID datasetId, String filename) {
-        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("file", new ByteArrayResource("pdf".getBytes(StandardCharsets.UTF_8)) {
-            @Override
-            public String getFilename() {
-                return filename;
-            }
-        });
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-        ResponseEntity<FileMetadataDto> uploaded = restTemplate.postForEntity(
-                apiUrl("/datasets/" + datasetId + "/files"), new HttpEntity<>(body, headers), FileMetadataDto.class);
-        assertThat(uploaded.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        return uploaded.getBody();
     }
 
     @Test
@@ -413,6 +393,95 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                         .get("prompt"))
                 .isEqualTo("Hello from variables");
         assertThat(response.getBody().getResponse().getStatusCode()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("Variables supplying two placeholders bound to the same FILE field resolve both attachment URLs "
+            + "to DIAL refs")
+    void shouldResolveFileVariablesToDialRefs() {
+        TestSuiteResponseDto suite = createTwoFileAttachmentSuite(true);
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        FileMetadataDto first = uploadDatasetFile(datasetId, "first.pdf");
+        FileMetadataDto second = uploadDatasetFile(datasetId, "second.pdf");
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(200, false, Map.of("ok", true), null, new HttpHeaders()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/try-it-out"),
+                jsonEntity(TryItOutWithVariablesRequestDto.builder()
+                        .variables(Map.of(
+                                0, Map.of("message", "hello", "file", first.getPath(), "file2", second.getPath())))
+                        .build()),
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(userMessage(response.getBody()).get("content")).isEqualTo("hello");
+        assertThat(attachmentUrls(response.getBody())).containsExactly(dialRef(first), dialRef(second));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> userMessage(TryItOutResponseDto body) {
+        Map<String, Object> content =
+                ((ResolvedJsonBodyDto) body.getResolvedRequest().getBody()).getContent();
+        return ((List<Map<String, Object>>) content.get("messages")).get(0);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object> attachmentUrls(TryItOutResponseDto body) {
+        Map<String, Object> customContent =
+                (Map<String, Object>) userMessage(body).get("custom_content");
+        return ((List<Map<String, Object>>) customContent.get("attachments"))
+                .stream().map(attachment -> attachment.get("url")).toList();
+    }
+
+    @ParameterizedTest(name = "test-case try-out with placeholder {0}")
+    @ValueSource(strings = {"${{doc}}", "${{doc|file}}"})
+    @DisplayName("Test-case try-out resolves a FILE-bound placeholder, with or without the |file hint, to a DIAL ref")
+    void shouldResolveFilePlaceholderInTestCaseTryItOut(String placeholder) {
+        TestSuiteResponseDto suite = createFileAttachmentSuite(placeholder);
+        FileMetadataDto file = uploadDatasetFile(metaTestDataHelper.getDatasetId(suite.getId()), "x.pdf");
+        TestCaseResponseDto testCase = createTestCase(suite.getId(), "FILE case", Map.of("document", file.getPath()));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(200, false, Map.of("ok", true), null, new HttpHeaders()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + testCase.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(((ResolvedJsonBodyDto)
+                                response.getBody().getResolvedRequest().getBody())
+                        .getContent()
+                        .get("attachment"))
+                .isEqualTo(dialRef(file));
+    }
+
+    @ParameterizedTest(name = "variables try-out with placeholder {0}")
+    @ValueSource(strings = {"${{doc}}", "${{doc|file}}"})
+    @DisplayName("Variables try-out resolves a FILE-bound placeholder, with or without the |file hint, to a DIAL ref")
+    void shouldResolveFilePlaceholderInVariablesTryItOut(String placeholder) {
+        TestSuiteResponseDto suite = createFileAttachmentSuite(placeholder);
+        FileMetadataDto file = uploadDatasetFile(metaTestDataHelper.getDatasetId(suite.getId()), "x.pdf");
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(200, false, Map.of("ok", true), null, new HttpHeaders()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/try-it-out"),
+                jsonEntity(TryItOutWithVariablesRequestDto.builder()
+                        .variables(Map.of(0, Map.of("doc", file.getPath())))
+                        .build()),
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(((ResolvedJsonBodyDto)
+                                response.getBody().getResolvedRequest().getBody())
+                        .getContent()
+                        .get("attachment"))
+                .isEqualTo(dialRef(file));
     }
 
     // --- 6.6 Error scenarios ---

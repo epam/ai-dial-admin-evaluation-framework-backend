@@ -21,19 +21,27 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -213,6 +221,142 @@ public abstract class AbstractMultiTurnFunctionalTest extends BaseFunctionalTest
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return response.getBody();
+    }
+
+    protected FileMetadataDto uploadDatasetFile(UUID datasetId, String filename) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", new ByteArrayResource("pdf".getBytes(StandardCharsets.UTF_8)) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        });
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        ResponseEntity<FileMetadataDto> uploaded = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/files"), new HttpEntity<>(body, headers), FileMetadataDto.class);
+        assertThat(uploaded.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return uploaded.getBody();
+    }
+
+    /**
+     * Chat suite whose single message carries two hintless {@code ${{file}}}/{@code ${{file2}}}
+     * attachment URLs bound to optional {@code FILE} fields of a dataset that also has a required
+     * {@code message} STRING field. When {@code singleFileField} is true the schema declares only
+     * {@code file} and both {@code file} and {@code file2} placeholders bind to it.
+     */
+    protected TestSuiteResponseDto createTwoFileAttachmentSuite(boolean singleFileField) {
+        final String file2Field = singleFileField ? "file" : "file2";
+        final List<FieldDefinitionDto> schema = new ArrayList<>(List.of(
+                FieldDefinitionDto.builder()
+                        .name("message")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("file")
+                        .type(SchemaFieldType.FILE)
+                        .required(false)
+                        .build()));
+        if (!singleFileField) {
+            schema.add(FieldDefinitionDto.builder()
+                    .name("file2")
+                    .type(SchemaFieldType.FILE)
+                    .required(false)
+                    .build());
+        }
+        final UUID datasetId = newDatasetWithSchema(schema);
+        final Map<String, Object> message = Map.of(
+                "role",
+                "user",
+                "content",
+                "${{message}}",
+                "custom_content",
+                Map.of("attachments", List.of(Map.of("url", "${{file}}"), Map.of("url", "${{file2}}"))));
+        final TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("Two FILE attachments " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .build())
+                .datasetId(datasetId)
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("messages", List.of(message)))
+                                .build())
+                        .build())
+                .inputBindings(List.of(
+                        InputBindingDto.builder()
+                                .templateVariable("message")
+                                .dataField("message")
+                                .build(),
+                        InputBindingDto.builder()
+                                .templateVariable("file")
+                                .dataField("file")
+                                .build(),
+                        InputBindingDto.builder()
+                                .templateVariable("file2")
+                                .dataField(file2Field)
+                                .build()))
+                .build();
+        final ResponseEntity<TestSuiteResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        final TestSuiteResponseDto suite = created.getBody();
+        assertThat(suite).isNotNull();
+        assertThat(suite.isValid()).isTrue();
+        return suite;
+    }
+
+    protected static String dialRef(FileMetadataDto file) {
+        return "files/test-bucket" + file.getPath().substring(file.getPath().indexOf("/datasets/"));
+    }
+
+    /**
+     * Chat suite whose body carries one {@code attachment} placeholder (pass {@code "${{doc}}"} or
+     * {@code "${{doc|file}}"}) bound to an optional {@code FILE} field named {@code document}.
+     */
+    protected TestSuiteResponseDto createFileAttachmentSuite(String placeholder) {
+        final UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("document")
+                .type(SchemaFieldType.FILE)
+                .required(false)
+                .build()));
+        final TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("FILE attachment " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .build())
+                .datasetId(datasetId)
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("attachment", placeholder))
+                                .build())
+                        .build())
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("doc")
+                        .dataField("document")
+                        .build()))
+                .build();
+        final ResponseEntity<TestSuiteResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        assertThat(created.getBody().isValid()).isTrue();
+        return created.getBody();
     }
 
     protected UUID newDatasetWithSchema(List<FieldDefinitionDto> schema) {

@@ -21,6 +21,7 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
@@ -30,6 +31,8 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -267,6 +270,28 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
                 .containsExactlyInAnyOrder(0, 1);
         assertThat(metaTestDataHelper.findRunMetricSnapshotsByRunId(run.getId()))
                 .isEmpty();
+    }
+
+    @ParameterizedTest(name = "run with placeholder {0}")
+    @ValueSource(strings = {"${{doc}}", "${{doc|file}}"})
+    @DisplayName("A run resolves a FILE-bound placeholder, with or without the |file hint, to a DIAL ref")
+    void runResolvesFilePlaceholderToDialRef(String placeholder) {
+        final TestSuiteResponseDto suite = createFileAttachmentSuite(placeholder);
+        final UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        final FileMetadataDto file = uploadDatasetFile(datasetId, "x.pdf");
+        createSingleTurnCase(datasetId, "with file", Map.of("document", file.getPath()));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(chatReply("ok"));
+
+        final TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        final List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(1);
+        assertThat(String.valueOf(results.get(0).get("execution_status"))).isEqualTo("SUCCESS");
+        assertThat(String.valueOf(results.get(0).get("request_body")))
+                .contains(dialRef(file))
+                .doesNotContain("@ef/");
     }
 
     @Test

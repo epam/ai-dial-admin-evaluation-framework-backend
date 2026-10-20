@@ -199,7 +199,7 @@ public class TryItOutService {
             ResolvedRequestService.ChainPlan plan,
             HttpTarget target,
             UUID testSuiteId,
-            Map<Integer, TryItOutVariableBindings.VariableResolution> variablesByRequest,
+            Map<Integer, List<InputBindingDto>> variablesByRequest,
             List<FieldDefinitionDto> testCaseSchema) {
         Map<String, Object> frame = Map.of();
         final List<TryItOutResponseDto> history = new ArrayList<>();
@@ -213,16 +213,14 @@ public class TryItOutService {
         chain:
         for (ResolvedRequestService.RequestPlan requestPlan : plan.requestPlans()) {
             final RequestExecutionSpec spec = requestPlan.spec();
-            final TryItOutVariableBindings.VariableResolution variables =
-                    variablesByRequest != null ? variablesByRequest.get(spec.requestIndex()) : null;
             final List<InputBindingDto> bindings = variablesByRequest != null
-                    ? (variables != null ? variables.bindings() : List.of())
+                    ? variablesByRequest.getOrDefault(spec.requestIndex(), List.of())
                     : spec.inputBindings();
             final int totalTurns = requestPlan.turnDataList().size();
 
             for (int turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
-                final Map<String, Object> turnData = variables != null
-                        ? variables.data()
+                final Map<String, Object> turnData = variablesByRequest != null
+                        ? Map.of()
                         : requestPlan.turnDataList().get(turnIndex);
                 boolean failed;
                 ResolvedRequestDto resolved = null;
@@ -427,10 +425,10 @@ public class TryItOutService {
         validateMcpPreconditions(mcpRef, toolRef);
 
         final List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(suite.getDatasetId());
-        final TryItOutVariableBindings.VariableResolution resolution = variableBindings.bindToFileColumns(
+        final List<InputBindingDto> resolvedBindings = variableBindings.bindToFileColumns(
                 variableBindings.toBindingsByRequest(variables, 1).get(0), mcpSuite.inputBindings(), schema);
         McpRequestResolver.ResolutionResult resolutionResult =
-                mcpRequestResolver.resolve(argumentTemplate, resolution.bindings(), resolution.data(), schema);
+                mcpRequestResolver.resolve(argumentTemplate, resolvedBindings, Map.of(), schema);
         validateMcpResolutionResult(resolutionResult);
         return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
     }
@@ -445,7 +443,7 @@ public class TryItOutService {
         final List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(suite.getDatasetId());
         final Map<Integer, List<InputBindingDto>> bindingsByRequest = variableBindings.toBindingsByRequest(
                 variables, httpSuite.chain().size());
-        final Map<Integer, TryItOutVariableBindings.VariableResolution> variablesByRequest = new HashMap<>();
+        final Map<Integer, List<InputBindingDto>> variablesByRequest = new HashMap<>();
         for (RequestExecutionSpec spec : httpSuite.chain()) {
             variablesByRequest.put(
                     spec.requestIndex(),
@@ -456,10 +454,8 @@ public class TryItOutService {
         if (httpSuite.chain().size() == 1) {
             // Single-request fast path keeps the pre-existing lenient resolution (design D8), plus the
             // additive extraction fields (D6).
-            final TryItOutVariableBindings.VariableResolution firstVariables =
-                    variablesByRequest.get(first.requestIndex());
             final ResolvedRequestDto resolved = requestResolver.resolve(
-                    first.requestTemplate(), firstVariables.bindings(), firstVariables.data(), schema);
+                    first.requestTemplate(), variablesByRequest.get(first.requestIndex()), Map.of(), schema);
             validateResolutionResult(resolved);
             return invokeAndBuildResponse(
                     resolved, target, endpointRef.getMethod(), testSuiteId, first.responseColumns());

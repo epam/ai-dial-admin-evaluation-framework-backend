@@ -1632,8 +1632,12 @@ class TryItOutServiceTest {
             verify(requestResolver)
                     .resolveForRun(
                             chain.template1(),
-                            List.of(fileBinding),
-                            Map.of("attachment", "@ef/suites/x/a.pdf"),
+                            List.of(InputBindingDto.builder()
+                                    .templateVariable("doc")
+                                    .dataField("attachment")
+                                    .constantValue("@ef/suites/x/a.pdf")
+                                    .build()),
+                            Map.of(),
                             Map.of(),
                             schema);
         }
@@ -1767,8 +1771,9 @@ class TryItOutServiceTest {
                             eq(List.of(InputBindingDto.builder()
                                     .templateVariable("doc")
                                     .dataField("attachment")
+                                    .constantValue("@ef/suites/x/a.pdf")
                                     .build())),
-                            eq(Map.of("attachment", "@ef/suites/x/a.pdf")),
+                            eq(Map.of()),
                             eq(schema));
         }
 
@@ -1807,8 +1812,9 @@ class TryItOutServiceTest {
                             eq(List.of(InputBindingDto.builder()
                                     .templateVariable("doc")
                                     .dataField("attachment")
+                                    .constantValue("@ef/suites/x/a.pdf")
                                     .build())),
-                            eq(Map.of("attachment", "@ef/suites/x/a.pdf")),
+                            eq(Map.of()),
                             eq(schema));
         }
 

@@ -8,7 +8,9 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import java.util.LinkedHashMap;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -27,6 +30,9 @@ class McpRequestResolverTest {
 
     @Mock
     private DialFileRefResolver dialFileRefResolver;
+
+    @Spy
+    private FilePlaceholderDetector filePlaceholderDetector = new FilePlaceholderDetector();
 
     @InjectMocks
     private McpRequestResolver resolver;
@@ -38,7 +44,7 @@ class McpRequestResolverTest {
         template.setArguments(Map.of("query", "${{searchQuery}}"));
 
         Map<String, Object> data = Map.of("searchQuery", "hello world");
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
         assertThat(result.getArguments()).containsEntry("query", "hello world");
         assertThat(result.getWarnings()).isEmpty();
@@ -51,7 +57,7 @@ class McpRequestResolverTest {
         template.setArguments(Map.of("count", "${{num}}"));
 
         Map<String, Object> data = Map.of("num", 42);
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
         assertThat(result.getArguments()).containsEntry("count", 42);
     }
@@ -62,7 +68,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(Map.of("mode", "strict", "count", 5));
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
         assertThat(result.getArguments()).containsEntry("mode", "strict");
         assertThat(result.getArguments()).containsEntry("count", 5);
@@ -75,7 +81,7 @@ class McpRequestResolverTest {
         template.setArguments(Map.of("query", "search for ${{term}} in ${{scope}}"));
 
         Map<String, Object> data = Map.of("term", "cats", "scope", "images");
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
         assertThat(result.getArguments()).containsEntry("query", "search for cats in images");
     }
@@ -86,7 +92,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(Map.of("query", "${{missing}}"));
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
         assertThat(result.getArguments()).containsEntry("query", null);
         assertThat(result.getWarnings()).hasSize(1);
@@ -101,7 +107,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(Map.of("limit", "${{max_results:10}}"));
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
         assertThat(result.getArguments()).containsEntry("limit", 10L);
         assertThat(result.getWarnings()).isEmpty();
@@ -114,7 +120,7 @@ class McpRequestResolverTest {
         template.setArguments(Map.of("limit", "${{max_results:10}}"));
 
         Map<String, Object> data = Map.of("max_results", 25);
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
         assertThat(result.getArguments()).containsEntry("limit", 25);
         assertThat(result.getWarnings()).isEmpty();
@@ -126,7 +132,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(Map.of("verbose", "${{flag:true}}"));
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
         assertThat(result.getArguments()).containsEntry("verbose", true);
     }
@@ -137,7 +143,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(Map.of("format", "${{fmt:json}}"));
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
         assertThat(result.getArguments()).containsEntry("format", "json");
     }
@@ -148,7 +154,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(Map.of("query", "search ${{term:cats}} limit ${{max:5}}"));
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
         assertThat(result.getArguments()).containsEntry("query", "search cats limit 5");
         assertThat(result.getWarnings()).isEmpty();
@@ -157,7 +163,7 @@ class McpRequestResolverTest {
     @Test
     @DisplayName("Null argument template returns empty map")
     void nullTemplate() {
-        McpRequestResolver.ResolutionResult result = resolver.resolve(null, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(null, null, Map.of(), null);
         assertThat(result.getArguments()).isEmpty();
         assertThat(result.getWarnings()).isEmpty();
     }
@@ -168,7 +174,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(Map.of("key", "constant"));
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, null);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, null, null);
 
         assertThat(result.getArguments()).containsEntry("key", "constant");
     }
@@ -184,7 +190,7 @@ class McpRequestResolverTest {
         template.setArguments(Map.of("config", nested));
 
         Map<String, Object> data = Map.of("val", "resolved");
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
         @SuppressWarnings("unchecked")
         Map<String, Object> resolvedConfig =
@@ -200,7 +206,7 @@ class McpRequestResolverTest {
         template.setArguments(Map.of("items", List.of("${{first}}", "static", "${{second}}")));
 
         Map<String, Object> data = Map.of("first", "a", "second", "b");
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
         assertThat(result.getArguments().get("items")).isEqualTo(List.of("a", "static", "b"));
     }
@@ -211,7 +217,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(Map.of("verbose", true));
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
         assertThat(result.getArguments()).containsEntry("verbose", true);
     }
@@ -223,7 +229,7 @@ class McpRequestResolverTest {
         template.setArguments(Map.of("input", "${{input_doc|string}}"));
 
         Map<String, Object> data = Map.of("input_doc", "file-content-bytes");
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
         assertThat(result.getArguments()).containsEntry("input", "file-content-bytes");
         assertThat(result.getWarnings()).isEmpty();
@@ -236,7 +242,7 @@ class McpRequestResolverTest {
         template.setArguments(Map.of("query", "process ${{doc|file}} now"));
 
         Map<String, Object> data = Map.of("doc", "document.pdf");
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
         assertThat(result.getArguments()).containsEntry("query", "process document.pdf now");
         assertThat(result.getWarnings()).isEmpty();
@@ -248,7 +254,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(Map.of("input", "${{doc|string:files/default.txt}}"));
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
         assertThat(result.getArguments()).containsEntry("input", "files/default.txt");
         assertThat(result.getWarnings()).isEmpty();
@@ -262,7 +268,7 @@ class McpRequestResolverTest {
 
         List<String> arrayValue = List.of("a", "b", "c");
         Map<String, Object> data = Map.of("data", arrayValue);
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
         assertThat(result.getArguments()).containsEntry("items", arrayValue);
     }
@@ -276,7 +282,7 @@ class McpRequestResolverTest {
         ArgumentTemplateDto template = new ArgumentTemplateDto();
         template.setArguments(args);
 
-        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+        McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
         assertThat(result.getWarnings()).hasSize(2);
         assertThat(result.getWarnings()).allMatch(w -> w.getCode() == ValidationWarningCode.REQUIRED);
@@ -298,7 +304,7 @@ class McpRequestResolverTest {
                     .build());
 
             Map<String, Object> data = Map.of("searchQuery", "from-data");
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, data);
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, data, null);
 
             assertThat(result.getArguments()).containsEntry("query", "fixed-value");
             assertThat(result.getWarnings()).isEmpty();
@@ -316,7 +322,7 @@ class McpRequestResolverTest {
                     .build());
 
             Map<String, Object> data = Map.of("smiles_string", "CCO");
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, data);
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, data, null);
 
             assertThat(result.getArguments()).containsEntry("query", "CCO");
             assertThat(result.getWarnings()).isEmpty();
@@ -333,7 +339,7 @@ class McpRequestResolverTest {
                     .dataField("missing_key")
                     .build());
 
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, Map.of());
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, Map.of(), null);
 
             assertThat(result.getArguments()).containsEntry("query", "fallback");
             assertThat(result.getWarnings()).isEmpty();
@@ -346,7 +352,7 @@ class McpRequestResolverTest {
             template.setArguments(Map.of("query", "${{searchQuery}}"));
 
             Map<String, Object> data = Map.of("searchQuery", "direct-value");
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, List.of(), data);
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, List.of(), data, null);
 
             assertThat(result.getArguments()).containsEntry("query", "direct-value");
         }
@@ -362,7 +368,7 @@ class McpRequestResolverTest {
                     .constantValue(42)
                     .build());
 
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, Map.of());
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, Map.of(), null);
 
             assertThat(result.getArguments()).containsEntry("count", 42);
         }
@@ -378,7 +384,7 @@ class McpRequestResolverTest {
                     .constantValue("Alice")
                     .build());
 
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, Map.of());
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, Map.of(), null);
 
             assertThat(result.getArguments()).containsEntry("msg", "Hello Alice, welcome!");
         }
@@ -398,7 +404,7 @@ class McpRequestResolverTest {
             template.setArguments(Map.of("document", "${{contract|file}}"));
 
             Map<String, Object> data = Map.of("contract", "@ef/suites/abc/contract.pdf");
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
             assertThat(result.getArguments()).containsEntry("document", "files/real-bucket/suites/abc/contract.pdf");
             assertThat(result.getWarnings()).isEmpty();
@@ -410,7 +416,7 @@ class McpRequestResolverTest {
             ArgumentTemplateDto template = new ArgumentTemplateDto();
             template.setArguments(Map.of("document", "${{contract|file}}"));
 
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
             assertThat(result.getArguments()).containsEntry("document", null);
             assertThat(result.getWarnings()).hasSize(1);
@@ -425,7 +431,7 @@ class McpRequestResolverTest {
             template.setArguments(Map.of("doc", "${{doc|file}}"));
 
             Map<String, Object> data = Map.of("doc", 42);
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
             assertThat(result.getArguments()).containsEntry("doc", 42);
             verify(dialFileRefResolver, never()).resolveToDialRef(any());
@@ -438,7 +444,7 @@ class McpRequestResolverTest {
             template.setArguments(Map.of("doc", "${{doc}}"));
 
             Map<String, Object> data = Map.of("doc", "@ef/suites/abc/data.csv");
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
             assertThat(result.getArguments()).containsEntry("doc", "@ef/suites/abc/data.csv");
             verify(dialFileRefResolver, never()).resolveToDialRef(any());
@@ -451,7 +457,7 @@ class McpRequestResolverTest {
             template.setArguments(Map.of("path", "prefix/${{doc|file}}/suffix"));
 
             Map<String, Object> data = Map.of("doc", "@ef/suites/abc/data.csv");
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
             assertThat(result.getArguments()).containsEntry("path", "prefix/@ef/suites/abc/data.csv/suffix");
             verify(dialFileRefResolver, never()).resolveToDialRef(any());
@@ -466,7 +472,7 @@ class McpRequestResolverTest {
             ArgumentTemplateDto template = new ArgumentTemplateDto();
             template.setArguments(Map.of("document", "${{doc|file:@ef/suites/abc/default.pdf}}"));
 
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of());
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, Map.of(), null);
 
             assertThat(result.getArguments()).containsEntry("document", "files/real-bucket/suites/abc/default.pdf");
             assertThat(result.getWarnings()).isEmpty();
@@ -482,7 +488,7 @@ class McpRequestResolverTest {
             template.setArguments(Map.of("document", "${{contract|FILE}}"));
 
             Map<String, Object> data = Map.of("contract", "@ef/suites/abc/contract.pdf");
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
             assertThat(result.getArguments()).containsEntry("document", "files/real-bucket/suites/abc/contract.pdf");
         }
@@ -504,7 +510,7 @@ class McpRequestResolverTest {
             Map<String, Object> data = Map.of(
                     "a", "@ef/suites/abc/first.pdf",
                     "b", "@ef/suites/abc/second.pdf");
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data);
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, null, data, null);
 
             assertThat(result.getArguments())
                     .containsEntry("doc1", "files/real-bucket/suites/abc/first.pdf")
@@ -525,9 +531,92 @@ class McpRequestResolverTest {
                     .constantValue("@ef/suites/abc/report.pdf")
                     .build());
 
-            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, Map.of());
+            McpRequestResolver.ResolutionResult result = resolver.resolve(template, bindings, Map.of(), null);
 
             assertThat(result.getArguments()).containsEntry("attachment", "files/real-bucket/suites/abc/report.pdf");
+        }
+    }
+
+    @Nested
+    @DisplayName("Schema-type FILE placeholder resolution")
+    class SchemaTypeFileResolution {
+
+        private static final String SHORT_REF = "@ef/datasets/abc/doc.pdf";
+        private static final String DIAL_REF = "files/real-bucket/datasets/abc/doc.pdf";
+
+        private final List<FieldDefinitionDto> schema = List.of(
+                FieldDefinitionDto.builder()
+                        .name("attachment")
+                        .type(SchemaFieldType.FILE)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("title")
+                        .type(SchemaFieldType.STRING)
+                        .build());
+
+        private ArgumentTemplateDto template(String value) {
+            ArgumentTemplateDto template = new ArgumentTemplateDto();
+            template.setArguments(Map.of("document", value));
+            return template;
+        }
+
+        private List<InputBindingDto> binding(String dataField) {
+            return List.of(InputBindingDto.builder()
+                    .templateVariable("doc")
+                    .dataField(dataField)
+                    .build());
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a FILE column resolves via DialFileRefResolver")
+        void hintlessFileColumnIsConverted() {
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            McpRequestResolver.ResolutionResult result = resolver.resolve(
+                    template("${{doc}}"), binding("attachment"), Map.of("attachment", SHORT_REF), schema);
+
+            assertThat(result.getArguments()).containsEntry("document", DIAL_REF);
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a STRING column is returned raw")
+        void hintlessStringColumnIsUnchanged() {
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("${{doc}}"), binding("title"), Map.of("title", SHORT_REF), schema);
+
+            assertThat(result.getArguments()).containsEntry("document", SHORT_REF);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
+        }
+
+        @Test
+        @DisplayName("hintless placeholder with no binding still uses the direct data lookup and stays raw")
+        void noBindingDirectLookupIsUnchanged() {
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("${{attachment}}"), null, Map.of("attachment", SHORT_REF), schema);
+
+            assertThat(result.getArguments()).containsEntry("document", SHORT_REF);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
+        }
+
+        @Test
+        @DisplayName("null schema with an explicit |file hint is still converted")
+        void nullSchemaExplicitFileHintIsConverted() {
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            McpRequestResolver.ResolutionResult result = resolver.resolve(
+                    template("${{doc|file}}"), binding("attachment"), Map.of("attachment", SHORT_REF), null);
+
+            assertThat(result.getArguments()).containsEntry("document", DIAL_REF);
+        }
+
+        @Test
+        @DisplayName("null schema with a hintless FILE-column placeholder stays raw")
+        void nullSchemaHintlessIsUnchanged() {
+            McpRequestResolver.ResolutionResult result = resolver.resolve(
+                    template("${{doc}}"), binding("attachment"), Map.of("attachment", SHORT_REF), null);
+
+            assertThat(result.getArguments()).containsEntry("document", SHORT_REF);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
     }
 }

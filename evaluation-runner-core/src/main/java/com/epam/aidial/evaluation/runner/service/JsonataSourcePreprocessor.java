@@ -2,8 +2,8 @@ package com.epam.aidial.evaluation.runner.service;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
-import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import java.util.List;
 import java.util.Map;
@@ -119,6 +119,7 @@ public class JsonataSourcePreprocessor {
 
     private final TemplateVariableResolver templateVariableResolver;
     private final DialFileRefResolver dialFileRefResolver;
+    private final FilePlaceholderDetector filePlaceholderDetector;
     private final ObjectMapper objectMapper;
 
     /**
@@ -128,20 +129,23 @@ public class JsonataSourcePreprocessor {
      * @param bindingByVar input bindings keyed by template variable name
      * @param data         test case data used to resolve data-field bindings
      * @param warnings     accumulator for resolution warnings
+     * @param testCaseSchema test case schema used to detect FILE-bound placeholders; {@code null} limits
+     *                     conversion to explicit {@code |file} hints
      * @return the source text with every placeholder substituted
      */
     public String preprocess(
             String source,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            List<FieldDefinitionDto> testCaseSchema) {
         if (source == null || source.isEmpty()) {
             return source;
         }
         return scan(source, new PlaceholderSubstitutor() {
             @Override
             public String resolveFullOrBare(String placeholder) {
-                return resolveFullOrBarePlaceholder(placeholder, bindingByVar, data, warnings);
+                return resolveFullOrBarePlaceholder(placeholder, bindingByVar, data, warnings, testCaseSchema);
             }
 
             @Override
@@ -391,7 +395,8 @@ public class JsonataSourcePreprocessor {
             String placeholder,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            List<FieldDefinitionDto> testCaseSchema) {
         Matcher m = TemplateContentResolver.PLACEHOLDER_PATTERN.matcher(placeholder);
         if (!m.find()) {
             return placeholder;
@@ -399,7 +404,8 @@ public class JsonataSourcePreprocessor {
         String varName = m.group(1).trim();
         String typeHint = m.group(2);
         String defaultValue = m.group(3);
-        Object resolved = resolveTypedValue(varName, typeHint, defaultValue, bindingByVar, data, warnings);
+        Object resolved =
+                resolveTypedValue(varName, typeHint, defaultValue, bindingByVar, data, warnings, testCaseSchema);
         return TemplateContentResolver.serializeJsonPreservingNulls(objectMapper, resolved);
     }
 
@@ -433,8 +439,9 @@ public class JsonataSourcePreprocessor {
     }
 
     /**
-     * Resolves a variable's typed value, applying the {@code |file} type-hint DIAL-ref conversion —
-     * identical to {@link TemplateContentResolver#resolveObject}'s full-value path.
+     * Resolves a variable's typed value, applying the FILE-placeholder DIAL-ref conversion (see
+     * {@link FilePlaceholderDetector}) — identical to {@link TemplateContentResolver#resolveObject}'s
+     * full-value path.
      */
     private Object resolveTypedValue(
             String varName,
@@ -442,10 +449,12 @@ public class JsonataSourcePreprocessor {
             String defaultValue,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            List<FieldDefinitionDto> testCaseSchema) {
         InputBindingDto binding = bindingByVar.get(varName);
         Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
-        if (SchemaFieldType.FILE.name().equalsIgnoreCase(typeHint) && resolved instanceof String resolvedRef) {
+        if (resolved instanceof String resolvedRef
+                && filePlaceholderDetector.isFileReference(typeHint, binding, testCaseSchema)) {
             return dialFileRefResolver.resolveToDialRef(resolvedRef);
         }
         return resolved;

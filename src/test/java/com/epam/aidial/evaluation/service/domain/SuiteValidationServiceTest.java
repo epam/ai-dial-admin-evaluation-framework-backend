@@ -363,7 +363,7 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = buildMcpSuite(
                     Map.of("document", "${{doc|file}}"),
                     List.of(binding("doc", "file_path", null)),
-                    List.of(field("file_path", SchemaFieldType.STRING)));
+                    List.of(field("file_path", SchemaFieldType.FILE)));
 
             ValidationResult result = service.validateSuite(dto, SUITE_ID, lastSchema);
 
@@ -371,6 +371,32 @@ class SuiteValidationServiceTest {
                     .noneMatch(w -> w.getCode() == ValidationWarningCode.TYPE
                             && w.getFieldName() != null
                             && w.getFieldName().equals("doc"));
+        }
+
+        @Test
+        @DisplayName("|file hint bound to a STRING column produces no warning")
+        void shouldNotWarnForFileHintBoundToStringColumn() {
+            TestSuiteRequestDto dto = buildMcpSuite(
+                    Map.of("document", "${{doc|file}}"),
+                    List.of(binding("doc", "title", null)),
+                    List.of(field("title", SchemaFieldType.STRING)));
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, lastSchema);
+
+            assertThat(result.getWarnings()).noneMatch(w -> "doc".equals(w.getFieldName()));
+        }
+
+        @Test
+        @DisplayName("Hintless placeholder bound to a FILE column produces no warning")
+        void shouldNotWarnForHintlessPlaceholderBoundToFileColumn() {
+            TestSuiteRequestDto dto = buildMcpSuite(
+                    Map.of("document", "${{doc}}"),
+                    List.of(binding("doc", "file_path", null)),
+                    List.of(field("file_path", SchemaFieldType.FILE)));
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, lastSchema);
+
+            assertThat(result.getWarnings()).noneMatch(w -> "doc".equals(w.getFieldName()));
         }
 
         private List<FieldDefinitionDto> lastSchema;

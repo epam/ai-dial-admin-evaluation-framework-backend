@@ -5,10 +5,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.ArrayList;
@@ -44,7 +47,8 @@ class TemplateContentResolverTest {
 
     @BeforeEach
     void setUp() {
-        resolver = new TemplateContentResolver(templateVariableResolver, dialFileRefResolver);
+        resolver = new TemplateContentResolver(
+                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector());
         warnings = new ArrayList<>();
     }
 
@@ -76,7 +80,7 @@ class TemplateContentResolverTest {
         when(templateVariableResolver.resolveVariable(eq("temperature"), isNull(), any(), anyMap(), any()))
                 .thenReturn(0.7);
 
-        Object result = resolver.resolveObject("${{temperature}}", Map.of(), Map.of(), warnings);
+        Object result = resolver.resolveObject("${{temperature}}", Map.of(), Map.of(), warnings, null);
 
         assertThat(result).isEqualTo(0.7).isInstanceOf(Double.class);
     }
@@ -90,9 +94,117 @@ class TemplateContentResolverTest {
                 .thenReturn(shortRef);
         when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
-        Object result = resolver.resolveObject("${{doc|file}}", Map.of(), Map.of(), warnings);
+        Object result = resolver.resolveObject("${{doc|file}}", Map.of(), Map.of(), warnings, null);
 
         assertThat(result).isEqualTo(dialRef);
+    }
+
+    private static final List<FieldDefinitionDto> SCHEMA = List.of(
+            FieldDefinitionDto.builder()
+                    .name("attachment")
+                    .type(SchemaFieldType.FILE)
+                    .build(),
+            FieldDefinitionDto.builder()
+                    .name("title")
+                    .type(SchemaFieldType.STRING)
+                    .build());
+
+    private static InputBindingDto binding(String variable, String dataField) {
+        return InputBindingDto.builder()
+                .templateVariable(variable)
+                .dataField(dataField)
+                .build();
+    }
+
+    @Test
+    @DisplayName("resolveObject resolves a hintless full-value placeholder bound to a FILE column to a DIAL ref")
+    void resolveObjectResolvesHintlessFileColumnToDialRef() {
+        String shortRef = "@ef/datasets/abc/doc.pdf";
+        String dialRef = "files/real-bucket/datasets/abc/doc.pdf";
+        InputBindingDto binding = binding("doc", "attachment");
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn(shortRef);
+        when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
+
+        Object result = resolver.resolveObject("${{doc}}", Map.of("doc", binding), Map.of(), warnings, SCHEMA);
+
+        assertThat(result).isEqualTo(dialRef);
+    }
+
+    @Test
+    @DisplayName("resolveObject resolves a hintless FILE-bound placeholder nested in a Map and a List")
+    void resolveObjectResolvesHintlessFileColumnWhenNested() {
+        String shortRef = "@ef/datasets/abc/doc.pdf";
+        String dialRef = "files/real-bucket/datasets/abc/doc.pdf";
+        InputBindingDto binding = binding("doc", "attachment");
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn(shortRef);
+        when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = (Map<String, Object>) resolver.resolveObject(
+                Map.of("outer", Map.of("key", "${{doc}}"), "list", List.of("${{doc}}")),
+                Map.of("doc", binding),
+                Map.of(),
+                warnings,
+                SCHEMA);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> outer = (Map<String, Object>) result.get("outer");
+        assertThat(outer).containsEntry("key", dialRef);
+        assertThat(result.get("list")).isEqualTo(List.of(dialRef));
+    }
+
+    @Test
+    @DisplayName("resolveObject leaves a hintless placeholder bound to a STRING column unchanged")
+    void resolveObjectLeavesHintlessStringColumnUnchanged() {
+        InputBindingDto binding = binding("t", "title");
+        when(templateVariableResolver.resolveVariable(eq("t"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn("@ef/datasets/abc/doc.pdf");
+
+        Object result = resolver.resolveObject("${{t}}", Map.of("t", binding), Map.of(), warnings, SCHEMA);
+
+        assertThat(result).isEqualTo("@ef/datasets/abc/doc.pdf");
+        verifyNoInteractions(dialFileRefResolver);
+    }
+
+    @Test
+    @DisplayName("resolveObject does not convert a FILE-bound placeholder embedded in surrounding text")
+    void resolveObjectDoesNotConvertEmbeddedFilePlaceholder() {
+        InputBindingDto binding = binding("doc", "attachment");
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn("@ef/datasets/abc/doc.pdf");
+
+        Object result = resolver.resolveObject("see ${{doc}}", Map.of("doc", binding), Map.of(), warnings, SCHEMA);
+
+        assertThat(result).isEqualTo("see @ef/datasets/abc/doc.pdf");
+        verifyNoInteractions(dialFileRefResolver);
+    }
+
+    @Test
+    @DisplayName("resolveObject keeps the raw value for |string on a FILE column (explicit hint wins)")
+    void resolveObjectExplicitStringHintWinsOverFileColumn() {
+        InputBindingDto binding = binding("doc", "attachment");
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn("@ef/datasets/abc/doc.pdf");
+
+        Object result = resolver.resolveObject("${{doc|string}}", Map.of("doc", binding), Map.of(), warnings, SCHEMA);
+
+        assertThat(result).isEqualTo("@ef/datasets/abc/doc.pdf");
+        verifyNoInteractions(dialFileRefResolver);
+    }
+
+    @Test
+    @DisplayName("resolveObject with a null schema converts only an explicit |file hint")
+    void resolveObjectNullSchemaIgnoresFileColumn() {
+        InputBindingDto binding = binding("doc", "attachment");
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn("@ef/datasets/abc/doc.pdf");
+
+        Object result = resolver.resolveObject("${{doc}}", Map.of("doc", binding), Map.of(), warnings, null);
+
+        assertThat(result).isEqualTo("@ef/datasets/abc/doc.pdf");
+        verifyNoInteractions(dialFileRefResolver);
     }
 
     @Test
@@ -106,7 +218,8 @@ class TemplateContentResolverTest {
                 Map.of("outer", Map.of("inner", "${{inner}}"), "list", List.of("${{inner}}", "literal")),
                 Map.of(),
                 Map.of(),
-                warnings);
+                warnings,
+                null);
 
         @SuppressWarnings("unchecked")
         Map<String, Object> outer = (Map<String, Object>) result.get("outer");
@@ -119,9 +232,12 @@ class TemplateContentResolverTest {
     @Test
     @DisplayName("resolveObject passes non-placeholder scalars through unchanged")
     void resolveObjectPassesScalarsThrough() {
-        assertThat(resolver.resolveObject(42, Map.of(), Map.of(), warnings)).isEqualTo(42);
-        assertThat(resolver.resolveObject(true, Map.of(), Map.of(), warnings)).isEqualTo(true);
-        assertThat(resolver.resolveObject(null, Map.of(), Map.of(), warnings)).isNull();
+        assertThat(resolver.resolveObject(42, Map.of(), Map.of(), warnings, null))
+                .isEqualTo(42);
+        assertThat(resolver.resolveObject(true, Map.of(), Map.of(), warnings, null))
+                .isEqualTo(true);
+        assertThat(resolver.resolveObject(null, Map.of(), Map.of(), warnings, null))
+                .isNull();
     }
 
     @Test

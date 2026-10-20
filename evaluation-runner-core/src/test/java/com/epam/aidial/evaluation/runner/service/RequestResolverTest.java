@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartType;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -22,6 +24,7 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedMultipartBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedUrlEncodedBodyDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.UrlEncodedFormRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import java.util.List;
@@ -61,16 +64,16 @@ class RequestResolverTest {
 
     @BeforeEach
     void setUp() {
-        TemplateContentResolver templateContentResolver =
-                new TemplateContentResolver(templateVariableResolver, dialFileRefResolver);
+        TemplateContentResolver templateContentResolver = new TemplateContentResolver(
+                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector());
         ObjectMapper objectMapper = new ObjectMapper();
         JsonataProperties jsonataProperties = new JsonataProperties();
         jsonataProperties.setEvaluationTimeoutMs(5000L);
         jsonataProperties.setMaxRecursionDepth(500);
         JsonataEvaluationService jsonataEvaluationService =
                 new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties);
-        JsonataSourcePreprocessor jsonataSourcePreprocessor =
-                new JsonataSourcePreprocessor(templateVariableResolver, dialFileRefResolver, objectMapper);
+        JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
+                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector(), objectMapper);
         RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
                 templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
         service = new RequestResolver(templateContentResolver, requestBodyEvaluator);
@@ -96,7 +99,7 @@ class RequestResolverTest {
                     .build());
             var data = Map.<String, Object>of("promptField", "Hello world");
 
-            ResolvedRequestDto result = service.resolve(template, bindings, data);
+            ResolvedRequestDto result = service.resolve(template, bindings, data, null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedJsonBodyDto.class);
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
@@ -118,7 +121,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("model", "gpt-4");
@@ -136,7 +139,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("temperature")).isEqualTo(0.7);
@@ -154,7 +157,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             @SuppressWarnings("unchecked")
@@ -168,7 +171,7 @@ class RequestResolverTest {
                     .body(JsonRequestBodyDto.builder().content(null).build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedJsonBodyDto.class);
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
@@ -182,7 +185,7 @@ class RequestResolverTest {
                     .body(JsonRequestBodyDto.builder().build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedJsonBodyDto.class);
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
@@ -195,7 +198,7 @@ class RequestResolverTest {
             var template =
                     RequestTemplateDto.builder().urlTemplate("/api/v1/test").build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isNull();
         }
@@ -213,7 +216,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("message")).isEqualTo("Hello Alice, your score is 95");
@@ -230,7 +233,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             @SuppressWarnings("unchecked")
@@ -240,7 +243,7 @@ class RequestResolverTest {
 
         @Test
         void shouldReturnWarningWhenNullTemplate() {
-            ResolvedRequestDto result = service.resolve(null, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(null, List.of(), Map.of(), null);
 
             assertThat(result.getWarnings()).hasSize(1);
             assertThat(result.getWarnings().get(0).getMessage()).contains("No request template configured");
@@ -255,7 +258,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("model", "gpt-4");
@@ -271,7 +274,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).isNull();
@@ -304,7 +307,7 @@ class RequestResolverTest {
                     .dataField("docField")
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(binding), Map.of("docField", shortRef));
+            ResolvedRequestDto result = service.resolve(template, List.of(binding), Map.of("docField", shortRef), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("document", dialRef);
@@ -325,7 +328,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("file_ref", dialRef);
@@ -343,7 +346,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("field", "plain-value");
@@ -361,7 +364,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("temperature")).isEqualTo(0.7);
@@ -379,7 +382,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("greeting")).isEqualTo("Hello Alice!");
@@ -398,7 +401,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("data")).isEqualTo(arrayValue);
@@ -419,7 +422,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("attachment", dialRef);
@@ -440,7 +443,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             @SuppressWarnings("unchecked")
@@ -461,10 +464,194 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent().get("attachment")).isEqualTo(mapValue);
+        }
+    }
+
+    @Nested
+    @DisplayName("Schema-type FILE placeholder resolution")
+    class SchemaTypeFileResolution {
+
+        private static final String SHORT_REF = "@ef/datasets/abc/doc.pdf";
+        private static final String DIAL_REF = "files/real-bucket/datasets/abc/doc.pdf";
+
+        private final List<FieldDefinitionDto> schema = List.of(
+                FieldDefinitionDto.builder()
+                        .name("attachment")
+                        .type(SchemaFieldType.FILE)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("title")
+                        .type(SchemaFieldType.STRING)
+                        .build());
+
+        private final InputBindingDto fileBinding = InputBindingDto.builder()
+                .templateVariable("doc")
+                .dataField("attachment")
+                .build();
+
+        private void stubDocValue() {
+            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(fileBinding), anyMap(), anyList()))
+                    .thenReturn(SHORT_REF);
+        }
+
+        private RequestTemplateDto jsonTemplate(Map<String, Object> content) {
+            return RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder().content(content).build())
+                    .build();
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a FILE column resolves to a DIAL ref in a JSON body")
+        void hintlessFileColumnResolvesInJsonBody() {
+            stubDocValue();
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            ResolvedRequestDto result = service.resolve(
+                    jsonTemplate(Map.of("document", "${{doc}}")),
+                    List.of(fileBinding),
+                    Map.of("attachment", SHORT_REF),
+                    schema);
+
+            var jsonBody = (ResolvedJsonBodyDto) result.getBody();
+            assertThat(jsonBody.getContent()).containsEntry("document", DIAL_REF);
+        }
+
+        @Test
+        @DisplayName("hintless FILE-column placeholder nested in a JSON object resolves to a DIAL ref")
+        void hintlessFileColumnResolvesWhenNestedInJsonBody() {
+            stubDocValue();
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            ResolvedRequestDto result = service.resolve(
+                    jsonTemplate(Map.of("outer", Map.of("key", "${{doc}}"))),
+                    List.of(fileBinding),
+                    Map.of("attachment", SHORT_REF),
+                    schema);
+
+            var jsonBody = (ResolvedJsonBodyDto) result.getBody();
+            @SuppressWarnings("unchecked")
+            var outer = (Map<String, Object>) jsonBody.getContent().get("outer");
+            assertThat(outer).containsEntry("key", DIAL_REF);
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a STRING column keeps the raw value")
+        void hintlessStringColumnIsUnchanged() {
+            var titleBinding = InputBindingDto.builder()
+                    .templateVariable("t")
+                    .dataField("title")
+                    .build();
+            when(templateVariableResolver.resolveVariable(eq("t"), isNull(), eq(titleBinding), anyMap(), anyList()))
+                    .thenReturn("plain");
+
+            ResolvedRequestDto result = service.resolve(
+                    jsonTemplate(Map.of("title", "${{t}}")), List.of(titleBinding), Map.of("title", "plain"), schema);
+
+            var jsonBody = (ResolvedJsonBodyDto) result.getBody();
+            assertThat(jsonBody.getContent()).containsEntry("title", "plain");
+            verifyNoInteractions(dialFileRefResolver);
+        }
+
+        @Test
+        @DisplayName("FILE-column placeholder embedded in surrounding text is not converted")
+        void embeddedFileColumnPlaceholderIsNotConverted() {
+            stubDocValue();
+
+            ResolvedRequestDto result = service.resolve(
+                    jsonTemplate(Map.of("message", "see ${{doc}}")),
+                    List.of(fileBinding),
+                    Map.of("attachment", SHORT_REF),
+                    schema);
+
+            var jsonBody = (ResolvedJsonBodyDto) result.getBody();
+            assertThat(jsonBody.getContent()).containsEntry("message", "see " + SHORT_REF);
+            verifyNoInteractions(dialFileRefResolver);
+        }
+
+        @Test
+        @DisplayName("|string on a FILE column keeps the raw value (explicit hint wins)")
+        void explicitStringHintOnFileColumnIsUnchanged() {
+            stubDocValue();
+
+            ResolvedRequestDto result = service.resolve(
+                    jsonTemplate(Map.of("document", "${{doc|string}}")),
+                    List.of(fileBinding),
+                    Map.of("attachment", SHORT_REF),
+                    schema);
+
+            var jsonBody = (ResolvedJsonBodyDto) result.getBody();
+            assertThat(jsonBody.getContent()).containsEntry("document", SHORT_REF);
+            verifyNoInteractions(dialFileRefResolver);
+        }
+
+        @Test
+        @DisplayName("multipart FILE part with a hintless FILE-bound placeholder keeps the raw @ef/ ref")
+        void multipartFilePartKeepsRawRef() {
+            stubDocValue();
+
+            ResolvedRequestDto result = service.resolve(
+                    multipartTemplate(FormPartType.FILE),
+                    List.of(fileBinding),
+                    Map.of("attachment", SHORT_REF),
+                    schema);
+
+            var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
+            assertThat(multipartBody.getParts().get(0).getResolvedValue()).isEqualTo(SHORT_REF);
+            verifyNoInteractions(dialFileRefResolver);
+        }
+
+        @Test
+        @DisplayName("multipart TEXT part with a hintless FILE-bound placeholder converts to a DIAL ref")
+        void multipartTextPartConverts() {
+            stubDocValue();
+            when(dialFileRefResolver.resolveToDialRef(SHORT_REF)).thenReturn(DIAL_REF);
+
+            ResolvedRequestDto result = service.resolve(
+                    multipartTemplate(FormPartType.TEXT),
+                    List.of(fileBinding),
+                    Map.of("attachment", SHORT_REF),
+                    schema);
+
+            var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
+            assertThat(multipartBody.getParts().get(0).getResolvedValue()).isEqualTo(DIAL_REF);
+        }
+
+        @Test
+        @DisplayName("URL-encoded value with a hintless FILE-bound placeholder stays raw (stringify-only, like |file)")
+        void urlEncodedValueIsNotConverted() {
+            stubDocValue();
+
+            var template = RequestTemplateDto.builder()
+                    .body(UrlEncodedFormRequestBodyDto.builder()
+                            .content(List.of(KeyValueTemplateDto.builder()
+                                    .key("document")
+                                    .value("${{doc}}")
+                                    .build()))
+                            .build())
+                    .build();
+
+            ResolvedRequestDto result =
+                    service.resolve(template, List.of(fileBinding), Map.of("attachment", SHORT_REF), schema);
+
+            var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
+            assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo(SHORT_REF);
+            verifyNoInteractions(dialFileRefResolver);
+        }
+
+        private RequestTemplateDto multipartTemplate(FormPartType partType) {
+            return RequestTemplateDto.builder()
+                    .body(MultipartFormDataRequestBodyDto.builder()
+                            .content(List.of(FormPartDto.builder()
+                                    .name("part")
+                                    .type(partType)
+                                    .value("${{doc}}")
+                                    .build()))
+                            .build())
+                    .build();
         }
     }
 
@@ -487,7 +674,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedMultipartBodyDto.class);
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
@@ -513,7 +700,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts()).hasSize(1);
@@ -538,7 +725,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             ResolvedFormPartDto part = multipartBody.getParts().get(0);
@@ -569,7 +756,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts()).hasSize(2);
@@ -592,7 +779,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts().get(0).getResolvedValue()).isEqualTo(Map.of("key", "value"));
@@ -606,7 +793,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts()).isEmpty();
@@ -625,7 +812,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts()).hasSize(1);
@@ -648,7 +835,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             @SuppressWarnings("unchecked")
@@ -678,7 +865,7 @@ class RequestResolverTest {
             var bindings = List.of(binding);
             var data = Map.<String, Object>of("inputCol", "data-driven value");
 
-            ResolvedRequestDto result = service.resolve(template, bindings, data);
+            ResolvedRequestDto result = service.resolve(template, bindings, data, null);
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts().get(0).getResolvedValue()).isEqualTo("data-driven value");
@@ -703,7 +890,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             assertThat(result.getBody()).isInstanceOf(ResolvedUrlEncodedBodyDto.class);
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
@@ -733,7 +920,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries()).hasSize(2);
@@ -756,7 +943,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("42");
@@ -776,7 +963,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("true");
@@ -788,7 +975,7 @@ class RequestResolverTest {
                     .body(UrlEncodedFormRequestBodyDto.builder().content(null).build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries()).isEmpty();
@@ -808,7 +995,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getKey()).isEqualTo("access_token");
@@ -825,7 +1012,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries()).hasSize(1);
@@ -846,7 +1033,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("https://example.com/callback");
@@ -872,7 +1059,7 @@ class RequestResolverTest {
             var bindings = List.of(binding);
             var data = Map.<String, Object>of("clientIdCol", "my-client-app");
 
-            ResolvedRequestDto result = service.resolve(template, bindings, data);
+            ResolvedRequestDto result = service.resolve(template, bindings, data, null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("my-client-app");
@@ -892,7 +1079,7 @@ class RequestResolverTest {
                             .build())
                     .build();
 
-            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of(), null);
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo("openid");

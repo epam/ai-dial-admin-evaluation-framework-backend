@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.runner.service;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
@@ -60,6 +61,8 @@ public class RequestBodyEvaluator {
      *                      previous turn's extracted response columns); empty for a preview with no
      *                      turn history
      * @param warnings      accumulator for placeholder-resolution warnings
+     * @param testCaseSchema test case schema used to detect FILE-bound placeholders; {@code null} limits
+     *                      conversion to explicit {@code |file} hints
      * @return the evaluated request body as a JSON object, or {@code null} when both {@code content} and
      *     {@code jsonataContent} are {@code null} (no body)
      * @throws RequestBodyEvaluationException if the JSONata source fails to parse or evaluate, or the
@@ -72,16 +75,18 @@ public class RequestBodyEvaluator {
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
             Map<String, Object> frameBindings,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            List<FieldDefinitionDto> testCaseSchema) {
         if (content == null && jsonataContent == null) {
             return null;
         }
 
         String source;
         if (jsonataContent != null) {
-            source = jsonataSourcePreprocessor.preprocess(jsonataContent, bindingByVar, data, warnings);
+            source = jsonataSourcePreprocessor.preprocess(jsonataContent, bindingByVar, data, warnings, testCaseSchema);
         } else {
-            Object resolved = templateContentResolver.resolveObject(content, bindingByVar, data, warnings);
+            Object resolved =
+                    templateContentResolver.resolveObject(content, bindingByVar, data, warnings, testCaseSchema);
             source = TemplateContentResolver.serializeJsonPreservingNulls(objectMapper, resolved);
         }
 

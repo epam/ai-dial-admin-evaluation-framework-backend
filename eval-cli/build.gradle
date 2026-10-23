@@ -5,8 +5,7 @@ plugins {
     id 'checkstyle'
     id 'io.freefair.lombok' version '9.8.2'
     id 'org.springframework.boot' version '4.1.2'
-    //id 'com.diffplug.spotless' version '8.10.2'
-    id 'com.diffplug.spotless' version '8.8.0'
+    id 'com.diffplug.spotless' version '8.10.2'
 }
 
 group = 'com.epam.aidial'

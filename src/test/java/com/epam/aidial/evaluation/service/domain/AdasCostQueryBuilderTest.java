@@ -235,8 +235,9 @@ class AdasCostQueryBuilderTest {
                                         new ValueExpr(ValueType.STRING, "other")),
                                 "run_id"),
                         new OutputColumn(new FnExpr("count", false, List.of()), null),
-                        new OutputColumn(
-                                new FnExpr("sum", false, List.of(new FieldExpr("total_price"))), "total_cost"));
+                        new OutputColumn(new FnExpr("sum", false, List.of(new FieldExpr("total_price"))), "total_cost"),
+                        phaseCostColumn(TracingConstants.PHASE_EXECUTION, "test_case_cost"),
+                        phaseCostColumn(TracingConstants.PHASE_METRIC_EVALUATION, "metric_eval_cost"));
     }
 
     @Test
@@ -315,11 +316,53 @@ class AdasCostQueryBuilderTest {
                       "as": "run_id"
                     },
                     { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
-                    { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" }
+                    { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" },
+                    {
+                      "expr": {
+                        "type": "fn", "name": "sum", "distinct": false,
+                        "args": [{
+                          "type": "case",
+                          "when": [{
+                            "when": { "op": "co", "args": [
+                              { "type": "field", "name": "usage_request_baggage.baggage" },
+                              { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
+                            ]},
+                            "then": { "type": "field", "name": "total_price" }
+                          }],
+                          "else": { "type": "value", "value_type": "decimal", "value": "0" }
+                        }]
+                      },
+                      "as": "test_case_cost"
+                    },
+                    {
+                      "expr": {
+                        "type": "fn", "name": "sum", "distinct": false,
+                        "args": [{
+                          "type": "case",
+                          "when": [{
+                            "when": { "op": "co", "args": [
+                              { "type": "field", "name": "usage_request_baggage.baggage" },
+                              { "type": "value", "value_type": "string", "value": "eval.phase=metric-evaluation" }
+                            ]},
+                            "then": { "type": "field", "name": "total_price" }
+                          }],
+                          "else": { "type": "value", "value_type": "decimal", "value": "0" }
+                        }]
+                      },
+                      "as": "metric_eval_cost"
+                    }
                   ]
                 }
                 """);
 
         assertThat(actual).isEqualTo(expected);
+    }
+
+    private static OutputColumn phaseCostColumn(String phase, String alias) {
+        CaseExpr phasePrice = new CaseExpr(
+                List.of(new WhenClause(
+                        baggageContains(TracingConstants.EVAL_PHASE + "=" + phase), new FieldExpr("total_price"))),
+                new ValueExpr(ValueType.DECIMAL, "0"));
+        return new OutputColumn(new FnExpr("sum", false, List.of(phasePrice)), alias);
     }
 }

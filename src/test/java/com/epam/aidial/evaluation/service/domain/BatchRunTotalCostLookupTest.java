@@ -57,7 +57,7 @@ class BatchRunTotalCostLookupTest {
     }
 
     @Test
-    @DisplayName("parses valid grouped rows into a run-id-keyed map")
+    @DisplayName("parses valid grouped rows and their phase split into a run-id-keyed map")
     void parsesValidGroupedRows() {
         BatchRunTotalCostLookup batchRunTotalCostLookup = newLookup();
         when(adasCostQueryBuilder.buildPageTotalCostQuery(List.of(runId1, runId2)))
@@ -68,16 +68,32 @@ class BatchRunTotalCostLookupTest {
                                 AdasBatchRunCostRowDto.builder()
                                         .runId(runId1.toString())
                                         .totalCost(0.05)
+                                        .testCaseCost(0.03)
+                                        .metricEvalCost(0.02)
                                         .build(),
                                 AdasBatchRunCostRowDto.builder()
                                         .runId(runId2.toString())
                                         .totalCost(1.25)
+                                        .testCaseCost(1.0)
+                                        .metricEvalCost(0.25)
                                         .build()))
                         .build());
 
-        Map<UUID, Double> result = batchRunTotalCostLookup.fetchTotalCosts(List.of(runId1, runId2), dialAdasClient);
+        Map<UUID, AdasBatchRunCostRowDto> result =
+                batchRunTotalCostLookup.fetchCosts(List.of(runId1, runId2), dialAdasClient);
 
-        assertThat(result).containsExactlyInAnyOrderEntriesOf(Map.of(runId1, 0.05, runId2, 1.25));
+        assertThat(result.get(runId1))
+                .extracting(
+                        AdasBatchRunCostRowDto::getTotalCost,
+                        AdasBatchRunCostRowDto::getTestCaseCost,
+                        AdasBatchRunCostRowDto::getMetricEvalCost)
+                .containsExactly(0.05, 0.03, 0.02);
+        assertThat(result.get(runId2))
+                .extracting(
+                        AdasBatchRunCostRowDto::getTotalCost,
+                        AdasBatchRunCostRowDto::getTestCaseCost,
+                        AdasBatchRunCostRowDto::getMetricEvalCost)
+                .containsExactly(1.25, 1.0, 0.25);
     }
 
     @Test

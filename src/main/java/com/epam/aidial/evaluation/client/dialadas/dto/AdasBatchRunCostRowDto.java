@@ -9,8 +9,8 @@ import lombok.NoArgsConstructor;
 /**
  * One row of a dial-adas aggregate query response for
  * {@code AdasCostQueryBuilder#buildPageTotalCostQuery} — the {@code case}-derived {@code run_id} and
- * {@code total_cost}. {@code count} is selected on the wire but unused by any caller, so it has no field
- * here (Jackson ignores unrecognized properties).
+ * {@code total_cost} and its execution/metric-evaluation phase split. {@code count} is selected on the
+ * wire but unused by any caller, so it has no field here (Jackson ignores unrecognized properties).
  */
 @Data
 @Builder
@@ -23,4 +23,10 @@ public class AdasBatchRunCostRowDto {
 
     @JsonProperty("total_cost")
     private Double totalCost;
+
+    @JsonProperty("test_case_cost")
+    private Double testCaseCost;
+
+    @JsonProperty("metric_eval_cost")
+    private Double metricEvalCost;
 }

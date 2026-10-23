@@ -82,7 +82,7 @@ Specs for external service integrations.
 - **[deployment-costs](deployment-costs/spec.md)** — Implemented
   `GET /api/v1/costs/deployment/**` — total test-case execution cost and total metric-evaluation cost for a deployment over an arbitrary `[from, to]` time range, computed from dial-adas usage-log aggregate queries correlated by `deployment`, `request_time`, and OTel baggage `eval.phase`. `CostController`, `CostService`, `AdasCostQueryBuilder.buildDeploymentAggregateQuery`, `DeploymentCostsResponseDto`. Related: test-suite-run-costs, structured-query-model.
 - **[batch-run-costs](batch-run-costs/spec.md)** — Implemented
-  `POST /api/v1/costs/test-suite-runs` — total cost (both phases combined) for up to a page's worth of test suite runs in exactly one dial-adas call, via an `or` of per-run baggage predicates grouped by a `case`-derived `run_id` alias; null `totalCost` per run id with no matching usage data. `CostController.getTotalRunCosts`, `CostService.getTotalRunCosts`, `AdasCostQueryBuilder.buildPageTotalCostQuery`. Related: test-suite-run-costs, deployment-costs, structured-query-model.
+  `POST /api/v1/costs/test-suite-runs` — overall cost plus execution (`testCaseCost`) and metric-evaluation (`metricEvalCost`) totals for up to a page's worth of test suite runs in exactly one dial-adas call, via an `or` of per-run baggage predicates grouped by a `case`-derived `run_id` alias; null costs per run id with no matching usage data. `CostController.getTotalRunCosts`, `CostService.getTotalRunCosts`, `AdasCostQueryBuilder.buildPageTotalCostQuery`. Related: test-suite-run-costs, deployment-costs, structured-query-model.
 
 ### Try It Out
 

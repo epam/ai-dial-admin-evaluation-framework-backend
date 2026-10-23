@@ -12,7 +12,7 @@ jobs:
   run_tests:
     uses: epam/ai-dial-ci/.github/workflows/java_pr.yml@4.11.0
     with:
-      java-version: "25"
+      java-version: "27"
       trivy-severity: "CRITICAL,HIGH,MEDIUM,LOW"
       trivy-severity-for-sarif: "CRITICAL,HIGH,MEDIUM,LOW"
     secrets: inherit

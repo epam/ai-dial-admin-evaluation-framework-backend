@@ -38,7 +38,7 @@ plugins {
     id 'checkstyle'
     id 'io.freefair.lombok' version '9.5.0'
     id 'org.springframework.boot' version '4.1.1'
-    id 'com.diffplug.spotless' version '8.8.0'
+    id 'com.diffplug.spotless' version '8.10.4'
 }
 
 group = 'com.epam.aidial'
@@ -46,7 +46,7 @@ version = "0.1.0-rc"
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
+        languageVersion = JavaLanguageVersion.of(27)
     }
 }
 
@@ -101,7 +101,7 @@ spotless {
         target 'src/*/java/**/*.java'
         targetExclude 'src/main/java-generated/**'
 
-        palantirJavaFormat('2.94.0')
+        palantirJavaFormat()
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()
@@ -207,7 +207,7 @@ dependencies {
     // MapStruct
     implementation 'org.mapstruct:mapstruct:1.6.3'
     annotationProcessor "org.mapstruct:mapstruct-processor:1.6.3"
-    annotationProcessor "org.projectlombok:lombok:1.18.46"
+    annotationProcessor "org.projectlombok:lombok:1.18.48"
 
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

@@ -237,6 +237,55 @@ public abstract class PostgresTestSuiteRunRepositoryFunctionalTests extends Base
     }
 
     @Test
+    @DisplayName("updateToFailed: a PENDING run that never ran gets startedAt equal to completedAt")
+    void updateToFailedSetsStartedAtForPendingRun() {
+        UUID suiteId = metaTestDataHelper
+                .createTestSuite("Repo updateToFailed Pending Start")
+                .getId();
+        TestSuiteRun run = metaTestDataHelper.createRunWithStatus(suiteId, RunStatus.PENDING);
+
+        int affected = runRepository.updateToFailed(run.getId(), "boom", "{}", 777L, 888L);
+
+        assertThat(affected).isEqualTo(1);
+        TestSuiteRun updated = runRepository.findById(run.getId()).orElseThrow();
+        assertThat(updated.getStartedAt()).isEqualTo(777L);
+        assertThat(updated.getCompletedAt()).isEqualTo(777L);
+    }
+
+    @Test
+    @DisplayName("updateToFailed: a RUNNING run keeps its execution start")
+    void updateToFailedKeepsStartedAtForRunningRun() {
+        UUID suiteId = metaTestDataHelper
+                .createTestSuite("Repo updateToFailed Running Start")
+                .getId();
+        TestSuiteRun run = metaTestDataHelper.createRunningRunStartedAt(suiteId, "run-" + UUID.randomUUID(), 123L);
+
+        int affected = runRepository.updateToFailed(run.getId(), "boom", "{}", 777L, 888L);
+
+        assertThat(affected).isEqualTo(1);
+        TestSuiteRun updated = runRepository.findById(run.getId()).orElseThrow();
+        assertThat(updated.getStartedAt()).isEqualTo(123L);
+        assertThat(updated.getCompletedAt()).isEqualTo(777L);
+    }
+
+    @Test
+    @DisplayName("updateStatusOptimistic: PENDING -> CANCELLED sets startedAt equal to completedAt")
+    void updateStatusOptimisticSetsStartedAtForPendingRun() {
+        UUID suiteId = metaTestDataHelper
+                .createTestSuite("Repo updateStatusOptimistic Pending Start")
+                .getId();
+        TestSuiteRun run = metaTestDataHelper.createRunWithStatus(suiteId, RunStatus.PENDING);
+
+        int affected = metaTestDataHelper.updateStatusOptimistic(
+                run.getId(), RunStatus.CANCELLED.name(), RunStatus.PENDING.name());
+
+        assertThat(affected).isEqualTo(1);
+        TestSuiteRun updated = runRepository.findById(run.getId()).orElseThrow();
+        assertThat(updated.getCompletedAt()).isNotNull();
+        assertThat(updated.getStartedAt()).isEqualTo(updated.getCompletedAt());
+    }
+
+    @Test
     @DisplayName("updateToFailed: 0-row case leaves a terminal (COMPLETED) run unchanged")
     void updateToFailedNoopWhenTerminal() {
         UUID suiteId = metaTestDataHelper

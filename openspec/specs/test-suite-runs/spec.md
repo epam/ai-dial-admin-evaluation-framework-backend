@@ -271,7 +271,7 @@ Status: **Implemented**
 
 #### Scenario: Response fields
 - **WHEN** system returns a `TestSuiteRunResponseDto`
-- **THEN** it SHALL include: `id` (UUID), `testSuiteId` (UUID), `testRunName` (String — user-provided or auto-generated), `status` (String — one of PENDING, RUNNING, CANCELLING, COMPLETED, FAILED, CANCELLED), `runConfig` (object with `numberOfRuns`, optional `testRunName`, optional `execution`, optional `retry`), `numberOfTestCases` (int — finalized at snapshot phase to match `test_case_run_inputs` row count), `startedAt` (Long, nullable, epoch ms — set when status becomes RUNNING), `completedAt` (Long, nullable, epoch ms — set when status becomes COMPLETED, FAILED, or CANCELLED), `errorMessage` (String, nullable — user-friendly error message for FAILED runs), `errorDetails` (object, nullable — structured error info for FAILED runs), `suiteSnapshot` (object, nullable — frozen suite configuration at snapshot phase; null in list results, non-null in detail after snapshot committed), `createdAt` (Long, epoch ms), `updatedAt` (Long, epoch ms)
+- **THEN** it SHALL include: `id` (UUID), `testSuiteId` (UUID), `testRunName` (String — user-provided or auto-generated), `status` (String — one of PENDING, RUNNING, CANCELLING, COMPLETED, FAILED, CANCELLED), `runConfig` (object with `numberOfRuns`, optional `testRunName`, optional `execution`, optional `retry`), `numberOfTestCases` (int — finalized at snapshot phase to match `test_case_run_inputs` row count), `startedAt` (Long, nullable, epoch ms — null while the run is PENDING; set when status becomes RUNNING; for a run that ends without ever having been RUNNING it equals `completedAt`), `completedAt` (Long, nullable, epoch ms — set when status becomes COMPLETED, FAILED, or CANCELLED), `errorMessage` (String, nullable — user-friendly error message for FAILED runs), `errorDetails` (object, nullable — structured error info for FAILED runs), `suiteSnapshot` (object, nullable — frozen suite configuration at snapshot phase; null in list results, non-null in detail after snapshot committed), `createdAt` (Long, epoch ms), `updatedAt` (Long, epoch ms)
 
 #### Scenario: Error details structure for FAILED runs
 - **WHEN** a run has status FAILED and `errorDetails` is non-null
@@ -281,13 +281,22 @@ Status: **Implemented**
 - **WHEN** a run has status PENDING, RUNNING or CANCELLING
 - **THEN** `completedAt`, `errorMessage`, and `errorDetails` SHALL be null
 
+#### Scenario: Start date null only while PENDING
+- **WHEN** a run has status PENDING
+- **THEN** `startedAt` SHALL be null
+- **AND** every run with a status other than PENDING SHALL have a non-null `startedAt`
+
+#### Scenario: Run that ended without executing has startedAt equal to completedAt
+- **WHEN** a run ends directly from PENDING — failed by startup reconciliation, failed by a snapshot-phase failure, failed because the DIAL Core route trigger failed, or cancelled while PENDING
+- **THEN** its `startedAt` SHALL equal its `completedAt` (zero duration)
+
 ### Requirement: Cancel a test suite run
 The service SHALL provide `POST /api/v1/test-suite-runs/{id}/cancel` to cancel a run that has not yet reached a terminal status. PENDING, RUNNING and CANCELLING runs MAY be targeted; the request SHALL make the cancellation observable to API clients immediately, before the async job has stopped.
 Status: **Implemented**
 
 #### Scenario: Cancel PENDING run
 - **WHEN** client calls `POST /api/v1/test-suite-runs/{id}/cancel` for a run with status PENDING
-- **THEN** system SHALL set status to CANCELLED, set `completedAt`, notify SSE clients, and return HTTP 200 with the updated `TestSuiteRunResponseDto`
+- **THEN** system SHALL set status to CANCELLED, set `completedAt` and set `startedAt` to the same value, notify SSE clients, and return HTTP 200 with the updated `TestSuiteRunResponseDto`
 
 #### Scenario: Cancel RUNNING run
 - **WHEN** client calls `POST /api/v1/test-suite-runs/{id}/cancel` for a run with status RUNNING
@@ -657,6 +666,7 @@ Status: **Implemented**
 #### Scenario: Mark orphaned runs as FAILED on startup
 - **WHEN** the application starts and there are `test_suite_runs` records with status PENDING or RUNNING
 - **THEN** system SHALL update all such records to status FAILED, set `completedAt` to the current timestamp, set `error_message` to a descriptive message (e.g., "Run was orphaned due to application restart"), and set `error_details` with category `INTERNAL` and code `ORPHANED_RUN`
+- **AND** a record that was PENDING (no `startedAt`) SHALL get `startedAt` equal to `completedAt`, while a record that was RUNNING SHALL keep its existing `startedAt`
 
 #### Scenario: Finalize orphaned CANCELLING runs as CANCELLED on startup
 - **WHEN** the application starts and there are `test_suite_runs` records with status CANCELLING

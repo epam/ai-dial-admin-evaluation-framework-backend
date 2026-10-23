@@ -32,7 +32,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -137,9 +136,9 @@ public abstract class TestSuiteRunCostExtensionFunctionalTests extends BaseFunct
     }
 
     @Test
-    @DisplayName("one eligible page issues exactly one aggregate call with no eval.phase filter, and zero calls on"
+    @DisplayName("one eligible page issues exactly one aggregate call on the dedicated client and zero calls on"
             + " the primary shared client")
-    void issuesExactlyOneAggregateCallWithNoEvalPhaseFilterAndNoPrimaryCalls() {
+    void issuesExactlyOneAggregateCallOnDedicatedClientAndNoPrimaryCalls() {
         TestSuite suite = metaTestDataHelper.createTestSuite("cost-ext-onecall-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
         when(testSuiteRunCostExtensionDialAdasClient.executeAggregate(
@@ -148,10 +147,8 @@ public abstract class TestSuiteRunCostExtensionFunctionalTests extends BaseFunct
 
         queryRepository.execute(rowQuery(run.getId()));
 
-        ArgumentCaptor<StructuredQuery> captor = ArgumentCaptor.forClass(StructuredQuery.class);
         verify(testSuiteRunCostExtensionDialAdasClient, times(1))
-                .executeAggregate(captor.capture(), eq(AdasBatchRunCostRowDto.class));
-        assertThat(captor.getValue().toString()).doesNotContain("eval.phase");
+                .executeAggregate(any(StructuredQuery.class), eq(AdasBatchRunCostRowDto.class));
         verifyNoInteractions(dialAdasClient);
     }
 

@@ -42,6 +42,8 @@ public class AdasCostQueryBuilder {
     private static final String BAGGAGE_FIELD = "usage_request_baggage.baggage";
     private static final String TOTAL_PRICE_FIELD = "total_price";
     private static final String TOTAL_COST_ALIAS = "total_cost";
+    private static final String TEST_CASE_COST_ALIAS = "test_case_cost";
+    private static final String METRIC_EVAL_COST_ALIAS = "metric_eval_cost";
     private static final String DEPLOYMENT_FIELD = "deployment";
     private static final String REQUEST_TIME_FIELD = "request_time";
     private static final String RUN_ID_ALIAS = "run_id";
@@ -122,8 +124,9 @@ public class AdasCostQueryBuilder {
         List<OutputColumn> select = List.of(
                 runIdColumn,
                 new OutputColumn(new FnExpr("count", false, List.of()), null),
-                new OutputColumn(
-                        new FnExpr("sum", false, List.of(new FieldExpr(TOTAL_PRICE_FIELD))), TOTAL_COST_ALIAS));
+                new OutputColumn(new FnExpr("sum", false, List.of(new FieldExpr(TOTAL_PRICE_FIELD))), TOTAL_COST_ALIAS),
+                phaseCostColumn(baggageValue, EvalPhase.EXECUTION, TEST_CASE_COST_ALIAS),
+                phaseCostColumn(baggageValue, EvalPhase.METRIC_EVALUATION, METRIC_EVAL_COST_ALIAS));
 
         return new StructuredQuery(
                 ENTITY, filter, QueryMode.AGGREGATE, false, select, List.of(RUN_ID_ALIAS), null, null, null);
@@ -138,6 +141,15 @@ public class AdasCostQueryBuilder {
                 new OutputColumn(new FnExpr("count", false, List.of()), null),
                 new OutputColumn(
                         new FnExpr("sum", false, List.of(new FieldExpr(TOTAL_PRICE_FIELD))), TOTAL_COST_ALIAS));
+    }
+
+    private static OutputColumn phaseCostColumn(Expr baggageValue, EvalPhase phase, String alias) {
+        CaseExpr phasePrice = new CaseExpr(
+                List.of(new WhenClause(
+                        baggageContains(baggageValue, TracingConstants.EVAL_PHASE + "=" + phase.getValue()),
+                        new FieldExpr(TOTAL_PRICE_FIELD))),
+                new ValueExpr(ValueType.DECIMAL, "0"));
+        return new OutputColumn(new FnExpr("sum", false, List.of(phasePrice)), alias);
     }
 
     private static FilterNode baggageContains(Expr baggageValue, String substring) {

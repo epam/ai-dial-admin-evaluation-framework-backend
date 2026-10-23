@@ -36,7 +36,7 @@ class CsvResultBatchWriterTest {
                 .builder()
                 .setHeader()
                 .setSkipHeaderRecord(true)
-                .build()
+                .get()
                 .parse(new java.io.StringReader(out.toString()))) {
             assertThat(parser.getHeaderNames())
                     .containsExactly(
@@ -336,7 +336,7 @@ class CsvResultBatchWriterTest {
                 .builder()
                 .setHeader()
                 .setSkipHeaderRecord(true)
-                .build()
+                .get()
                 .parse(new java.io.StringReader(csv));
         final List<CSVRecord> list = new ArrayList<>();
         for (CSVRecord r : iterable) {

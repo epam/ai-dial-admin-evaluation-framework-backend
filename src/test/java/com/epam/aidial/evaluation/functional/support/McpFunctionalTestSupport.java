@@ -46,7 +46,7 @@ public class McpFunctionalTestSupport {
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(baseUrl)
                 .endpoint(mcpEndpoint)
                 .clientBuilder(httpClientBuilder)
-                .httpRequestCustomizer((requestBuilder, _, _, _, _) -> {
+                .addHttpRequestCustomizer((requestBuilder, _, _, _, _) -> {
                     headers.forEach(requestBuilder::header);
                     requestBuilder.timeout(REQUEST_TIMEOUT);
                 })

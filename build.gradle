@@ -6,7 +6,7 @@ buildscript {
     }
     dependencies {
         constraints {
-            classpath ('org.apache.commons:commons-lang3:3.20.0') {
+            classpath ('org.apache.commons:commons-lang3:3.21.0') {
                 because("previous versions have vulnerabilities")
             }
             classpath ('org.apache.httpcomponents.core5:httpcore5:5.4.3') {
@@ -23,7 +23,7 @@ buildscript {
         // CVE-2026-59889 (@JsonView bypass) and CVE-2026-68497 (unbounded numeric parsing DoS).
         // The BOM keeps the whole Jackson family on one version instead of bumping databind alone.
         // 3.2.2 is vulnerable to CVE-2026-89425 (unbounded StringBuilder in malformed token).
-        classpath platform('tools.jackson:jackson-bom:3.2.3')
+        classpath platform('tools.jackson:jackson-bom:3.2.4')
         // Dependencies for the generateJooq task (Zonky + Flyway + jOOQ codegen)
         classpath "io.zonky.test:embedded-postgres:${embedded_postgres_version}"
         classpath "org.flywaydb:flyway-core:${flyway_version}"
@@ -36,9 +36,9 @@ buildscript {
 plugins {
     id 'java'
     id 'checkstyle'
-    id 'io.freefair.lombok' version '9.5.0'
-    id 'org.springframework.boot' version '4.1.1'
-    id 'com.diffplug.spotless' version '8.8.0'
+    id 'io.freefair.lombok' version '9.8.2'
+    id 'org.springframework.boot' version '4.1.2'
+    id 'com.diffplug.spotless' version '8.10.2'
 }
 
 group = 'com.epam.aidial'
@@ -82,7 +82,7 @@ configurations {
         resolutionStrategy {
             // Pin json-schema-validator to the Jackson 3-native line (3.x); MCP SDK pulls an
             // older Jackson 2 build that is incompatible with the tools.jackson migration
-            force 'com.networknt:json-schema-validator:3.0.6'
+            force 'com.networknt:json-schema-validator:3.0.8'
         }
     }
 }
@@ -101,7 +101,7 @@ spotless {
         target 'src/*/java/**/*.java'
         targetExclude 'src/main/java-generated/**'
 
-        palantirJavaFormat('2.94.0')
+        palantirJavaFormat('2.102.0')
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()
@@ -114,12 +114,12 @@ repositories {
 
 dependencies {
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
-    // CVE-2026-68497 (jackson-databind unbounded numeric parsing CPU DoS): Boot 4.1.1 manages
+    // CVE-2026-68497 (jackson-databind unbounded numeric parsing CPU DoS): Boot 4.1.2 manages
     // Jackson 2.21.5 / 3.1.5; override both families via their BOMs until Boot catches up.
     // 2.22.2 is vulnerable to CVE-2026-89407 (regex backtracking DoS) and CVE-2026-89425 (unbounded StringBuilder).
     // 2.22.x line CVE-2026-91776/91777 (cache growth, forward-reference completion) in databind.
-    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.3')
-    implementation platform('tools.jackson:jackson-bom:3.2.3')
+    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.4')
+    implementation platform('tools.jackson:jackson-bom:3.2.4')
 
     // Shared execution engine module
     implementation project(':evaluation-runner-core')
@@ -134,18 +134,18 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-aspectj'
 
     // OpenAPI / Swagger (Spring Boot 4 / Spring Framework 7 compatible)
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-api:3.0.3'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-api:3.1.1'
 
     // Azure Identity (for Azure auth)
-    implementation 'com.azure:azure-identity:1.18.4'
+    implementation 'com.azure:azure-identity:1.18.7'
 
     // Database
     implementation "org.postgresql:postgresql:${pg_version}"
 
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
-    implementation 'org.flywaydb:flyway-core'
-    implementation 'org.flywaydb:flyway-database-postgresql'
+    implementation "org.flywaydb:flyway-core:${flyway_version}"
+    implementation "org.flywaydb:flyway-database-postgresql:${flyway_version}"
 
     implementation 'org.springframework.boot:spring-boot-jooq'
     implementation 'org.jooq:jooq'
@@ -166,16 +166,16 @@ dependencies {
     // Metrics & Monitoring
     implementation 'io.micrometer:micrometer-registry-prometheus'
     implementation 'io.micrometer:context-propagation'
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.29.0')
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:2.29.0-alpha')
+    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.32.0')
+    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:2.32.0-alpha')
     implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
     implementation 'io.opentelemetry.instrumentation:opentelemetry-log4j-appender-2.17'
     runtimeOnly 'io.grpc:grpc-netty-shaded'  // gRPC transport for OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 
     // Utilities
-    implementation 'org.apache.commons:commons-lang3:3.20.0'
+    implementation 'org.apache.commons:commons-lang3:3.21.0'
     implementation 'org.apache.commons:commons-text:1.15.0'
-    implementation 'org.apache.commons:commons-collections4:4.5.0'
+    implementation 'org.apache.commons:commons-collections4:4.6.0'
     implementation 'commons-io:commons-io:2.22.0'
     implementation 'org.apache.commons:commons-csv:1.14.1'
     implementation 'jakarta.validation:jakarta.validation-api'
@@ -183,8 +183,8 @@ dependencies {
     compileOnly 'org.jetbrains:annotations:26.1.0'
 
     // Schema & OpenAPI utilities
-    implementation 'com.networknt:json-schema-validator:3.0.6'
-    implementation 'com.github.ben-manes.caffeine:caffeine:3.2.4'
+    implementation 'com.networknt:json-schema-validator:3.0.8'
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.3.1'
 
     // MCP SDK (Model Context Protocol client)
     implementation platform("io.modelcontextprotocol.sdk:mcp-bom:${mcp_sdk_version}")
@@ -193,13 +193,13 @@ dependencies {
 
     // Spring AI MCP server (Streamable HTTP, tools capability only). The transitive
     // spring-boot-starter-web alias is excluded because this project uses spring-boot-starter-webmvc.
-    implementation platform('org.springframework.ai:spring-ai-bom:2.0.1')
+    implementation platform('org.springframework.ai:spring-ai-bom:2.0.2')
     implementation('org.springframework.ai:spring-ai-starter-mcp-server-webmvc') {
         exclude group: 'org.springframework.boot', module: 'spring-boot-starter-web'
     }
 
     // Rate limiting
-    implementation 'com.bucket4j:bucket4j_jdk17-core:8.19.0'
+    implementation 'com.bucket4j:bucket4j_jdk17-core:8.21.0'
 
     // JSONata expression evaluation
     implementation 'com.dashjoin:jsonata:0.9.10'
@@ -207,7 +207,7 @@ dependencies {
     // MapStruct
     implementation 'org.mapstruct:mapstruct:1.6.3'
     annotationProcessor "org.mapstruct:mapstruct-processor:1.6.3"
-    annotationProcessor "org.projectlombok:lombok:1.18.46"
+    annotationProcessor "org.projectlombok:lombok:1.18.48"
 
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -216,19 +216,19 @@ dependencies {
     testImplementation "org.testcontainers:testcontainers-junit-jupiter"
     testImplementation "org.testcontainers:testcontainers-jdbc"
     testImplementation "org.testcontainers:testcontainers-postgresql"
-    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation "io.zonky.test:embedded-postgres:${embedded_postgres_version}"
 
     constraints {
-        implementation ('com.nimbusds:nimbus-jose-jwt:10.9.1') {
+        implementation ('com.nimbusds:nimbus-jose-jwt:10.10') {
             because("previous versions have vulnerabilities")
         }
-        implementation ('org.apache.tomcat.embed:tomcat-embed-core:11.0.25') {
+        implementation ('org.apache.tomcat.embed:tomcat-embed-core:11.0.27') {
             because("11.0.24 contains vulnerabilities")
         }
 
-        checkstyle ('org.apache.commons:commons-lang3:3.20.0') {
+        checkstyle ('org.apache.commons:commons-lang3:3.21.0') {
             because("previous versions have vulnerabilities")
         }
         checkstyle ('org.codehaus.plexus:plexus-utils:3.6.1') {

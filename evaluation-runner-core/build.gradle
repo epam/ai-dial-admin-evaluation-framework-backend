@@ -3,9 +3,9 @@ import org.springframework.boot.gradle.plugin.SpringBootPlugin
 plugins {
     id 'java'
     id 'checkstyle'
-    id 'io.freefair.lombok' version '9.5.0'
-    id 'org.springframework.boot' version '4.1.1' apply false
-    id 'com.diffplug.spotless' version '8.8.0'
+    id 'io.freefair.lombok' version '9.8.2'
+    id 'org.springframework.boot' version '4.1.2' apply false
+    id 'com.diffplug.spotless' version '8.10.2'
 }
 
 group = 'com.epam.aidial'
@@ -41,7 +41,7 @@ configurations {
         resolutionStrategy {
             // Pin json-schema-validator to the Jackson 3-native line (3.x); MCP SDK pulls an
             // older Jackson 2 build that is incompatible with the tools.jackson migration
-            force 'com.networknt:json-schema-validator:3.0.6'
+            force 'com.networknt:json-schema-validator:3.0.8'
         }
     }
 }
@@ -58,7 +58,7 @@ spotless {
     java {
         target 'src/*/java/**/*.java'
 
-        palantirJavaFormat('2.94.0')
+        palantirJavaFormat('2.102.0')
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()
@@ -71,8 +71,8 @@ repositories {
 
 dependencies {
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
-    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.3')
-    implementation platform('tools.jackson:jackson-bom:3.2.3')
+    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.4')
+    implementation platform('tools.jackson:jackson-bom:3.2.4')
 
     // Core Spring (no web, no security, no JDBC)
     implementation 'org.springframework.boot:spring-boot-starter'
@@ -90,8 +90,8 @@ dependencies {
 
     // Metrics & Monitoring (OTel)
     implementation 'io.micrometer:context-propagation'
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.29.0')
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:2.29.0-alpha')
+    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.32.0')
+    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:2.32.0-alpha')
     implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
     implementation 'io.opentelemetry.instrumentation:opentelemetry-log4j-appender-2.17'
     runtimeOnly 'io.grpc:grpc-netty-shaded'
@@ -102,7 +102,7 @@ dependencies {
     implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson3'
 
     // Rate limiting
-    implementation 'com.bucket4j:bucket4j_jdk17-core:8.19.0'
+    implementation 'com.bucket4j:bucket4j_jdk17-core:8.21.0'
 
     // JSONata expression evaluation
     implementation 'com.dashjoin:jsonata:0.9.10'
@@ -113,32 +113,32 @@ dependencies {
 
     // OpenAPI annotations only (no springdoc/web starter) — lets DTOs carry @Schema metadata for the
     // EF backend's springdoc scanner; annotation-only, no runtime behavior of its own
-    compileOnly 'io.swagger.core.v3:swagger-annotations-jakarta:2.2.47'
+    compileOnly 'io.swagger.core.v3:swagger-annotations-jakarta:2.2.55'
 
     // Schema validation
-    implementation 'com.networknt:json-schema-validator:3.0.6'
+    implementation 'com.networknt:json-schema-validator:3.0.8'
 
     // Utilities
-    implementation 'org.apache.commons:commons-lang3:3.20.0'
+    implementation 'org.apache.commons:commons-lang3:3.21.0'
     implementation 'org.apache.commons:commons-text:1.15.0'
-    implementation 'org.apache.commons:commons-collections4:4.5.0'
+    implementation 'org.apache.commons:commons-collections4:4.6.0'
     compileOnly 'org.jetbrains:annotations:26.1.0'
 
     // MapStruct
     implementation 'org.mapstruct:mapstruct:1.6.3'
     annotationProcessor "org.mapstruct:mapstruct-processor:1.6.3"
-    annotationProcessor "org.projectlombok:lombok:1.18.46"
+    annotationProcessor "org.projectlombok:lombok:1.18.48"
 
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     // Hibernate Validator's default message interpolator needs a jakarta.el impl on the classpath;
     // the EF backend gets one transitively via its web starter, this module does not.
     testRuntimeOnly 'org.apache.tomcat.embed:tomcat-embed-el'
 
     constraints {
-        checkstyle ('org.apache.commons:commons-lang3:3.20.0') {
+        checkstyle ('org.apache.commons:commons-lang3:3.21.0') {
             because("previous versions have vulnerabilities")
         }
         checkstyle ('org.codehaus.plexus:plexus-utils:3.6.1') {

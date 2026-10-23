@@ -73,7 +73,7 @@ public class CsvResultBatchWriter implements ResultBatchWriter, Closeable {
     private final CSVPrinter printer;
 
     public CsvResultBatchWriter(Writer writer) throws IOException {
-        this.printer = CSVFormat.DEFAULT.builder().setHeader(HEADERS).build().print(writer);
+        this.printer = CSVFormat.DEFAULT.builder().setHeader(HEADERS).get().print(writer);
     }
 
     /**

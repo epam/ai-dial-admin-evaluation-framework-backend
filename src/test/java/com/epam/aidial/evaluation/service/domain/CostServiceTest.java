@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClientException;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasBatchRunCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasDeploymentCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
@@ -226,21 +227,31 @@ class CostServiceTest {
         @DisplayName("returns results in the caller's requested order, null totalCost for an unmatched run id,"
                 + " using the shared dial-adas client")
         void returnsResultsInRequestedOrder() {
-            when(batchRunTotalCostLookup.fetchTotalCosts(List.of(runId1, runId2), dialAdasClient))
-                    .thenReturn(Map.of(runId1, 0.05));
+            when(batchRunTotalCostLookup.fetchCosts(List.of(runId1, runId2), dialAdasClient))
+                    .thenReturn(Map.of(
+                            runId1,
+                            AdasBatchRunCostRowDto.builder()
+                                    .totalCost(0.05)
+                                    .testCaseCost(0.03)
+                                    .metricEvalCost(0.02)
+                                    .build()));
 
             List<TotalRunCostResponseDto> result = service.getTotalRunCosts(List.of(runId1, runId2));
 
             assertThat(result)
-                    .extracting(TotalRunCostResponseDto::getRunId, TotalRunCostResponseDto::getTotalCost)
-                    .containsExactly(tuple(runId1, 0.05), tuple(runId2, null));
-            verify(batchRunTotalCostLookup).fetchTotalCosts(List.of(runId1, runId2), dialAdasClient);
+                    .extracting(
+                            TotalRunCostResponseDto::getRunId,
+                            TotalRunCostResponseDto::getTotalCost,
+                            TotalRunCostResponseDto::getTestCaseCost,
+                            TotalRunCostResponseDto::getMetricEvalCost)
+                    .containsExactly(tuple(runId1, 0.05, 0.03, 0.02), tuple(runId2, null, null, null));
+            verify(batchRunTotalCostLookup).fetchCosts(List.of(runId1, runId2), dialAdasClient);
         }
 
         @Test
         @DisplayName("propagates DialAdasClientException from the underlying batch lookup unchanged")
         void propagatesDialAdasClientException() {
-            when(batchRunTotalCostLookup.fetchTotalCosts(List.of(runId1, runId2), dialAdasClient))
+            when(batchRunTotalCostLookup.fetchCosts(List.of(runId1, runId2), dialAdasClient))
                     .thenThrow(new DialAdasClientException(502, "boom"));
 
             assertThatThrownBy(() -> service.getTotalRunCosts(List.of(runId1, runId2)))

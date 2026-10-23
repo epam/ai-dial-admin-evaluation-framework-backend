@@ -427,6 +427,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                         .rows(List.of(AdasBatchRunCostRowDto.builder()
                                 .runId(created.getId().toString())
                                 .totalCost(0.042)
+                                .testCaseCost(0.03)
+                                .metricEvalCost(0.012)
                                 .build()))
                         .build());
 
@@ -441,8 +443,12 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody())
-                .extracting(TotalRunCostResponseDto::getRunId, TotalRunCostResponseDto::getTotalCost)
-                .containsExactly(tuple(created.getId(), 0.042), tuple(noDataRunId, null));
+                .extracting(
+                        TotalRunCostResponseDto::getRunId,
+                        TotalRunCostResponseDto::getTotalCost,
+                        TotalRunCostResponseDto::getTestCaseCost,
+                        TotalRunCostResponseDto::getMetricEvalCost)
+                .containsExactly(tuple(created.getId(), 0.042, 0.03, 0.012), tuple(noDataRunId, null, null, null));
     }
 
     @Test

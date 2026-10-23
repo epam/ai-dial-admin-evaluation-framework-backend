@@ -55,7 +55,12 @@ class CostControllerTest {
         UUID runId1 = UUID.randomUUID();
         UUID runId2 = UUID.randomUUID();
         List<TotalRunCostResponseDto> dto = List.of(
-                TotalRunCostResponseDto.builder().runId(runId1).totalCost(0.05).build(),
+                TotalRunCostResponseDto.builder()
+                        .runId(runId1)
+                        .totalCost(0.05)
+                        .testCaseCost(0.03)
+                        .metricEvalCost(0.02)
+                        .build(),
                 TotalRunCostResponseDto.builder().runId(runId2).totalCost(null).build());
         when(costService.getTotalRunCosts(List.of(runId1, runId2))).thenReturn(dto);
 
@@ -64,8 +69,10 @@ class CostControllerTest {
                         .content("{\"runIds\":[\"" + runId1 + "\",\"" + runId2 + "\"]}"))
                 .andExpect(status().isOk())
                 .andExpect(content()
-                        .json("[" + "{\"runId\":\"" + runId1 + "\",\"totalCost\":0.05}," + "{\"runId\":\"" + runId2
-                                + "\",\"totalCost\":null}" + "]"));
+                        .json("[" + "{\"runId\":\"" + runId1
+                                + "\",\"totalCost\":0.05,\"testCaseCost\":0.03,\"metricEvalCost\":0.02},"
+                                + "{\"runId\":\"" + runId2
+                                + "\",\"totalCost\":null,\"testCaseCost\":null,\"metricEvalCost\":null}" + "]"));
 
         verify(costService).getTotalRunCosts(eq(List.of(runId1, runId2)));
     }

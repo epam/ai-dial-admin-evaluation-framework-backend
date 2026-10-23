@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasBatchRunCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasDeploymentCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
@@ -46,13 +47,19 @@ public class CostService {
                     "runIds must not exceed " + ValidationConstants.MAX_BATCH_RUN_IDS + " entries");
         }
 
-        Map<UUID, Double> totalsByRunId = batchRunTotalCostLookup.fetchTotalCosts(runIds, dialAdasClient);
+        Map<UUID, AdasBatchRunCostRowDto> costsByRunId = batchRunTotalCostLookup.fetchCosts(runIds, dialAdasClient);
         return runIds.stream()
-                .map(runId -> TotalRunCostResponseDto.builder()
-                        .runId(runId)
-                        .totalCost(totalsByRunId.get(runId))
-                        .build())
+                .map(runId -> toTotalRunCostResponse(runId, costsByRunId.get(runId)))
                 .toList();
+    }
+
+    private static TotalRunCostResponseDto toTotalRunCostResponse(UUID runId, AdasBatchRunCostRowDto costs) {
+        return TotalRunCostResponseDto.builder()
+                .runId(runId)
+                .totalCost(costs == null ? null : costs.getTotalCost())
+                .testCaseCost(costs == null ? null : costs.getTestCaseCost())
+                .metricEvalCost(costs == null ? null : costs.getMetricEvalCost())
+                .build();
     }
 
     private Double fetchAvgCost(UUID runId, EvalPhase phase) {

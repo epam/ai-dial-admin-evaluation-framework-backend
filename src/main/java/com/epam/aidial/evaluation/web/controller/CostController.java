@@ -95,9 +95,9 @@ public class CostController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Get total cost for a batch of runs in one call",
-            description = "Computes total cost (both test-case execution and metric-evaluation phases combined) "
+            description = "Computes total cost and its test-case execution and metric-evaluation phase split "
                     + "for up to " + ValidationConstants.MAX_BATCH_RUN_IDS + " runs in a single dial-adas call, "
-                    + "returned in the order the run ids were given. `totalCost` is null when dial-adas has no "
+                    + "returned in the order the run ids were given. All cost fields are null when dial-adas has no "
                     + "matching usage-log rows for that run id — including an unknown/nonexistent run id, which "
                     + "is indistinguishable from a real run with no usage. Unlike `GET "
                     + "/api/v1/costs/test-suite-run/{id}`, run ids are not validated against existing runs. "
@@ -128,7 +128,23 @@ public class CostController {
             content =
                     @Content(
                             mediaType = MediaType.APPLICATION_JSON_VALUE,
-                            array = @ArraySchema(schema = @Schema(implementation = TotalRunCostResponseDto.class))))
+                            array = @ArraySchema(schema = @Schema(implementation = TotalRunCostResponseDto.class)),
+                            examples = {
+                                @ExampleObject(
+                                        name = "minimal",
+                                        summary = "One run with phase totals",
+                                        value = "[{\"runId\":\"3fa85f64-5717-4562-b3fc-2c963f66afa6\","
+                                                + "\"totalCost\":0.0007125,\"testCaseCost\":0.0005,"
+                                                + "\"metricEvalCost\":0.0002125}]"),
+                                @ExampleObject(
+                                        name = "full",
+                                        summary = "A run with costs and a run without usage data",
+                                        value = "[{\"runId\":\"3fa85f64-5717-4562-b3fc-2c963f66afa6\","
+                                                + "\"totalCost\":0.0007125,\"testCaseCost\":0.0005,"
+                                                + "\"metricEvalCost\":0.0002125},{\"runId\":"
+                                                + "\"9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d\",\"totalCost\":null,"
+                                                + "\"testCaseCost\":null,\"metricEvalCost\":null}]"),
+                            }))
     @ApiResponse(
             responseCode = "400",
             description = "`runIds` is empty, absent, or exceeds " + ValidationConstants.MAX_BATCH_RUN_IDS + " entries")

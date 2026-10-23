@@ -24,4 +24,16 @@ public class TotalRunCostResponseDto {
                     + "a real run with no usage.",
             example = "0.0007125")
     private Double totalCost;
+
+    @Schema(
+            description = "Total cost of test-case execution calls for this run. Zero when the run has usage "
+                    + "only in another phase; null when dial-adas has no matching usage-log rows for the run.",
+            example = "0.0005")
+    private Double testCaseCost;
+
+    @Schema(
+            description = "Total cost of metric-evaluation calls for this run. Zero when the run has usage "
+                    + "only in another phase; null when dial-adas has no matching usage-log rows for the run.",
+            example = "0.0002125")
+    private Double metricEvalCost;
 }

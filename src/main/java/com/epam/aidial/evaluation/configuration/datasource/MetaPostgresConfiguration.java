@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.configuration.datasource;
 
+import com.azure.core.credential.AccessTokenCache;
 import com.azure.core.credential.TokenCredential;
 import com.azure.core.credential.TokenRequestContext;
-import com.azure.core.implementation.AccessTokenCache;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.function.Supplier;
 import javax.sql.DataSource;

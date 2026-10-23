@@ -91,8 +91,9 @@ public class McpToolInvoker {
                         configuration.getMcpProxyBaseUrl())
                 .endpoint(buildMcpEndpoint(deploymentId))
                 .clientBuilder(httpClientBuilder)
-                .httpRequestCustomizer((requestBuilder, _, _, _, _) -> applyCredentialHeader(requestBuilder, credential)
-                        .timeout(Duration.ofMillis(configuration.getReadTimeoutMs())))
+                .addHttpRequestCustomizer(
+                        (requestBuilder, _, _, _, _) -> applyCredentialHeader(requestBuilder, credential)
+                                .timeout(Duration.ofMillis(configuration.getReadTimeoutMs())))
                 .build();
 
         return McpClient.sync(transport)

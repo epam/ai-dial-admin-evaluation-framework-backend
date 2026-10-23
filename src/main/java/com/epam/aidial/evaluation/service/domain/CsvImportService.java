@@ -1219,12 +1219,11 @@ public class CsvImportService {
 
     private static CsvImportWarningDto buildWithinCsvDupWarning(
             int rowNumber, String name, CsvConflictStrategy strategy) {
-        String msg =
-                switch (strategy) {
-                    case FAIL -> "would cause import failure (409) — duplicate of earlier row with same name";
-                    case SKIP -> "would be skipped — duplicate of earlier row with same name";
-                    case OVERRIDE -> "would replace earlier row with same name (last wins)";
-                };
+        String msg = switch (strategy) {
+            case FAIL -> "would cause import failure (409) — duplicate of earlier row with same name";
+            case SKIP -> "would be skipped — duplicate of earlier row with same name";
+            case OVERRIDE -> "would replace earlier row with same name (last wins)";
+        };
         return CsvImportWarningDto.builder()
                 .rowNumber(rowNumber)
                 .columnName(TEST_CASE_NAME_HEADER)

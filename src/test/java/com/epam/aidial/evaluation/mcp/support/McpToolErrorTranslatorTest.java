@@ -226,23 +226,21 @@ class McpToolErrorTranslatorTest {
     @EnumSource(DialCoreErrorCode.class)
     @DisplayName("DialCoreClientException -> mapped McpErrorCode for every DialCoreErrorCode value")
     void dialCoreClientExceptionMapsEveryDialCoreErrorCode(DialCoreErrorCode dialCoreErrorCode) {
-        HttpStatus status =
-                switch (dialCoreErrorCode) {
-                    case AUTHENTICATION_REQUIRED, UPSTREAM_AUTH_ERROR -> HttpStatus.UNAUTHORIZED;
-                    case ACCESS_DENIED -> HttpStatus.FORBIDDEN;
-                    case NOT_FOUND, UPSTREAM_NOT_FOUND -> HttpStatus.NOT_FOUND;
-                    case VALIDATION_ERROR -> HttpStatus.BAD_REQUEST;
-                    case UPSTREAM_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
-                    case UPSTREAM_TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
-                };
-        McpErrorCode expected =
-                switch (dialCoreErrorCode) {
-                    case UPSTREAM_TIMEOUT -> McpErrorCode.UPSTREAM_TIMEOUT;
-                    case UPSTREAM_AUTH_ERROR, AUTHENTICATION_REQUIRED -> McpErrorCode.UPSTREAM_AUTH_ERROR;
-                    case ACCESS_DENIED -> McpErrorCode.ACCESS_DENIED;
-                    case VALIDATION_ERROR -> McpErrorCode.VALIDATION_ERROR;
-                    case UPSTREAM_NOT_FOUND, NOT_FOUND, UPSTREAM_ERROR -> McpErrorCode.UPSTREAM_ERROR;
-                };
+        HttpStatus status = switch (dialCoreErrorCode) {
+            case AUTHENTICATION_REQUIRED, UPSTREAM_AUTH_ERROR -> HttpStatus.UNAUTHORIZED;
+            case ACCESS_DENIED -> HttpStatus.FORBIDDEN;
+            case NOT_FOUND, UPSTREAM_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case VALIDATION_ERROR -> HttpStatus.BAD_REQUEST;
+            case UPSTREAM_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case UPSTREAM_TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
+        };
+        McpErrorCode expected = switch (dialCoreErrorCode) {
+            case UPSTREAM_TIMEOUT -> McpErrorCode.UPSTREAM_TIMEOUT;
+            case UPSTREAM_AUTH_ERROR, AUTHENTICATION_REQUIRED -> McpErrorCode.UPSTREAM_AUTH_ERROR;
+            case ACCESS_DENIED -> McpErrorCode.ACCESS_DENIED;
+            case VALIDATION_ERROR -> McpErrorCode.VALIDATION_ERROR;
+            case UPSTREAM_NOT_FOUND, NOT_FOUND, UPSTREAM_ERROR -> McpErrorCode.UPSTREAM_ERROR;
+        };
         DialCoreClientException ex = new DialCoreClientException(status, "upstream said: " + dialCoreErrorCode);
 
         McpToolError toolError = translator.translate(ex);

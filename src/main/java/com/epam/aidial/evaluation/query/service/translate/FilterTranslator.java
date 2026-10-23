@@ -125,18 +125,17 @@ public class FilterTranslator {
                     throw new ValidationException("null literal is only valid with 'eq'/'ne', not '" + op.code() + "'");
             };
         }
-        final Condition condition =
-                switch (op) {
-                    case CO -> ((Field<String>) left).likeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
-                    case NC -> ((Field<String>) left).notLikeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
-                    case EQ -> left.eq(exprTranslator.toField(right, bindings));
-                    case NE -> left.ne(exprTranslator.toField(right, bindings));
-                    case LT -> left.lt(exprTranslator.toField(right, bindings));
-                    case GT -> left.gt(exprTranslator.toField(right, bindings));
-                    case LE -> left.le(exprTranslator.toField(right, bindings));
-                    case GE -> left.ge(exprTranslator.toField(right, bindings));
-                    case IN -> throw new IllegalStateException("'in' handled above");
-                };
+        final Condition condition = switch (op) {
+            case CO -> ((Field<String>) left).likeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
+            case NC -> ((Field<String>) left).notLikeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
+            case EQ -> left.eq(exprTranslator.toField(right, bindings));
+            case NE -> left.ne(exprTranslator.toField(right, bindings));
+            case LT -> left.lt(exprTranslator.toField(right, bindings));
+            case GT -> left.gt(exprTranslator.toField(right, bindings));
+            case LE -> left.le(exprTranslator.toField(right, bindings));
+            case GE -> left.ge(exprTranslator.toField(right, bindings));
+            case IN -> throw new IllegalStateException("'in' handled above");
+        };
         return op.negated() ? nullSatisfies(condition) : condition;
     }
 

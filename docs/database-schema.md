@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-10-12 (meta V1.36, analytics V1.22)
+> **Last sync**: 2026-10-23 (meta V1.38, analytics V1.22)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -394,7 +394,7 @@ Tracks async test suite evaluation runs.
 | `run_config` | JSONB | NOT NULL | - | Run configuration (RunConfigDto) |
 | `number_of_test_cases` | INTEGER | NOT NULL | - | Preview count at creation; finalized at snapshot phase to match `COUNT(test_case_run_inputs)` |
 | `suite_snapshot` | JSONB | NULL | - | Execution-relevant suite configuration captured at snapshot phase (SuiteSnapshotDto) |
-| `started_at_ms` | BIGINT | NULL | - | Run start timestamp (epoch ms) |
+| `started_at_ms` | BIGINT | NULL | - | Execution start timestamp (epoch ms), written when the run moves PENDING -> RUNNING; NULL only while the run is PENDING. A run that ends without ever running (failed by restart reconciliation, snapshot-phase or DIAL route-trigger failure, or cancelled while PENDING) gets it set equal to `completed_at_ms` (zero duration); V1.38 backfilled older FAILED/CANCELLED rows the same way |
 | `completed_at_ms` | BIGINT | NULL | - | Run completion timestamp (epoch ms) |
 | `error_message` | TEXT | NULL | - | Error message if failed |
 | `error_details` | JSONB | NULL | - | Structured error details (RunErrorDetailsDto) |

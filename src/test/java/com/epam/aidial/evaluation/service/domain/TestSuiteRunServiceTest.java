@@ -405,6 +405,26 @@ class TestSuiteRunServiceTest {
         }
 
         @Test
+        @DisplayName(
+                "fails a route-trigger-failed run with one timestamp so the repository sets startedAt == completedAt")
+        void routeTriggerFailureUsesSingleTimestampForCompletedAndUpdated() {
+            when(dialAppProperties.isEnabled()).thenReturn(true);
+            doThrow(new DialRouteTriggerException("boom", new RuntimeException("cause")))
+                    .when(dialRouteTriggerClient)
+                    .triggerEvalRun(any(UUID.class), any(CallerCredential.class));
+            when(evaluationJob.buildErrorDetails(eq("DIAL_APP_ROUTE_TRIGGER_FAILED"), any(), anyString(), isNull()))
+                    .thenReturn("{}");
+
+            invokeDispatchEvaluation(runId, CallerCredential.bearer("jwt-token"), false);
+
+            ArgumentCaptor<Long> completedAt = ArgumentCaptor.forClass(Long.class);
+            ArgumentCaptor<Long> updatedAt = ArgumentCaptor.forClass(Long.class);
+            verify(testSuiteRunRepository, timeout(2000))
+                    .updateToFailed(eq(runId), anyString(), anyString(), completedAt.capture(), updatedAt.capture());
+            assertThat(completedAt.getValue()).isEqualTo(updatedAt.getValue());
+        }
+
+        @Test
         @DisplayName("calls TestSuiteEvaluationJob when dial-app-proxy.enabled=false")
         void callsJobDispatchWhenDisabled() {
             when(dialAppProperties.isEnabled()).thenReturn(false);

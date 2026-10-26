@@ -807,6 +807,42 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should report a PENDING run without startedAt")
+    void shouldReportPendingRunWithoutStartedAt() {
+        TestSuiteResponseDto suite = createTestSuite("Suite For Pending No Start");
+        UUID runId = metaTestDataHelper
+                .createPendingRun(suite.getId(), "Pending No Start")
+                .getId();
+
+        TestSuiteRunResponseDto run = restTemplate
+                .getForEntity(apiUrl("/test-suite-runs/" + runId), TestSuiteRunResponseDto.class)
+                .getBody();
+
+        assertThat(run).isNotNull();
+        assertThat(run.getStatus()).isEqualTo(RunStatus.PENDING.name());
+        assertThat(run.getStartedAt()).isNull();
+        assertThat(run.getCompletedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("Should set startedAt equal to completedAt when a PENDING run is cancelled")
+    void shouldSetStartedAtEqualToCompletedAtWhenPendingRunCancelled() {
+        TestSuiteResponseDto suite = createTestSuite("Suite For Cancel Pending Start");
+        UUID runId = metaTestDataHelper
+                .createPendingRun(suite.getId(), "Pending Cancel Start")
+                .getId();
+
+        ResponseEntity<TestSuiteRunResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suite-runs/" + runId + "/cancel"), null, TestSuiteRunResponseDto.class);
+
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getStatus()).isEqualTo(RunStatus.CANCELLED.name());
+        assertThat(response.getBody().getCompletedAt()).isNotNull();
+        assertThat(response.getBody().getStartedAt())
+                .isEqualTo(response.getBody().getCompletedAt());
+    }
+
+    @Test
     @DisplayName("Should cancel running run")
     void shouldCancelRunningRun() {
         TestSuiteResponseDto suite = createTestSuite("Suite For Cancel Running");
@@ -927,6 +963,35 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         assertThat(pending.getBody().getStatus()).isEqualTo(RunStatus.FAILED.name());
         assertThat(running.getBody()).isNotNull();
         assertThat(running.getBody().getStatus()).isEqualTo(RunStatus.FAILED.name());
+    }
+
+    @Test
+    @DisplayName(
+            "Should set startedAt to completedAt for a PENDING run and keep startedAt of a RUNNING run on reconciliation")
+    void shouldSetStartDateForNeverStartedRunOnReconciliation() {
+        TestSuiteResponseDto suite = createTestSuite("Suite For Recon Start Dates");
+        UUID pendingId = metaTestDataHelper
+                .createPendingRun(suite.getId(), "Recon Start Pending")
+                .getId();
+        UUID runningId = metaTestDataHelper
+                .createRunningRunStartedAt(suite.getId(), "Recon Start Running", 1234L)
+                .getId();
+
+        reconciliation.reconcileOrphanedRuns();
+
+        TestSuiteRunResponseDto pending = restTemplate
+                .getForEntity(apiUrl("/test-suite-runs/" + pendingId), TestSuiteRunResponseDto.class)
+                .getBody();
+        TestSuiteRunResponseDto running = restTemplate
+                .getForEntity(apiUrl("/test-suite-runs/" + runningId), TestSuiteRunResponseDto.class)
+                .getBody();
+
+        assertThat(pending).isNotNull();
+        assertThat(pending.getCompletedAt()).isNotNull();
+        assertThat(pending.getStartedAt()).isEqualTo(pending.getCompletedAt());
+        assertThat(running).isNotNull();
+        assertThat(running.getCompletedAt()).isNotNull();
+        assertThat(running.getStartedAt()).isEqualTo(1234L);
     }
 
     // --- SSE Tests (Task 36) ---

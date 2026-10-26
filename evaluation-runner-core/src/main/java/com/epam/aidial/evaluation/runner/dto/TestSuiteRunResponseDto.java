@@ -33,8 +33,17 @@ public class TestSuiteRunResponseDto {
                     + "Present only in detail responses (GET /runs/{runId}); null in list responses.")
     private SuiteSnapshotDto suiteSnapshot;
 
+    @Schema(
+            description = "Execution start, epoch milliseconds. Null only while the run is PENDING. For a run that"
+                    + " ended without ever running (failed or cancelled while PENDING) it equals completedAt.",
+            example = "1760000000000")
     private Long startedAt;
+
+    @Schema(
+            description = "Run end, epoch milliseconds. Null until the run reaches a terminal status.",
+            example = "1760000060000")
     private Long completedAt;
+
     private String errorMessage;
     private RunErrorDetailsDto errorDetails;
 

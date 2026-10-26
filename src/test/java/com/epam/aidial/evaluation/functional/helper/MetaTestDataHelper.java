@@ -316,6 +316,30 @@ public class MetaTestDataHelper {
         return testSuiteRunRepository.save(run);
     }
 
+    /** Inserts a RUNNING run with an explicit execution start, as {@code updateToRunning} would have written. */
+    @Transactional("metaTransactionManager")
+    public TestSuiteRun createRunningRunStartedAt(UUID suiteId, String testRunName, long startedAt) {
+        TestSuiteRun run = TestSuiteRun.builder()
+                .testSuiteId(suiteId)
+                .testRunName(testRunName)
+                .status(RunStatus.RUNNING.name())
+                .runConfig("{\"numberOfRuns\":1}")
+                .numberOfTestCases(0)
+                .startedAt(startedAt)
+                .build();
+        return testSuiteRunRepository.save(run);
+    }
+
+    /**
+     * Wraps {@link TestSuiteRunRepository#updateStatusOptimistic} in a {@code @Transactional} method so its
+     * internal {@code TransactionTimestampContext.getTimestamp()} read has an initialized timestamp when called
+     * directly from a repository test, rather than through {@code TestSuiteRunService.cancelRun}.
+     */
+    @Transactional("metaTransactionManager")
+    public int updateStatusOptimistic(UUID runId, String newStatus, String expectedStatus) {
+        return testSuiteRunRepository.updateStatusOptimistic(runId, newStatus, expectedStatus);
+    }
+
     /**
      * Wraps {@link TestSuiteRunRepository#markCancelling} in a {@code @Transactional} method so its
      * internal {@code TransactionTimestampContext.getTimestamp()} read (see {@code design.md} decision D4)

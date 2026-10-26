@@ -27,6 +27,7 @@ import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.JSONB;
 import org.jooq.SortField;
+import org.jooq.impl.DSL;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
@@ -159,6 +160,7 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
         long now = transactionTimestampContext.getTimestamp();
         return dsl.update(TEST_SUITE_RUNS)
                 .set(TEST_SUITE_RUNS.STATUS, newStatus)
+                .set(TEST_SUITE_RUNS.STARTED_AT_MS, DSL.coalesce(TEST_SUITE_RUNS.STARTED_AT_MS, now))
                 .set(TEST_SUITE_RUNS.COMPLETED_AT_MS, now)
                 .set(TEST_SUITE_RUNS.UPDATED_AT_MS, now)
                 .where(TEST_SUITE_RUNS.ID.eq(id.toString()).and(TEST_SUITE_RUNS.STATUS.eq(expectedStatus)))
@@ -191,6 +193,7 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
                 .set(TEST_SUITE_RUNS.STATUS, RunStatus.FAILED.name())
                 .set(TEST_SUITE_RUNS.ERROR_MESSAGE, errorMessage)
                 .set(TEST_SUITE_RUNS.ERROR_DETAILS, toJsonb(errorDetails))
+                .set(TEST_SUITE_RUNS.STARTED_AT_MS, DSL.coalesce(TEST_SUITE_RUNS.STARTED_AT_MS, completedAt))
                 .set(TEST_SUITE_RUNS.COMPLETED_AT_MS, completedAt)
                 .set(TEST_SUITE_RUNS.UPDATED_AT_MS, updatedAt)
                 .where(TEST_SUITE_RUNS
@@ -203,6 +206,7 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
 
     @Override
     public int updateToCancelled(UUID id, long completedAt, long updatedAt) {
+        // Only RUNNING/CANCELLING rows match, and those always have started_at_ms, so no COALESCE is needed here.
         return dsl.update(TEST_SUITE_RUNS)
                 .set(TEST_SUITE_RUNS.STATUS, RunStatus.CANCELLED.name())
                 .set(TEST_SUITE_RUNS.COMPLETED_AT_MS, completedAt)
@@ -226,6 +230,7 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
 
     @Override
     public int cancelOrphanedCancellingRuns() {
+        // CANCELLING is only reachable from RUNNING (markCancelling), so these rows always have started_at_ms.
         long now = transactionTimestampContext.getTimestamp();
         return dsl.update(TEST_SUITE_RUNS)
                 .set(TEST_SUITE_RUNS.STATUS, RunStatus.CANCELLED.name())
@@ -280,6 +285,7 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
                 .set(TEST_SUITE_RUNS.STATUS, failedStatus)
                 .set(TEST_SUITE_RUNS.ERROR_MESSAGE, errorMessage)
                 .set(TEST_SUITE_RUNS.ERROR_DETAILS, toJsonb(errorDetails))
+                .set(TEST_SUITE_RUNS.STARTED_AT_MS, DSL.coalesce(TEST_SUITE_RUNS.STARTED_AT_MS, now))
                 .set(TEST_SUITE_RUNS.COMPLETED_AT_MS, now)
                 .set(TEST_SUITE_RUNS.UPDATED_AT_MS, now)
                 .where(TEST_SUITE_RUNS.STATUS.in(orphanedStatuses))

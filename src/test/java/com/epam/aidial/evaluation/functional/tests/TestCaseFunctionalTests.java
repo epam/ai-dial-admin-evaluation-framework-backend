@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
@@ -287,6 +288,109 @@ public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getTestCaseName()).isEqualTo("Updated Name");
         assertThat(response.getBody().getData()).containsEntry("prompt", "Updated");
+    }
+
+    @Test
+    @DisplayName("Should preserve NUMBER value's trailing .0 when PUT submits a whole-number JSON value")
+    void shouldPreserveNumberDecimalRepresentationOnUpdate() {
+        final UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("numeric")
+                .type(SchemaFieldType.NUMBER)
+                .required(true)
+                .build()));
+        final String collectionUrl = apiUrl("/datasets/" + datasetId + "/test-cases");
+        final TestCaseRequestDto createRequest = TestCaseRequestDto.builder()
+                .testCaseName("NUMBER round trip")
+                .data(Map.of("numeric", 1.0))
+                .build();
+        final ResponseEntity<TestCaseResponseDto> created =
+                restTemplate.postForEntity(collectionUrl, jsonEntity(createRequest), TestCaseResponseDto.class);
+
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        final UUID testCaseId = created.getBody().getId();
+        final String originalData = testCaseRepository
+                .findByIdAndDatasetId(testCaseId, datasetId)
+                .orElseThrow()
+                .getData();
+        assertThat(objectMapper.readTree(originalData).get("numeric").toString())
+                .as("Initial persisted NUMBER value includes .0")
+                .isEqualTo("1.0");
+
+        // JavaScript JSON.stringify emits 1, not 1.0, after parsing the original numeric value.
+        final TestCaseRequestDto updateRequest = TestCaseRequestDto.builder()
+                .testCaseName("NUMBER round trip")
+                .data(Map.of("numeric", 1))
+                .build();
+        final ResponseEntity<String> updated = restTemplate.exchange(
+                collectionUrl + "/" + testCaseId, HttpMethod.PUT, jsonEntity(updateRequest), String.class);
+
+        assertThat(updated.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(updated.getBody()).isNotNull();
+        final JsonNode updatedResponse = objectMapper.readTree(updated.getBody());
+        final String updatedData = testCaseRepository
+                .findByIdAndDatasetId(testCaseId, datasetId)
+                .orElseThrow()
+                .getData();
+        final JsonNode persistedData = objectMapper.readTree(updatedData);
+        assertSoftly(softly -> {
+            softly.assertThat(persistedData.get("numeric").toString())
+                    .as("Persisted NUMBER value retains .0 after frontend-style PUT")
+                    .isEqualTo("1.0");
+            softly.assertThat(updatedResponse.get("data").get("numeric").toString())
+                    .as("PUT response retains .0 for the NUMBER field")
+                    .isEqualTo("1.0");
+        });
+    }
+
+    @Test
+    @DisplayName("Should keep schema-declared INTEGER values intact when PUT normalizes NUMBER fields")
+    void shouldPreserveIntegerValuesWhenUpdatingNumberFields() {
+        final UUID datasetId = newDatasetWithSchema(List.of(
+                FieldDefinitionDto.builder()
+                        .name("numeric")
+                        .type(SchemaFieldType.NUMBER)
+                        .required(true)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("integer")
+                        .type(SchemaFieldType.INTEGER)
+                        .required(true)
+                        .build()));
+        final String collectionUrl = apiUrl("/datasets/" + datasetId + "/test-cases");
+        final TestCaseRequestDto createRequest = TestCaseRequestDto.builder()
+                .testCaseName("INTEGER and NUMBER round trip")
+                .data(Map.of("numeric", 1.0, "integer", 1))
+                .build();
+        final ResponseEntity<TestCaseResponseDto> created =
+                restTemplate.postForEntity(collectionUrl, jsonEntity(createRequest), TestCaseResponseDto.class);
+
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        final UUID testCaseId = created.getBody().getId();
+        final TestCaseRequestDto updateRequest = TestCaseRequestDto.builder()
+                .testCaseName("INTEGER and NUMBER round trip")
+                .data(Map.of("numeric", 2, "integer", 2))
+                .build();
+        final ResponseEntity<String> updated = restTemplate.exchange(
+                collectionUrl + "/" + testCaseId, HttpMethod.PUT, jsonEntity(updateRequest), String.class);
+
+        assertThat(updated.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(updated.getBody()).isNotNull();
+        final JsonNode updatedResponse = objectMapper.readTree(updated.getBody());
+        final JsonNode persistedData = objectMapper.readTree(testCaseRepository
+                .findByIdAndDatasetId(testCaseId, datasetId)
+                .orElseThrow()
+                .getData());
+        assertSoftly(softly -> {
+            softly.assertThat(persistedData.get("numeric").toString()).isEqualTo("2.0");
+            softly.assertThat(persistedData.get("integer").toString()).isEqualTo("2");
+            softly.assertThat(updatedResponse.get("data").get("numeric").toString())
+                    .isEqualTo("2.0");
+            softly.assertThat(updatedResponse.get("data").get("integer").toString())
+                    .isEqualTo("2");
+            softly.assertThat(updatedResponse.get("valid").asBoolean()).isTrue();
+        });
     }
 
     @Test

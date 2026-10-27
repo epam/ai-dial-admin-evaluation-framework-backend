@@ -120,4 +120,77 @@ class FilePlaceholderDetectorTest {
         assertThat(detector.boundFieldType(null, SCHEMA)).isEmpty();
         assertThat(detector.boundFieldType(dataBinding("title"), null)).isEmpty();
     }
+
+    private static final List<FieldDefinitionDto> SKILL_SCHEMA = List.of(
+            FieldDefinitionDto.builder()
+                    .name("skill")
+                    .type(SchemaFieldType.SKILL)
+                    .build(),
+            FieldDefinitionDto.builder()
+                    .name("attachment")
+                    .type(SchemaFieldType.FILE)
+                    .build());
+
+    @Test
+    @DisplayName("hintless placeholder bound to a SKILL column is a skill reference and not a file reference")
+    void hintlessBoundToSkillColumnIsSkill() {
+        assertThat(detector.isSkillReference(null, dataBinding("skill"), SKILL_SCHEMA))
+                .isTrue();
+        assertThat(detector.isFileReference(null, dataBinding("skill"), SKILL_SCHEMA))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("hintless placeholder bound to a FILE column is not a skill reference")
+    void hintlessBoundToFileColumnIsNotSkill() {
+        assertThat(detector.isSkillReference(null, dataBinding("attachment"), SKILL_SCHEMA))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("explicit skill hint is a skill reference without a binding or schema")
+    void explicitSkillHintIsSkillWithoutSchema() {
+        assertThat(detector.isSkillReference("skill", null, null)).isTrue();
+    }
+
+    @Test
+    @DisplayName("skill hint is case-insensitive and trimmed")
+    void skillHintIsCaseInsensitiveAndTrimmed() {
+        assertThat(detector.isSkillReference(" SKILL ", null, SKILL_SCHEMA)).isTrue();
+        assertThat(detector.isSkillReference("Skill", dataBinding("attachment"), SKILL_SCHEMA))
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("explicit non-skill hint wins over a SKILL column")
+    void explicitNonSkillHintWinsOverSkillColumn() {
+        assertThat(detector.isSkillReference("string", dataBinding("skill"), SKILL_SCHEMA))
+                .isFalse();
+        assertThat(detector.isSkillReference("file", dataBinding("skill"), SKILL_SCHEMA))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("constantValue-only binding without hint is not a skill reference")
+    void constantValueBindingWithoutHintIsNotSkill() {
+        final InputBindingDto binding = InputBindingDto.builder()
+                .templateVariable("s")
+                .constantValue("skills/b/x")
+                .build();
+
+        assertThat(detector.isSkillReference(null, binding, SKILL_SCHEMA)).isFalse();
+    }
+
+    @Test
+    @DisplayName("null schema or no binding yields not a skill reference when no hint")
+    void nullSchemaOrNoBindingIsNotSkill() {
+        assertThat(detector.isSkillReference(null, dataBinding("skill"), null)).isFalse();
+        assertThat(detector.isSkillReference(null, null, SKILL_SCHEMA)).isFalse();
+    }
+
+    @Test
+    @DisplayName("explicit skill hint is not a file reference")
+    void explicitSkillHintIsNotFile() {
+        assertThat(detector.isFileReference("skill", null, null)).isFalse();
+    }
 }

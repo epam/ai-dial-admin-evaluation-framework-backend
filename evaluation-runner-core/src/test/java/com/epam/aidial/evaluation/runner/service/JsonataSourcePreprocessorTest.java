@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
@@ -44,7 +45,10 @@ class JsonataSourcePreprocessorTest {
 
     private void setUp() {
         preprocessor = new JsonataSourcePreprocessor(
-                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector(), objectMapper);
+                templateVariableResolver,
+                new ResourceRefPlaceholderResolver(
+                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()),
+                objectMapper);
         warnings = new ArrayList<>();
     }
 
@@ -614,6 +618,83 @@ class JsonataSourcePreprocessorTest {
                     null);
 
             assertThat(result).isEqualTo("\"bound value\"");
+        }
+    }
+
+    @Nested
+    @DisplayName("SKILL placeholders")
+    class SkillPlaceholders {
+
+        private final List<FieldDefinitionDto> skillSchema = List.of(FieldDefinitionDto.builder()
+                .name("skill")
+                .type(SchemaFieldType.SKILL)
+                .build());
+
+        private void stubSkill(Object value) {
+            when(templateVariableResolver.resolveVariable(eq("s"), isNull(), any(), anyMap(), any()))
+                    .thenReturn(value);
+        }
+
+        @Test
+        @DisplayName("|skill hint on a quoted full-value placeholder serialises the canonical ref as a string literal")
+        void quotedFullValueSkillHint() {
+            setUp();
+            stubSkill("skills/b/x/");
+
+            String result = preprocessor.preprocess("\"${{s|skill}}\"", Map.of(), Map.of(), warnings, null);
+
+            assertThat(result).isEqualTo("\"skills/b/x\"");
+            verifyNoInteractions(dialFileRefResolver);
+        }
+
+        @Test
+        @DisplayName("|SKILL hint on a bare full-value placeholder is canonicalised (case-insensitive)")
+        void bareFullValueSkillHint() {
+            setUp();
+            stubSkill("skills/b/x/");
+
+            String result =
+                    preprocessor.preprocess("$append($skills, ${{s|SKILL}})", Map.of(), Map.of(), warnings, null);
+
+            assertThat(result).isEqualTo("$append($skills, \"skills/b/x\")");
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a SKILL column is canonicalised")
+        void hintlessSkillColumn() {
+            setUp();
+            stubSkill(" skills/b/x ");
+            InputBindingDto binding = InputBindingDto.builder()
+                    .templateVariable("s")
+                    .dataField("skill")
+                    .build();
+
+            String result =
+                    preprocessor.preprocess("\"${{s}}\"", Map.of("s", binding), Map.of(), warnings, skillSchema);
+
+            assertThat(result).isEqualTo("\"skills/b/x\"");
+        }
+
+        @Test
+        @DisplayName("|skill placeholder embedded in surrounding text is stringified, not canonicalised")
+        void embeddedSkillNotCanonicalised() {
+            setUp();
+            stubSkill("skills/b/x/");
+
+            String result = preprocessor.preprocess("\"use ${{s|skill}} now\"", Map.of(), Map.of(), warnings, null);
+
+            assertThat(result).isEqualTo("\"use skills/b/x/ now\"");
+        }
+
+        @Test
+        @DisplayName("malformed |skill value is serialised unchanged")
+        void malformedSkillUnchanged() {
+            setUp();
+            stubSkill("not-a-skill");
+
+            String result = preprocessor.preprocess("\"${{s|skill}}\"", Map.of(), Map.of(), warnings, null);
+
+            assertThat(result).isEqualTo("\"not-a-skill\"");
         }
     }
 }

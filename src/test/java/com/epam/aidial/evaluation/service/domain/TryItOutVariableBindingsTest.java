@@ -124,6 +124,31 @@ class TryItOutVariableBindingsTest {
     }
 
     @Test
+    @DisplayName("Variable bound to a SKILL column in the suite keeps its constant value and gains the column as "
+            + "dataField")
+    void shouldBindSkillColumnVariableToDataField() {
+        final List<InputBindingDto> result = bindings.bindToFileColumns(
+                List.of(constant("s", "skills/my-bucket/summariser")),
+                List.of(column("s", "skillField")),
+                List.of(field("skillField", SchemaFieldType.SKILL)));
+
+        assertThat(result).containsExactly(fileColumn("s", "skillField", "skills/my-bucket/summariser"));
+    }
+
+    @Test
+    @DisplayName("Variables sharing one SKILL column each keep their own value")
+    void shouldKeepEachValueWhenVariablesShareSkillColumn() {
+        final List<InputBindingDto> result = bindings.bindToFileColumns(
+                List.of(constant("a", "skills/b/one"), constant("b", "skills/b/two")),
+                List.of(column("a", "skillField"), column("b", "skillField")),
+                List.of(field("skillField", SchemaFieldType.SKILL)));
+
+        assertThat(result)
+                .containsExactly(
+                        fileColumn("a", "skillField", "skills/b/one"), fileColumn("b", "skillField", "skills/b/two"));
+    }
+
+    @Test
     @DisplayName("Variable bound to a non-FILE column, a constant or nothing stays a constant binding")
     void shouldKeepConstantBindingWhenNotFileColumn() {
         final List<InputBindingDto> constants =

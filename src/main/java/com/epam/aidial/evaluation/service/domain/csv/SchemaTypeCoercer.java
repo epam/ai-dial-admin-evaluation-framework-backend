@@ -27,7 +27,7 @@ public class SchemaTypeCoercer {
             return value;
         }
         return switch (schemaType) {
-            case STRING, FILE -> coerceToString(value);
+            case STRING, FILE, SKILL -> coerceToString(value);
             case INTEGER -> coerceToInteger(value);
             case NUMBER -> coerceToNumber(value);
             case BOOLEAN -> coerceToBoolean(value);

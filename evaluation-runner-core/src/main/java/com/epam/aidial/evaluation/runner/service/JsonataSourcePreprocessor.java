@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.runner.service;
 
-import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -118,8 +117,7 @@ public class JsonataSourcePreprocessor {
     };
 
     private final TemplateVariableResolver templateVariableResolver;
-    private final DialFileRefResolver dialFileRefResolver;
-    private final FilePlaceholderDetector filePlaceholderDetector;
+    private final ResourceRefPlaceholderResolver resourceRefPlaceholderResolver;
     private final ObjectMapper objectMapper;
 
     /**
@@ -439,8 +437,8 @@ public class JsonataSourcePreprocessor {
     }
 
     /**
-     * Resolves a variable's typed value, applying the FILE-placeholder DIAL-ref conversion (see
-     * {@link FilePlaceholderDetector}) — identical to {@link TemplateContentResolver#resolveObject}'s
+     * Resolves a variable's typed value, applying the FILE-placeholder DIAL-ref conversion and the
+     * SKILL-placeholder canonicalisation (see {@link ResourceRefPlaceholderResolver}) — identical to {@link TemplateContentResolver#resolveObject}'s
      * full-value path.
      */
     private Object resolveTypedValue(
@@ -453,11 +451,7 @@ public class JsonataSourcePreprocessor {
             List<FieldDefinitionDto> testCaseSchema) {
         InputBindingDto binding = bindingByVar.get(varName);
         Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
-        if (resolved instanceof String resolvedRef
-                && filePlaceholderDetector.isFileReference(typeHint, binding, testCaseSchema)) {
-            return dialFileRefResolver.resolveToDialRef(resolvedRef);
-        }
-        return resolved;
+        return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
     }
 
     /**

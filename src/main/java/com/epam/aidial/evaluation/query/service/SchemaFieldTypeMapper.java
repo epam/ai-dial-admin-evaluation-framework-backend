@@ -20,7 +20,7 @@ public class SchemaFieldTypeMapper {
             return QueryFieldType.STRING;
         }
         return switch (type) {
-            case STRING, FILE -> QueryFieldType.STRING;
+            case STRING, FILE, SKILL -> QueryFieldType.STRING;
             case INTEGER -> QueryFieldType.LONG;
             case NUMBER -> QueryFieldType.DECIMAL;
             case BOOLEAN -> QueryFieldType.BOOLEAN;

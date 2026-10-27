@@ -1,0 +1,22 @@
+{
+  "name": "Skill Evaluation Dataset",
+  "description": "Dataset whose test cases reference an existing DIAL skill",
+  "visibility": "PUBLIC",
+  "testCaseSchema": [
+    {
+      "name": "question",
+      "displayName": "Question",
+      "type": "STRING",
+      "required": true,
+      "perTurn": false
+    },
+    {
+      "name": "skillField",
+      "displayName": "Skill",
+      "type": "SKILL",
+      "description": "Reference to an existing DIAL skill: skills/{bucket}/{path-to-skill}",
+      "required": false,
+      "perTurn": false
+    }
+  ]
+}

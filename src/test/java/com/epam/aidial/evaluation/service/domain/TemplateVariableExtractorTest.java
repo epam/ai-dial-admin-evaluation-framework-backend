@@ -715,6 +715,60 @@ class TemplateVariableExtractorTest {
         }
 
         @Test
+        @DisplayName("Should extract variable with skill type hint")
+        void shouldExtractVariableWithSkillTypeHint() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .content(Map.of("skill", "${{selectedSkill|skill}}"))
+                            .build())
+                    .build();
+
+            var result = extractor.extractWithWarnings(template);
+
+            assertThat(result.getVariables()).hasSize(1);
+            assertThat(result.getVariables().get(0).getName()).isEqualTo("selectedSkill");
+            assertThat(result.getVariables().get(0).getDeclaredType()).isEqualTo(SchemaFieldType.SKILL);
+            assertThat(result.getVariables().get(0).isHasDefault()).isFalse();
+            assertThat(result.getTypeHintWarnings()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Should parse the skill type hint case-insensitively without an unrecognised-hint warning")
+        void shouldParseSkillTypeHintCaseInsensitively() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .content(Map.of(
+                                    "a", "${{a|SKILL}}",
+                                    "b", "${{b|Skill}}",
+                                    "c", "${{c|skill}}"))
+                            .build())
+                    .build();
+
+            var result = extractor.extractWithWarnings(template);
+
+            assertThat(result.getVariables()).hasSize(3);
+            assertThat(result.getVariables()).allMatch(v -> v.getDeclaredType() == SchemaFieldType.SKILL);
+            assertThat(result.getTypeHintWarnings()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Should extract skill type hint with a default value")
+        void shouldExtractSkillTypeHintWithDefault() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .content(Map.of("skill", "${{s|skill:skills/my-bucket/default}}"))
+                            .build())
+                    .build();
+
+            var result = extractor.extract(template);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getDeclaredType()).isEqualTo(SchemaFieldType.SKILL);
+            assertThat(result.get(0).isHasDefault()).isTrue();
+            assertThat(result.get(0).getDefaultValue()).isEqualTo("skills/my-bucket/default");
+        }
+
+        @Test
         @DisplayName("Should parse all SchemaFieldType values as type hints")
         void shouldParseAllSchemaFieldTypes() {
             var template = RequestTemplateDto.builder()

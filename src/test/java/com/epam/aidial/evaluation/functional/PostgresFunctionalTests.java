@@ -91,6 +91,7 @@ import com.epam.aidial.evaluation.functional.tests.RunComparisonFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunComparisonRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunDeletionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.SkillFieldFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationBindingFunctionalTests;
@@ -519,6 +520,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class FileFieldTests extends FileFieldFunctionalTests {}
+
+    @Nested
+    class SkillFieldTests extends SkillFieldFunctionalTests {}
 
     @Nested
     class ZipTestCaseImportTests extends ZipTestCaseImportFunctionalTests {}

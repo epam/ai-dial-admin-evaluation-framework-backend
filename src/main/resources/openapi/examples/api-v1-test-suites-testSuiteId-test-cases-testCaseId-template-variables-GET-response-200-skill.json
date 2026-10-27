@@ -1,0 +1,19 @@
+{
+  "0": [],
+  "1": [
+    {
+      "name": "selected_skill",
+      "sources": ["BODY"],
+      "hasDefault": false,
+      "defaultValue": null,
+      "binding": {
+        "templateVariable": "selected_skill",
+        "dataField": "skillField",
+        "constantValue": null
+      },
+      "declaredType": "SKILL",
+      "effectiveType": "SKILL",
+      "resolvedValue": "skills/my-bucket/summariser"
+    }
+  ]
+}

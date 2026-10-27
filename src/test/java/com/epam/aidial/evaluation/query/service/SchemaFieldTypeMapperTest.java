@@ -17,6 +17,7 @@ class SchemaFieldTypeMapperTest {
     void mapsEachType() {
         assertThat(mapper.map(SchemaFieldType.STRING)).isEqualTo(QueryFieldType.STRING);
         assertThat(mapper.map(SchemaFieldType.FILE)).isEqualTo(QueryFieldType.STRING);
+        assertThat(mapper.map(SchemaFieldType.SKILL)).isEqualTo(QueryFieldType.STRING);
         assertThat(mapper.map(SchemaFieldType.INTEGER)).isEqualTo(QueryFieldType.LONG);
         assertThat(mapper.map(SchemaFieldType.NUMBER)).isEqualTo(QueryFieldType.DECIMAL);
         assertThat(mapper.map(SchemaFieldType.BOOLEAN)).isEqualTo(QueryFieldType.BOOLEAN);

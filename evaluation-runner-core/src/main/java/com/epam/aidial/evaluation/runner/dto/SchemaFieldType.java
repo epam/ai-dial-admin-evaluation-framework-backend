@@ -7,5 +7,6 @@ public enum SchemaFieldType {
     BOOLEAN,
     OBJECT,
     ARRAY,
-    FILE
+    FILE,
+    SKILL
 }

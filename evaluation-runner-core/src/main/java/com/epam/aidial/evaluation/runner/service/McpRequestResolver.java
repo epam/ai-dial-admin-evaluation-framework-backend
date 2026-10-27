@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.runner.service;
 
-import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
@@ -41,8 +40,7 @@ public class McpRequestResolver {
      */
     private static final Pattern FULL_VALUE_PATTERN = Pattern.compile("^\\$\\{\\{[^}]+\\}\\}$");
 
-    private final DialFileRefResolver dialFileRefResolver;
-    private final FilePlaceholderDetector filePlaceholderDetector;
+    private final ResourceRefPlaceholderResolver resourceRefPlaceholderResolver;
 
     /**
      * Resolution result carrying resolved arguments and any warnings.
@@ -137,11 +135,11 @@ public class McpRequestResolver {
             final InputBindingDto binding = bindingByVar.get(varName);
             Object resolved = resolveVariable(varName, bindingByVar, data);
             if (resolved != null) {
-                return resolveFileRef(resolved, typeHint, binding, testCaseSchema);
+                return resolveResourceRef(resolved, typeHint, binding, testCaseSchema);
             }
             if (defaultValue != null) {
                 Object parsedDefault = parseDefaultValue(defaultValue);
-                return resolveFileRef(parsedDefault, typeHint, binding, testCaseSchema);
+                return resolveResourceRef(parsedDefault, typeHint, binding, testCaseSchema);
             }
             // Variable not found and no default — add REQUIRED warning
             warnings.add(ValidationWarningDto.builder()
@@ -182,17 +180,13 @@ public class McpRequestResolver {
     }
 
     /**
-     * Resolves a file reference if the placeholder is a FILE reference (see {@link FilePlaceholderDetector})
-     * and the value is a String. Converts short-format references to DIAL API paths via
-     * {@link DialFileRefResolver}.
+     * Converts a resolved value when the placeholder is a FILE reference (short-format reference to a DIAL API
+     * path) or a SKILL reference (canonical {@code skills/<bucket>/<path>}) and the value is a String; see
+     * {@link ResourceRefPlaceholderResolver}.
      */
-    private Object resolveFileRef(
+    private Object resolveResourceRef(
             Object resolved, String typeHint, InputBindingDto binding, List<FieldDefinitionDto> testCaseSchema) {
-        if (resolved instanceof String resolvedRef
-                && filePlaceholderDetector.isFileReference(typeHint, binding, testCaseSchema)) {
-            return dialFileRefResolver.resolveToDialRef(resolvedRef);
-        }
-        return resolved;
+        return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
     }
 
     /**

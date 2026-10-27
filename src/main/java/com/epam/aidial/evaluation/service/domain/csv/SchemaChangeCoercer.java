@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 /**
  * Strict, schema-change-only value coercer used by {@code RevalidationService}.
  * Sibling of {@link SchemaTypeCoercer} (CSV-import, permissive). The two intentionally
- * differ: this one drops Integer/Long ↔ Boolean, *→ FILE except String identity,
+ * differ: this one drops Integer/Long ↔ Boolean, *→ FILE/SKILL except String identity,
  * and Object/Array → STRING — see openspec/specs/test-cases/spec.md.
  */
 @Slf4j
@@ -34,7 +34,7 @@ public class SchemaChangeCoercer {
             case INTEGER -> coerceToInteger(value);
             case NUMBER -> coerceToNumber(value);
             case BOOLEAN -> coerceToBoolean(value);
-            case FILE -> coerceToFile(value);
+            case FILE, SKILL -> coerceToReference(value);
             case OBJECT, ARRAY -> value;
         };
     }
@@ -148,11 +148,11 @@ public class SchemaChangeCoercer {
         return value;
     }
 
-    private static Object coerceToFile(Object value) {
+    private static Object coerceToReference(Object value) {
         if (value instanceof String) {
-            return value; // identity — FILE format check happens downstream in validator
+            return value; // identity — FILE/SKILL format check happens downstream in validator
         }
-        // Non-String → FILE: skip (Boolean/Number/Object/Array can't be a file ref)
+        // Non-String → FILE/SKILL: skip (Boolean/Number/Object/Array can't be a file or skill ref)
         return value;
     }
 

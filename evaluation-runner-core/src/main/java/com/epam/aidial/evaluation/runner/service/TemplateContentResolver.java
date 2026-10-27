@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.runner.service;
 
-import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -46,8 +45,7 @@ public class TemplateContentResolver {
     static final Pattern FULL_VALUE_PATTERN = Pattern.compile("^\\$\\{\\{[^}]+}}$");
 
     private final TemplateVariableResolver templateVariableResolver;
-    private final DialFileRefResolver dialFileRefResolver;
-    private final FilePlaceholderDetector filePlaceholderDetector;
+    private final ResourceRefPlaceholderResolver resourceRefPlaceholderResolver;
 
     /**
      * Resolves {@code ${{}}} placeholders embedded anywhere in a plain string, stringifying each
@@ -76,7 +74,9 @@ public class TemplateContentResolver {
      * passthrough primitive). A full-value string placeholder (the entire string is exactly one
      * placeholder) preserves the resolved value's type instead of stringifying it, and a FILE placeholder
      * (see {@link FilePlaceholderDetector}: an explicit {@code |file} hint, or no hint and a binding to a FILE
-     * schema field) resolves a String result to DIAL ref format.
+     * schema field) resolves a String result to DIAL ref format. A SKILL placeholder (an explicit {@code |skill}
+     * hint, or a binding to a SKILL schema field) resolves it to the canonical skill reference instead (see
+     * {@link ResourceRefPlaceholderResolver}).
      *
      * @param testCaseSchema test case schema used to detect FILE-bound placeholders; {@code null} limits
      *                       conversion to explicit {@code |file} hints
@@ -99,12 +99,8 @@ public class TemplateContentResolver {
                     InputBindingDto binding = bindingByVar.get(varName);
                     Object resolved =
                             templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
-                    // Resolve FILE-typed placeholder to DIAL ref format for JSON/URL-encoded bodies
-                    if (resolved instanceof String resolvedRef
-                            && filePlaceholderDetector.isFileReference(typeHint, binding, testCaseSchema)) {
-                        return dialFileRefResolver.resolveToDialRef(resolvedRef);
-                    }
-                    return resolved;
+                    // Convert FILE (DIAL ref) / SKILL (canonical skill ref) placeholders for JSON/URL-encoded bodies
+                    return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
                 }
             }
             // String interpolation

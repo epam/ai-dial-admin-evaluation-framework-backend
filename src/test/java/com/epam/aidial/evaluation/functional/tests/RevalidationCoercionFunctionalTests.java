@@ -302,6 +302,57 @@ public abstract class RevalidationCoercionFunctionalTests extends BaseFunctional
         assertThat(afterSecond.getUpdatedAt()).isGreaterThanOrEqualTo(updatedAtAfterFirst);
     }
 
+    @Test
+    @DisplayName("STRING→SKILL keeps every value; a malformed ref makes only its row invalid with a SKILL warning")
+    void stringToSkillKeepsValuesAndFlagsMalformedRefs() {
+        TestSuiteResponseDto suite = createSuiteWithSchema(List.of(fieldDef("skill", SchemaFieldType.STRING, false)));
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        TestCaseResponseDto good = createTestCase(suite.getId(), "tc-good", Map.of("skill", "skills/b/x"));
+        TestCaseResponseDto bad = createTestCase(suite.getId(), "tc-bad", Map.of("skill", "not-a-skill"));
+
+        RevalidationTaskDto completed =
+                updateSchemaAndAwait(suite, List.of(fieldDef("skill", SchemaFieldType.SKILL, false)));
+
+        assertThat(completed.getStatus()).isEqualTo(RevalidationStatus.COMPLETED);
+        assertThat(completed.getValidCount()).isEqualTo(1);
+        assertThat(completed.getInvalidCount()).isEqualTo(1);
+        assertThat(completed.getCoercedCellCount()).isZero();
+        assertThat(parseData(testCaseRepository
+                        .findByIdAndDatasetId(good.getId(), datasetId)
+                        .orElseThrow()))
+                .containsEntry("skill", "skills/b/x");
+        assertThat(parseData(testCaseRepository
+                        .findByIdAndDatasetId(bad.getId(), datasetId)
+                        .orElseThrow()))
+                .containsEntry("skill", "not-a-skill");
+        ResponseEntity<TestCaseResponseDto> badAfter = restTemplate.getForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases/" + bad.getId() + "?includeWarnings=true"),
+                TestCaseResponseDto.class);
+        assertThat(badAfter.getBody()).isNotNull();
+        assertThat(badAfter.getBody().isValid()).isFalse();
+        assertThat(badAfter.getBody().getValidationWarnings())
+                .anyMatch(w -> w.getMessage().startsWith("SKILL field 'skill': "));
+    }
+
+    @Test
+    @DisplayName("INTEGER→SKILL is NOT coerced; the row is marked invalid and the cell is not counted")
+    void integerToSkillSkipped() {
+        TestSuiteResponseDto suite = createSuiteWithSchema(List.of(fieldDef("skill", SchemaFieldType.INTEGER, false)));
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "tc-int", Map.of("skill", 42L));
+
+        RevalidationTaskDto completed =
+                updateSchemaAndAwait(suite, List.of(fieldDef("skill", SchemaFieldType.SKILL, false)));
+
+        assertThat(completed.getInvalidCount()).isEqualTo(1);
+        assertThat(completed.getValidCount()).isZero();
+        assertThat(completed.getCoercedCellCount()).isZero();
+        TestCase persisted = testCaseRepository
+                .findByIdAndDatasetId(tc.getId(), metaTestDataHelper.getDatasetId(suite.getId()))
+                .orElseThrow();
+        assertThat(persisted.isValid()).isFalse();
+        assertThat(parseData(persisted)).containsEntry("skill", 42);
+    }
+
     // ---------------------------------------------------------------------- helpers
 
     private TestSuiteResponseDto createSuiteWithSchema(List<FieldDefinitionDto> schema) {

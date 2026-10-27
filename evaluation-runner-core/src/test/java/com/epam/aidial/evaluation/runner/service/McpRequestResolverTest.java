@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -16,13 +17,12 @@ import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,11 +31,13 @@ class McpRequestResolverTest {
     @Mock
     private DialFileRefResolver dialFileRefResolver;
 
-    @Spy
-    private FilePlaceholderDetector filePlaceholderDetector = new FilePlaceholderDetector();
-
-    @InjectMocks
     private McpRequestResolver resolver;
+
+    @BeforeEach
+    void setUp() {
+        resolver = new McpRequestResolver(new ResourceRefPlaceholderResolver(
+                dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()));
+    }
 
     @Test
     @DisplayName("Resolves single variable reference preserving type")
@@ -617,6 +619,83 @@ class McpRequestResolverTest {
 
             assertThat(result.getArguments()).containsEntry("document", SHORT_REF);
             verify(dialFileRefResolver, never()).resolveToDialRef(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("|skill type hint resolution")
+    class SkillTypeHintResolution {
+
+        private final List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
+                .name("skill")
+                .type(SchemaFieldType.SKILL)
+                .build());
+
+        private ArgumentTemplateDto template(String value) {
+            ArgumentTemplateDto template = new ArgumentTemplateDto();
+            template.setArguments(Map.of("skill", value));
+            return template;
+        }
+
+        @Test
+        @DisplayName("${{s|skill}} with a string value resolves to the canonical skill ref")
+        void explicitSkillHintIsCanonicalised() {
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("${{s|skill}}"), null, Map.of("s", "skills/b/x/"), null);
+
+            assertThat(result.getArguments()).containsEntry("skill", "skills/b/x");
+            assertThat(result.getWarnings()).isEmpty();
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
+        }
+
+        @Test
+        @DisplayName("${{s|SKILL}} uppercase hint is canonicalised (case-insensitive)")
+        void uppercaseSkillHintIsCanonicalised() {
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("${{s|SKILL}}"), null, Map.of("s", "skills/b/x/"), null);
+
+            assertThat(result.getArguments()).containsEntry("skill", "skills/b/x");
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a SKILL column is canonicalised")
+        void hintlessSkillColumnIsCanonicalised() {
+            List<InputBindingDto> bindings = List.of(InputBindingDto.builder()
+                    .templateVariable("s")
+                    .dataField("skill")
+                    .build());
+
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("${{s}}"), bindings, Map.of("skill", "skills/b/x/"), schema);
+
+            assertThat(result.getArguments()).containsEntry("skill", "skills/b/x");
+        }
+
+        @Test
+        @DisplayName("embedded ${{s|skill}} stays verbatim")
+        void embeddedSkillStaysVerbatim() {
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("load ${{s|skill}}"), null, Map.of("s", "skills/b/x/"), null);
+
+            assertThat(result.getArguments()).containsEntry("skill", "load skills/b/x/");
+        }
+
+        @Test
+        @DisplayName("malformed skill value is passed through unchanged")
+        void malformedSkillUnchanged() {
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("${{s|skill}}"), null, Map.of("s", "not-a-skill"), null);
+
+            assertThat(result.getArguments()).containsEntry("skill", "not-a-skill");
+        }
+
+        @Test
+        @DisplayName("${{s|skill:default}} canonicalises the default value")
+        void skillDefaultIsCanonicalised() {
+            McpRequestResolver.ResolutionResult result =
+                    resolver.resolve(template("${{s|skill:skills/b/default/}}"), null, Map.of(), null);
+
+            assertThat(result.getArguments()).containsEntry("skill", "skills/b/default");
         }
     }
 }

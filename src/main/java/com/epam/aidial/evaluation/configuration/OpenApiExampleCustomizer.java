@@ -42,6 +42,7 @@ public class OpenApiExampleCustomizer implements OpenApiCustomizer {
             "with-bodies",
             "jsonata-body",
             "chained",
+            "skill",
             "cancelling",
             "missing-file-warning");
 

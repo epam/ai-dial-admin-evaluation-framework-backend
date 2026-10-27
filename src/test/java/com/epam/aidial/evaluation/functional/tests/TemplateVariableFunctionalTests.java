@@ -544,6 +544,33 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
         }
     }
 
+    @Test
+    @DisplayName("OpenAPI spec carries a skill example reporting declaredType and effectiveType SKILL "
+            + "on both template-variables endpoints")
+    void openApiSpecCarriesSkillTemplateVariableExamples() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode root = objectMapper.readTree(apiDocs.getBody());
+
+        for (String path : List.of(
+                "/api/v1/test-suites/{testSuiteId}/template-variables",
+                "/api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables")) {
+            JsonNode examples = root.path("paths")
+                    .path(path)
+                    .path("get")
+                    .path("responses")
+                    .path("200")
+                    .path("content")
+                    .path("application/json")
+                    .path("examples");
+            assertThat(examples.propertyNames()).as("%s examples", path).contains("skill");
+            JsonNode skillVariable =
+                    examples.path("skill").path("value").path("1").get(0);
+            assertThat(skillVariable.path("declaredType").asString()).isEqualTo("SKILL");
+            assertThat(skillVariable.path("effectiveType").asString()).isEqualTo("SKILL");
+        }
+    }
+
     /**
      * Chain suite: request #0 is {@code GET /settings} with no placeholders; additionalRequests[0] is
      * {@code POST /chat/completions} with {@code user_message} (bound to dataset field {@code question}) and

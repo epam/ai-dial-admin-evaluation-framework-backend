@@ -34,6 +34,32 @@ class ZipImportColumnTypeResolverTest {
     }
 
     @Test
+    @DisplayName("OVERRIDE keeps a manifest SKILL type and the column is not eligible for file-path rewrite")
+    void resolve_override_skillColumnIsNotEligibleForRewrite() {
+        List<FieldDefinitionDto> manifestSchema = List.of(field("skill", SchemaFieldType.SKILL));
+
+        Map<String, ZipImportColumnTypeResolver.ColumnTypeResolution> result =
+                resolver.resolve(CsvImportMode.OVERRIDE, List.of(), manifestSchema, List.of("skill"));
+
+        assertThat(result.get("skill").type()).isEqualTo(SchemaFieldType.SKILL);
+        assertThat(result.get("skill").excluded()).isFalse();
+        assertThat(result.get("skill").eligibleForRewrite()).isFalse();
+    }
+
+    @Test
+    @DisplayName("MERGE keeps a dataset SKILL type over a conflicting manifest type and does not rewrite it")
+    void resolve_merge_datasetSkillColumnIsNotEligibleForRewrite() {
+        List<FieldDefinitionDto> datasetSchema = List.of(field("skill", SchemaFieldType.SKILL));
+        List<FieldDefinitionDto> manifestSchema = List.of(field("skill", SchemaFieldType.FILE));
+
+        Map<String, ZipImportColumnTypeResolver.ColumnTypeResolution> result =
+                resolver.resolve(CsvImportMode.MERGE, datasetSchema, manifestSchema, List.of("skill"));
+
+        assertThat(result.get("skill").type()).isEqualTo(SchemaFieldType.SKILL);
+        assertThat(result.get("skill").eligibleForRewrite()).isFalse();
+    }
+
+    @Test
     @DisplayName("OVERRIDE without a manifest treats a currently STRING column as undetermined")
     void resolve_overrideWithoutManifest_treatsColumnAsUndetermined() {
         List<FieldDefinitionDto> datasetSchema = List.of(field("document", SchemaFieldType.STRING));

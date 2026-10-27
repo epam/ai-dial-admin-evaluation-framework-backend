@@ -124,6 +124,46 @@ class TemplateVariableServiceTest {
         }
 
         @Test
+        @DisplayName("Should report SKILL for both declaredType and effectiveType when |skill is declared")
+        void shouldReportSkillForDeclaredSkillHint() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .content(Map.of("skill", "${{selectedSkill|skill}}"))
+                            .build())
+                    .build();
+
+            List<TemplateVariableDto> vars = service.resolveVariables(template, List.of(), List.of(), null, null);
+
+            assertThat(vars).hasSize(1);
+            assertThat(vars.get(0).getDeclaredType()).isEqualTo(SchemaFieldType.SKILL);
+            assertThat(vars.get(0).getEffectiveType()).isEqualTo(SchemaFieldType.SKILL);
+        }
+
+        @Test
+        @DisplayName("Should use the SKILL column type when no declaredType and the variable is bound to a SKILL field")
+        void shouldUseSkillColumnTypeWhenNoDeclaredType() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .content(Map.of("skill", "${{s}}"))
+                            .build())
+                    .build();
+            var bindings = List.of(InputBindingDto.builder()
+                    .templateVariable("s")
+                    .dataField("skillField")
+                    .build());
+            var schema = List.of(FieldDefinitionDto.builder()
+                    .name("skillField")
+                    .type(SchemaFieldType.SKILL)
+                    .build());
+
+            List<TemplateVariableDto> vars = service.resolveVariables(template, bindings, schema, null, null);
+
+            assertThat(vars).hasSize(1);
+            assertThat(vars.get(0).getDeclaredType()).isNull();
+            assertThat(vars.get(0).getEffectiveType()).isEqualTo(SchemaFieldType.SKILL);
+        }
+
+        @Test
         @DisplayName("Should fall back to STRING when no declaredType, no endpoint, and no binding")
         void shouldFallBackToStringWhenNothingMatches() {
             var template = RequestTemplateDto.builder()

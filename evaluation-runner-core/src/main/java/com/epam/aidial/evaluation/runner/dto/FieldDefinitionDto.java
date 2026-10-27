@@ -40,6 +40,12 @@ public class FieldDefinitionDto {
     private String displayName;
 
     @NotNull
+    @Schema(
+            description = "Field type. FILE is a DIAL file reference (stored as a string; uploaded, packed into ZIP "
+                    + "exports and downloaded for multipart parts). SKILL is a reference to an existing DIAL skill "
+                    + "(a directory resource) in the form 'skills/{bucket}/{path-to-skill}'; it is stored as a string, "
+                    + "validated for format only (DIAL Core checks existence and access) and never downloaded or "
+                    + "packed.")
     private SchemaFieldType type;
 
     private boolean required;

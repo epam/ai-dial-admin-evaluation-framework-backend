@@ -30,7 +30,7 @@ public class ResponseColumnTypeReconciler {
 
         return switch (declaredType) {
             case ARRAY -> reconcileArray(jsonataResult);
-            case STRING, FILE -> reconcileString(jsonataResult, declaredType);
+            case STRING, FILE, SKILL -> reconcileString(jsonataResult, declaredType);
             case INTEGER -> reconcileInteger(jsonataResult);
             case NUMBER -> reconcileNumber(jsonataResult);
             case BOOLEAN -> reconcileBoolean(jsonataResult);

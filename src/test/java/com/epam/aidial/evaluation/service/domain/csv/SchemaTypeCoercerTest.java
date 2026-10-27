@@ -312,6 +312,41 @@ class SchemaTypeCoercerTest {
     }
 
     // -------------------------------------------------------------------------
+    // SKILL coercion
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("SKILL schema type")
+    class SkillCoercion {
+
+        @Test
+        @DisplayName("String value — no-op")
+        void stringNoOp() {
+            assertThat(coercer.coerce("skills/my-bucket/summariser", SchemaFieldType.SKILL))
+                    .isEqualTo("skills/my-bucket/summariser");
+        }
+
+        @Test
+        @DisplayName("Long → String")
+        void longToString() {
+            assertThat(coercer.coerce(42L, SchemaFieldType.SKILL)).isEqualTo("42");
+        }
+
+        @Test
+        @DisplayName("Boolean → String")
+        void booleanToString() {
+            assertThat(coercer.coerce(true, SchemaFieldType.SKILL)).isEqualTo("true");
+        }
+
+        @Test
+        @DisplayName("Cell is kept verbatim — no trimming or canonicalisation")
+        void cellKeptVerbatim() {
+            assertThat(coercer.coerce(" skills/my-bucket/summariser/ ", SchemaFieldType.SKILL))
+                    .isEqualTo(" skills/my-bucket/summariser/ ");
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Null / passthrough cases
     // -------------------------------------------------------------------------
 

@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -52,9 +53,14 @@ class RequestBodyEvaluatorTest {
         JsonataEvaluationService jsonataEvaluationService =
                 new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties);
         TemplateContentResolver templateContentResolver = new TemplateContentResolver(
-                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector());
+                templateVariableResolver,
+                new ResourceRefPlaceholderResolver(
+                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()));
         JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
-                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector(), objectMapper);
+                templateVariableResolver,
+                new ResourceRefPlaceholderResolver(
+                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()),
+                objectMapper);
         evaluator = new RequestBodyEvaluator(
                 templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
         warnings = new ArrayList<>();

@@ -41,6 +41,27 @@ public class FilePlaceholderDetector {
     }
 
     /**
+     * Returns whether a full-value placeholder with the given type hint and binding is a SKILL reference
+     * whose resolved {@code String} value must be canonicalised ({@code skills/<bucket>/<path>}).
+     *
+     * <p>Same rule shape as {@link #isFileReference}: an explicit type hint decides ({@code skill},
+     * case-insensitive, is SKILL; any other hint is not); with no hint the placeholder is SKILL iff its
+     * binding's {@code dataField} names a schema field of type {@link SchemaFieldType#SKILL}.
+     *
+     * @param typeHint raw type hint from the placeholder ({@code null} when absent)
+     * @param binding  the placeholder variable's binding, nullable
+     * @param schema   test case schema, nullable
+     */
+    public boolean isSkillReference(String typeHint, InputBindingDto binding, List<FieldDefinitionDto> schema) {
+        if (typeHint != null && !typeHint.isBlank()) {
+            return SchemaFieldType.SKILL.name().equalsIgnoreCase(typeHint.trim());
+        }
+        return boundFieldType(binding, schema)
+                .filter(SchemaFieldType.SKILL::equals)
+                .isPresent();
+    }
+
+    /**
      * Returns the schema type of the column named by {@code binding.dataField}, or empty when the binding,
      * its {@code dataField}, the schema or the field is absent.
      */

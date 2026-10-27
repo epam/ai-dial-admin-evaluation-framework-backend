@@ -8,8 +8,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
@@ -70,7 +72,7 @@ class SuiteValidationServiceTest {
     @BeforeEach
     void setUp() {
         templateVariableExtractor = new TemplateVariableExtractor();
-        bindingValidator = new BindingValidator(fileRefValidator);
+        bindingValidator = new BindingValidator(fileRefValidator, new SkillRefResolver());
         service = new SuiteValidationService(
                 templateVariableExtractor,
                 evaluationRunProperties,
@@ -264,6 +266,63 @@ class SuiteValidationServiceTest {
             assertThat(result.getWarnings())
                     .anyMatch(w -> w.getCode() == ValidationWarningCode.TYPE
                             && w.getFieldName().equals("doc"));
+        }
+
+        @Test
+        @DisplayName("|skill constant binding with a well-formed ref produces no warning")
+        void shouldProduceNoWarningForValidSkillBinding() {
+            TestSuiteRequestDto dto = buildMcpSuite(
+                    Map.of("skill", "${{s|skill}}"),
+                    List.of(binding("s", null, "skills/my-bucket/summariser")),
+                    List.of());
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, lastSchema);
+
+            assertThat(result.getWarnings())
+                    .noneMatch(w -> w.getCode() == ValidationWarningCode.TYPE && "s".equals(w.getFieldName()));
+            verifyNoInteractions(fileRefValidator);
+        }
+
+        @Test
+        @DisplayName("|skill constant binding with a malformed ref produces a TYPE warning")
+        void shouldProduceTypeWarningForMalformedSkillBinding() {
+            TestSuiteRequestDto dto = buildMcpSuite(
+                    Map.of("skill", "${{s|skill}}"), List.of(binding("s", null, "my-bucket/summariser")), List.of());
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, lastSchema);
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.TYPE
+                            && "s".equals(w.getFieldName())
+                            && w.getMessage().startsWith("Constant binding for '|skill' variable 's': "));
+            verifyNoInteractions(fileRefValidator);
+        }
+
+        @Test
+        @DisplayName("|skill constant binding with a file-shaped ref produces a TYPE warning")
+        void shouldProduceTypeWarningForFileShapedValueInSkillBinding() {
+            TestSuiteRequestDto dto = buildMcpSuite(
+                    Map.of("skill", "${{s|skill}}"),
+                    List.of(binding("s", null, "@ef/suites/" + SUITE_ID + "/a.pdf")),
+                    List.of());
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, lastSchema);
+
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.TYPE && "s".equals(w.getFieldName()));
+        }
+
+        @Test
+        @DisplayName("constant binding for a variable with no |skill hint is not validated as a skill ref")
+        void shouldNotValidateNonSkillBindingAsSkillRef() {
+            TestSuiteRequestDto dto = buildMcpSuite(
+                    Map.of("query", "${{q|string}}"), List.of(binding("q", null, "not-a-skill")), List.of());
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, lastSchema);
+
+            assertThat(result.getWarnings())
+                    .noneMatch(w -> w.getMessage() != null && w.getMessage().contains("|skill"));
         }
 
         @Test

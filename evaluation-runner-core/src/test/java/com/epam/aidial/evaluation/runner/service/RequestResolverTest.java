@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartDto;
@@ -65,7 +66,9 @@ class RequestResolverTest {
     @BeforeEach
     void setUp() {
         TemplateContentResolver templateContentResolver = new TemplateContentResolver(
-                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector());
+                templateVariableResolver,
+                new ResourceRefPlaceholderResolver(
+                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()));
         ObjectMapper objectMapper = new ObjectMapper();
         JsonataProperties jsonataProperties = new JsonataProperties();
         jsonataProperties.setEvaluationTimeoutMs(5000L);
@@ -73,7 +76,10 @@ class RequestResolverTest {
         JsonataEvaluationService jsonataEvaluationService =
                 new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties);
         JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
-                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector(), objectMapper);
+                templateVariableResolver,
+                new ResourceRefPlaceholderResolver(
+                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()),
+                objectMapper);
         RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
                 templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
         service = new RequestResolver(templateContentResolver, requestBodyEvaluator);

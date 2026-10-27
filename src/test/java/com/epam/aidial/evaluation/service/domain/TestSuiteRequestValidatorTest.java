@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
@@ -24,10 +25,11 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
-import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
+import com.epam.aidial.evaluation.runner.service.ResourceRefPlaceholderResolver;
 import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
@@ -58,8 +60,8 @@ class TestSuiteRequestValidatorTest {
         validationProperties.setMaxBindingsCount(64);
         JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
                 mock(TemplateVariableResolver.class),
-                mock(DialFileRefResolver.class),
-                new FilePlaceholderDetector(),
+                new ResourceRefPlaceholderResolver(
+                        mock(DialFileRefResolver.class), new SkillRefResolver(new BindingTypeResolver())),
                 new ObjectMapper());
         JsonbMapper jsonbMapper = new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
         validator = new TestSuiteRequestValidator(
@@ -599,8 +601,8 @@ class TestSuiteRequestValidatorTest {
             validationProperties.setMaxBindingsCount(64);
             JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
                     mock(TemplateVariableResolver.class),
-                    mock(DialFileRefResolver.class),
-                    new FilePlaceholderDetector(),
+                    new ResourceRefPlaceholderResolver(
+                            mock(DialFileRefResolver.class), new SkillRefResolver(new BindingTypeResolver())),
                     new ObjectMapper());
             JsonbMapper jsonbMapper = new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
             return new TestSuiteRequestValidator(

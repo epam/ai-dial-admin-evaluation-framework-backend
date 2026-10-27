@@ -378,6 +378,35 @@ class CsvSchemaFieldBuilderTest {
         }
 
         @Test
+        @DisplayName("a manifest-declared SKILL field keeps type SKILL and its other attributes")
+        void manifestSkillFieldKeepsType() {
+            List<ColumnBinding> bindings = List.of(dataBinding("skill"));
+            FieldDefinitionDto manifestSkill =
+                    manifestField("skill", SchemaFieldType.SKILL, false, null, "Skill", "An existing DIAL skill");
+            ResolvedSchemaHints hints = resolved(List.of(manifestSkill), Set.of());
+
+            List<FieldDefinitionDto> result = builder.buildFromBindings(
+                    bindings, Map.of("skill", SchemaFieldType.STRING), List.of(), Set.of(), hints);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.getFirst().getType()).isEqualTo(SchemaFieldType.SKILL);
+            assertThat(result.getFirst().getDisplayName()).isEqualTo("Skill");
+            assertThat(result.getFirst().getDescription()).isEqualTo("An existing DIAL skill");
+        }
+
+        @Test
+        @DisplayName("no manifest and no fileColumns hint: a skills/... column stays STRING (no SKILL inference)")
+        void columnIsNeverTypedSkillWithoutManifest() {
+            List<ColumnBinding> bindings = List.of(dataBinding("skill"));
+            ResolvedSchemaHints hints = resolved(List.of(), Set.of());
+
+            List<FieldDefinitionDto> result = builder.buildFromBindings(
+                    bindings, Map.of("skill", SchemaFieldType.STRING), List.of(), Set.of(), hints);
+
+            assertThat(result.getFirst().getType()).isEqualTo(SchemaFieldType.STRING);
+        }
+
+        @Test
         @DisplayName("no manifest: a column in fileColumns is typed FILE instead of the generic inference")
         void fileColumnsHintTypesFileWithoutManifest() {
             List<ColumnBinding> bindings = List.of(dataBinding("attachment"));

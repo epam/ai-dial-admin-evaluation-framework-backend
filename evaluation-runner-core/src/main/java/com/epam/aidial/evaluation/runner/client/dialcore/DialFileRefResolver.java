@@ -2,7 +2,12 @@ package com.epam.aidial.evaluation.runner.client.dialcore;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +26,7 @@ public class DialFileRefResolver {
 
     private final DialFileClient dialFileClient;
     private final DialFileStorageProperties fileStorageProperties;
+    private final BindingTypeResolver bindingTypeResolver;
 
     /**
      * Returns the set of allowed file reference prefixes.
@@ -64,6 +70,23 @@ public class DialFileRefResolver {
      */
     public String resolveToDialRef(String fileRef) {
         return FILES_PREFIX + resolveToRealPath(fileRef);
+    }
+
+    /**
+     * Returns whether a full-value placeholder with the given type hint and binding is a FILE reference whose
+     * resolved {@code String} value must be converted with {@link #resolveToDialRef(String)}.
+     *
+     * <p>An explicit type hint decides ({@code file}, case-insensitive, is FILE; any other hint is not); with no
+     * hint the placeholder is FILE iff its binding's {@code dataField} names a schema field of type
+     * {@link SchemaFieldType#FILE}. A {@code null}/empty schema, a binding without {@code dataField} (including
+     * {@code constantValue}-only bindings) or an unknown field is "not FILE" — only an explicit hint converts.
+     *
+     * @param typeHint raw type hint from the placeholder ({@code null} when absent)
+     * @param binding  the placeholder variable's binding, nullable
+     * @param schema   test case schema, nullable
+     */
+    public boolean isFileReference(String typeHint, InputBindingDto binding, List<FieldDefinitionDto> schema) {
+        return bindingTypeResolver.isOfType(SchemaFieldType.FILE, typeHint, binding, schema);
     }
 
     /**

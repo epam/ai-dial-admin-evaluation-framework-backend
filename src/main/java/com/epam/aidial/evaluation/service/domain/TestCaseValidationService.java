@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.properties.testcase.TestCaseProperties;
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -31,6 +32,7 @@ public class TestCaseValidationService {
     private final TemplateVariableExtractor templateVariableExtractor;
     private final ValidationProperties validationProperties;
     private final FileRefValidator fileRefValidator;
+    private final SkillRefResolver skillRefResolver;
     private final TestCaseProperties testCaseProperties;
     private final TestCaseFieldScopeResolver scopeResolver;
     private final TestCaseDataScopeResolver dataScopeResolver;
@@ -130,10 +132,7 @@ public class TestCaseValidationService {
                     && binding.getDataField() != null
                     && !binding.getDataField().isBlank()) {
                 Object value = safeData.get(binding.getDataField());
-                if ((value == null
-                                || (fieldTypeByName.get(binding.getDataField()) == SchemaFieldType.FILE
-                                        && value instanceof String s
-                                        && s.isBlank()))
+                if ((value == null || isBlankReference(fieldTypeByName.get(binding.getDataField()), value))
                         && !var.isHasDefault()) {
                     warnings.add(warning(
                             binding.getDataField(),
@@ -148,8 +147,7 @@ public class TestCaseValidationService {
         for (FieldDefinitionDto field : safeSchema) {
             if (field != null && field.isRequired() && field.getName() != null) {
                 Object value = safeData.get(field.getName());
-                if (value == null
-                        || (field.getType() == SchemaFieldType.FILE && value instanceof String s && s.isBlank())) {
+                if (value == null || isBlankReference(field.getType(), value)) {
                     warnings.add(warning(
                             field.getName(),
                             "$.data." + field.getName(),
@@ -189,6 +187,9 @@ public class TestCaseValidationService {
 
         // FILE field validation: check DIAL file reference format and prefix
         validateFileFields(safeData, safeSchema, datasetId, warnings);
+
+        // SKILL field validation: check skill reference format only (DIAL Core owns existence/access)
+        validateSkillFields(safeData, safeSchema, warnings);
 
         // Truncate warnings
         int maxWarnings = validationProperties.getMaxWarningsPerCase();
@@ -381,6 +382,35 @@ public class TestCaseValidationService {
         }
     }
 
+    private void validateSkillFields(
+            Map<String, Object> data, List<FieldDefinitionDto> schema, List<ValidationWarningDto> warnings) {
+        for (FieldDefinitionDto field : schema) {
+            if (field == null || field.getType() != SchemaFieldType.SKILL || field.getName() == null) {
+                continue;
+            }
+            // Only String values are format-checked; a non-String value already gets the type-mismatch warning
+            if (!(data.get(field.getName()) instanceof String value) || value.isBlank()) {
+                continue; // null or blank SKILL value is OK (handled by required-field check above)
+            }
+            skillRefResolver
+                    .validate(value)
+                    .ifPresent(error -> warnings.add(warning(
+                            field.getName(),
+                            "$.data." + field.getName(),
+                            "SKILL field '" + field.getName() + "': " + error,
+                            ValidationWarningCode.TYPE)));
+        }
+    }
+
+    /**
+     * A blank String in a FILE or SKILL field counts as "no value" for the required-field checks.
+     */
+    private static boolean isBlankReference(SchemaFieldType type, Object value) {
+        return (type == SchemaFieldType.FILE || type == SchemaFieldType.SKILL)
+                && value instanceof String s
+                && s.isBlank();
+    }
+
     /**
      * Checks if a data value's Java type is compatible with the declared schema field type.
      * NUMBER accepts Integer, Long, and Double (an integer is a valid number).
@@ -388,7 +418,7 @@ public class TestCaseValidationService {
      */
     private static boolean isTypeCompatible(Object value, SchemaFieldType schemaType) {
         return switch (schemaType) {
-            case STRING, FILE -> value instanceof String;
+            case STRING, FILE, SKILL -> value instanceof String;
             case INTEGER -> value instanceof Number && !(value instanceof Double);
             case NUMBER -> value instanceof Number;
             case BOOLEAN -> value instanceof Boolean;

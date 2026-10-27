@@ -58,6 +58,8 @@ Specs defining the primary business entities and their APIs.
   DIAL file reference model — short format (`@ef/...`, `public/...`), DialFileRefResolver for alias-to-bucket translation (`resolveToRealPath`) and DIAL payload embedding (`resolveToDialRef`), FILE-typed placeholder resolution in ResolvedRequestService, prefix whitelist validation, `buildDatasetEfRef` for dataset-shaped refs, cross-suite/dataset reference warnings.
 - **[file-ref-validation](file-ref-validation/spec.md)** — Implemented
   Centralized file reference format and ownership validation via FileRefValidator — short-format rules, dual-ownership entry points (`validateSuiteOwnership` / `validateDatasetOwnership`), legacy suite-shaped refs in test-case data tolerated, delegation from SuiteValidationService / BindingValidator / TestCaseValidationService.
+- **[dial-skill-ref](dial-skill-ref/spec.md)** — Implemented
+  `SKILL` schema type and `|skill` template hint — string-backed DIAL skill reference `skills/{bucket}/{path}`; `SkillRefResolver` owns the format check and canonical form (trim, one trailing `/`); malformed values produce `TYPE` validation warnings only; skills are never files (no download, ZIP packing, clone copy or `@ef`/`public` ownership checks) and Core stays authoritative for existence and access.
 - **[blob-storage](blob-storage/spec.md)** — Superseded (replaced by `dial-file-storage` + `dial-file-ref`)
   Original PostgreSQL Large Objects implementation. All requirements removed; see `dial-file-storage` for the replacement.
 

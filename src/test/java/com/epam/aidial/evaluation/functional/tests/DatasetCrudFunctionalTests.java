@@ -26,6 +26,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("Dataset CRUD Functional Tests")
 public abstract class DatasetCrudFunctionalTests extends BaseFunctionalTest {
@@ -38,6 +40,9 @@ public abstract class DatasetCrudFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private TestSuiteRepository testSuiteRepository;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     // -----------------------------------------------------------------------
     // create
@@ -331,5 +336,57 @@ public abstract class DatasetCrudFunctionalTests extends BaseFunctionalTest {
                 restTemplate.exchange(apiUrl("/datasets/" + UUID.randomUUID()), HttpMethod.DELETE, null, String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("OpenAPI spec lists SKILL as a field type and carries skill examples on POST /datasets")
+    void openApiDocumentsSkillFieldType() {
+        final ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        final JsonNode root = objectMapper.readTree(apiDocs.getBody());
+
+        final JsonNode typeEnum = root.path("components")
+                .path("schemas")
+                .path("FieldDefinitionDto")
+                .path("properties")
+                .path("type")
+                .path("enum");
+        assertThat(typeEnum.toString()).contains("\"FILE\"", "\"SKILL\"");
+
+        final JsonNode post = root.path("paths").path("/api/v1/datasets").path("post");
+        final JsonNode requestExamples = post.path("requestBody")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+        assertThat(requestExamples.propertyNames()).contains("skill");
+        assertThat(requestExamples.path("skill").path("value").asString()).contains("\"type\": \"SKILL\"");
+
+        final JsonNode responseExamples = post.path("responses")
+                .path("201")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+        assertThat(responseExamples.propertyNames()).contains("skill");
+
+        final JsonNode suiteExamples = root.path("paths")
+                .path("/api/v1/test-suites")
+                .path("post")
+                .path("requestBody")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+        assertThat(suiteExamples.propertyNames()).contains("skill");
+        final JsonNode skillItem = objectMapper
+                .readTree(suiteExamples.path("skill").path("value").asString())
+                .path("requestTemplate")
+                .path("body")
+                .path("content")
+                .path("messages")
+                .get(0)
+                .path("custom_content")
+                .path("skills")
+                .get(0);
+        assertThat(skillItem.isObject()).isTrue();
+        assertThat(skillItem.path("url").asString()).isEqualTo("${{skill}}");
     }
 }

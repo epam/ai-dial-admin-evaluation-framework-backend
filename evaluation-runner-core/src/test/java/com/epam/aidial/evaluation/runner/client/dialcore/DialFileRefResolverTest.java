@@ -6,7 +6,12 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,7 +39,7 @@ class DialFileRefResolverTest {
     @BeforeEach
     void setUp() {
         lenient().when(fileStorageProperties.getBucketAlias()).thenReturn(BUCKET_ALIAS);
-        resolver = new DialFileRefResolver(dialFileClient, fileStorageProperties);
+        resolver = new DialFileRefResolver(dialFileClient, fileStorageProperties, new BindingTypeResolver());
     }
 
     @Nested
@@ -204,6 +209,105 @@ class DialFileRefResolverTest {
             var prefixes = resolver.getAllowedPrefixes();
 
             assertThat(prefixes).containsExactlyInAnyOrder("@ef", "public");
+        }
+    }
+
+    @Nested
+    @DisplayName("isFileReference")
+    class IsFileReference {
+
+        private final List<FieldDefinitionDto> schema = List.of(
+                FieldDefinitionDto.builder()
+                        .name("attachment")
+                        .type(SchemaFieldType.FILE)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("title")
+                        .type(SchemaFieldType.STRING)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("skill")
+                        .type(SchemaFieldType.SKILL)
+                        .build());
+
+        private InputBindingDto dataBinding(String dataField) {
+            return InputBindingDto.builder()
+                    .templateVariable("doc")
+                    .dataField(dataField)
+                    .build();
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a FILE column is a file reference")
+        void hintlessBoundToFileColumnIsFile() {
+            assertThat(resolver.isFileReference(null, dataBinding("attachment"), schema))
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("hintless placeholder bound to a STRING or SKILL column is not a file reference")
+        void hintlessBoundToOtherColumnIsNotFile() {
+            assertThat(resolver.isFileReference(null, dataBinding("title"), schema))
+                    .isFalse();
+            assertThat(resolver.isFileReference(null, dataBinding("skill"), schema))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("explicit file hint is a file reference without a binding or schema")
+        void explicitFileHintIsFileWithoutSchema() {
+            assertThat(resolver.isFileReference("file", null, null)).isTrue();
+        }
+
+        @Test
+        @DisplayName("file hint is case-insensitive and trimmed")
+        void fileHintIsCaseInsensitiveAndTrimmed() {
+            assertThat(resolver.isFileReference(" FILE ", null, schema)).isTrue();
+            assertThat(resolver.isFileReference("File", dataBinding("title"), schema))
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("explicit non-file hint wins over a FILE column")
+        void explicitNonFileHintWinsOverFileColumn() {
+            assertThat(resolver.isFileReference("string", dataBinding("attachment"), schema))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("explicit skill hint is not a file reference")
+        void explicitSkillHintIsNotFile() {
+            assertThat(resolver.isFileReference("skill", null, null)).isFalse();
+        }
+
+        @Test
+        @DisplayName("blank hint is treated as absent")
+        void blankHintIsTreatedAsAbsent() {
+            assertThat(resolver.isFileReference("  ", dataBinding("attachment"), schema))
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("constantValue-only binding without hint is not a file reference")
+        void constantValueBindingWithoutHintIsNotFile() {
+            final InputBindingDto binding = InputBindingDto.builder()
+                    .templateVariable("doc")
+                    .constantValue("@ef/suites/abc/doc.pdf")
+                    .build();
+
+            assertThat(resolver.isFileReference(null, binding, schema)).isFalse();
+        }
+
+        @Test
+        @DisplayName("null or empty schema, unknown data field or no binding is not a file reference")
+        void unresolvableBindingIsNotFile() {
+            assertThat(resolver.isFileReference(null, dataBinding("attachment"), null))
+                    .isFalse();
+            assertThat(resolver.isFileReference(null, dataBinding("attachment"), List.of()))
+                    .isFalse();
+            assertThat(resolver.isFileReference(null, dataBinding("missing"), schema))
+                    .isFalse();
+            assertThat(resolver.isFileReference(null, null, schema)).isFalse();
         }
     }
 }

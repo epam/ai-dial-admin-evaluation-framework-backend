@@ -9,12 +9,15 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolverStubs;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -45,6 +48,7 @@ class RequestBodyEvaluatorTest {
 
     @BeforeEach
     void setUp() {
+        DialFileRefResolverStubs.withRealFileDetection(dialFileRefResolver);
         ObjectMapper objectMapper = new ObjectMapper();
         JsonataProperties jsonataProperties = new JsonataProperties();
         jsonataProperties.setEvaluationTimeoutMs(5000L);
@@ -52,9 +56,14 @@ class RequestBodyEvaluatorTest {
         JsonataEvaluationService jsonataEvaluationService =
                 new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties);
         TemplateContentResolver templateContentResolver = new TemplateContentResolver(
-                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector());
+                templateVariableResolver,
+                new ResourceRefPlaceholderResolver(
+                        dialFileRefResolver, new SkillRefResolver(new BindingTypeResolver())));
         JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
-                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector(), objectMapper);
+                templateVariableResolver,
+                new ResourceRefPlaceholderResolver(
+                        dialFileRefResolver, new SkillRefResolver(new BindingTypeResolver())),
+                objectMapper);
         evaluator = new RequestBodyEvaluator(
                 templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
         warnings = new ArrayList<>();

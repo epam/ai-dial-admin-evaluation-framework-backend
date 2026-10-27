@@ -29,6 +29,31 @@ class ZipManifestSerializerTest {
     }
 
     @Test
+    @DisplayName("round trip keeps a SKILL field's type by name and lists no archive file for it")
+    void write_thenRead_roundTripsSkillField() {
+        FieldDefinitionDto skill = FieldDefinitionDto.builder()
+                .name("skill")
+                .displayName("Skill")
+                .type(SchemaFieldType.SKILL)
+                .required(false)
+                .description("Reference to an existing DIAL skill")
+                .perTurn(false)
+                .build();
+        ZipManifest manifest = new ZipManifest(ZipManifest.CURRENT_FORMAT_VERSION, List.of(skill), List.of());
+
+        byte[] written = serializer.write(manifest);
+        ZipManifest read = serializer.read(written);
+
+        assertThat(new String(written, StandardCharsets.UTF_8)).contains("\"type\":\"SKILL\"");
+        assertThat(read.testCaseSchema()).hasSize(1);
+        FieldDefinitionDto readSkill = read.testCaseSchema().getFirst();
+        assertThat(readSkill.getName()).isEqualTo("skill");
+        assertThat(readSkill.getType()).isEqualTo(SchemaFieldType.SKILL);
+        assertThat(readSkill.getDescription()).isEqualTo("Reference to an existing DIAL skill");
+        assertThat(read.files()).isEmpty();
+    }
+
+    @Test
     @DisplayName("round trip keeps perTurn, required, displayName, description and file content type")
     void write_thenRead_roundTripsFieldAttributes() {
         FieldDefinitionDto document = FieldDefinitionDto.builder()

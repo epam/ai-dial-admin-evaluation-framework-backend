@@ -77,7 +77,7 @@ Central owner of `testCaseSchema` and the test-case table. Multiple test suites 
   {
     "id": "string (server-assigned UUID; stable across renames; backfilled by V1.36)",
     "name": "string",
-    "type": "STRING|INTEGER|NUMBER|BOOLEAN|OBJECT|ARRAY|FILE",
+    "type": "STRING|INTEGER|NUMBER|BOOLEAN|OBJECT|ARRAY|FILE|SKILL",
     "required": true,
     "description": "string",
     "perTurn": false

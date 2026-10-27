@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 
 class TryItOutVariableBindingsTest {
 
-    private final TryItOutVariableBindings bindings = new TryItOutVariableBindings(new FilePlaceholderDetector());
+    private final TryItOutVariableBindings bindings = new TryItOutVariableBindings(new BindingTypeResolver());
 
     @Test
     @DisplayName("Every index 0..requestCount-1 is present, in order")
@@ -121,6 +121,31 @@ class TryItOutVariableBindingsTest {
                 List.of(field("attachment", SchemaFieldType.FILE)));
 
         assertThat(result).containsExactly(fileColumn("doc", "attachment", "@ef/suites/x/a.pdf"));
+    }
+
+    @Test
+    @DisplayName("Variable bound to a SKILL column in the suite keeps its constant value and gains the column as "
+            + "dataField")
+    void shouldBindSkillColumnVariableToDataField() {
+        final List<InputBindingDto> result = bindings.bindToFileColumns(
+                List.of(constant("s", "skills/my-bucket/summariser")),
+                List.of(column("s", "skillField")),
+                List.of(field("skillField", SchemaFieldType.SKILL)));
+
+        assertThat(result).containsExactly(fileColumn("s", "skillField", "skills/my-bucket/summariser"));
+    }
+
+    @Test
+    @DisplayName("Variables sharing one SKILL column each keep their own value")
+    void shouldKeepEachValueWhenVariablesShareSkillColumn() {
+        final List<InputBindingDto> result = bindings.bindToFileColumns(
+                List.of(constant("a", "skills/b/one"), constant("b", "skills/b/two")),
+                List.of(column("a", "skillField"), column("b", "skillField")),
+                List.of(field("skillField", SchemaFieldType.SKILL)));
+
+        assertThat(result)
+                .containsExactly(
+                        fileColumn("a", "skillField", "skills/b/one"), fileColumn("b", "skillField", "skills/b/two"));
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component;
 /**
  * Shared binding cross-validation logic used by both DEPLOYMENT and MCP_TOOL suite validation.
  * Checks: required variable without binding, binding to unknown schema field,
- * orphan binding detection, and {@code |file} constant-value validation.
+ * orphan binding detection, and {@code |file} / {@code |skill} constant-value validation.
  */
 @Slf4j
 @Component
@@ -28,6 +29,7 @@ import org.springframework.stereotype.Component;
 public class BindingValidator {
 
     private final FileRefValidator fileRefValidator;
+    private final SkillRefResolver skillRefResolver;
 
     /**
      * Validates template-variable-to-binding and binding-to-template cross-references.
@@ -111,6 +113,18 @@ public class BindingValidator {
                                     + "'; suite-level fields must use @ef/suites/ refs",
                             ValidationWarningCode.TYPE));
                 }
+            }
+            // Validate constantValue for |skill typed variables (format only; DIAL Core owns existence/access)
+            if (binding != null
+                    && binding.getConstantValue() != null
+                    && var.getDeclaredType() == SchemaFieldType.SKILL) {
+                skillRefResolver
+                        .validate(binding.getConstantValue().toString())
+                        .ifPresent(error -> warnings.add(warning(
+                                var.getName(),
+                                path,
+                                "Constant binding for '|skill' variable '" + var.getName() + "': " + error,
+                                ValidationWarningCode.TYPE)));
             }
         }
 

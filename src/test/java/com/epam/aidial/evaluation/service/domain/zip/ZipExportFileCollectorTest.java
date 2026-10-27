@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.FileRefValidator;
 import com.epam.aidial.evaluation.service.domain.zip.ZipExportFileCollector.FileClassification;
 import java.util.LinkedHashMap;
@@ -35,7 +36,8 @@ class ZipExportFileCollectorTest {
     void setUp() {
         DialFileStorageProperties properties = new DialFileStorageProperties();
         properties.setBucketAlias(BUCKET_ALIAS);
-        DialFileRefResolver dialFileRefResolver = new DialFileRefResolver(dialFileClient, properties);
+        DialFileRefResolver dialFileRefResolver =
+                new DialFileRefResolver(dialFileClient, properties, new BindingTypeResolver());
         FileRefValidator fileRefValidator = new FileRefValidator(properties);
         collector = new ZipExportFileCollector(dialFileRefResolver, fileRefValidator);
         datasetId = UUID.randomUUID();

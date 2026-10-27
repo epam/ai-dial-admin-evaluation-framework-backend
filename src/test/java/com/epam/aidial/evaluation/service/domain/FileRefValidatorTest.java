@@ -47,6 +47,14 @@ class FileRefValidatorTest {
         }
 
         @Test
+        @DisplayName("skill-shaped ref is not a valid file reference")
+        void skillShapedRefIsInvalidFileRef() {
+            List<String> errors = validator.validate("skills/my-bucket/summariser", SUITE_ID);
+
+            assertThat(errors).isNotEmpty();
+        }
+
+        @Test
         @DisplayName("valid public ref produces no errors")
         void validPublicRef() {
             List<String> errors = validator.validate("public/datasets/eval-data.csv", SUITE_ID);

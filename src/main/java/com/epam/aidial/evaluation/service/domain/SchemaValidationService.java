@@ -293,7 +293,7 @@ public class SchemaValidationService {
             return "string";
         }
         return switch (type) {
-            case STRING, FILE -> "string";
+            case STRING, FILE, SKILL -> "string";
             case INTEGER -> "integer";
             case NUMBER -> "number";
             case BOOLEAN -> "boolean";

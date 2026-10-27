@@ -22,6 +22,7 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.csv.TestCaseExportRowProjector;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.zip.ZipExportFileCollector;
@@ -80,7 +81,8 @@ class ZipExportServiceTest {
 
         DialFileStorageProperties fileStorageProperties = new DialFileStorageProperties();
         fileStorageProperties.setBucketAlias(BUCKET_ALIAS);
-        DialFileRefResolver dialFileRefResolver = new DialFileRefResolver(dialFileClient, fileStorageProperties);
+        DialFileRefResolver dialFileRefResolver =
+                new DialFileRefResolver(dialFileClient, fileStorageProperties, new BindingTypeResolver());
         FileRefValidator fileRefValidator = new FileRefValidator(fileStorageProperties);
         ZipExportFileCollector zipExportFileCollector =
                 new ZipExportFileCollector(dialFileRefResolver, fileRefValidator);
@@ -144,6 +146,78 @@ class ZipExportServiceTest {
         assertThat(lines[0]).isEqualTo("testCaseName,turnIndex,shared,prompt");
         assertThat(lines[1]).isEqualTo("multi-turn-case,0,s,t0");
         assertThat(lines[2]).isEqualTo("multi-turn-case,1,s,t1");
+    }
+
+    @Test
+    @DisplayName("hasFileFields is false for a SKILL-only schema, so the export stays a plain CSV")
+    void hasFileFields_skillOnlySchema_isFalse() {
+        when(datasetSchemaProvider.getSchema(datasetId))
+                .thenReturn(List.of(FieldDefinitionDto.builder()
+                        .name("skill")
+                        .type(SchemaFieldType.SKILL)
+                        .build()));
+
+        assertThat(service.hasFileFields(datasetId)).isFalse();
+    }
+
+    @Test
+    @DisplayName("hasFileFields is true when a FILE field sits next to a SKILL field")
+    void hasFileFields_mixedFileAndSkillSchema_isTrue() {
+        when(datasetSchemaProvider.getSchema(datasetId))
+                .thenReturn(List.of(
+                        FieldDefinitionDto.builder()
+                                .name("document")
+                                .type(SchemaFieldType.FILE)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("skill")
+                                .type(SchemaFieldType.SKILL)
+                                .build()));
+
+        assertThat(service.hasFileFields(datasetId)).isTrue();
+    }
+
+    @Test
+    @DisplayName("a SKILL value is written verbatim, adds no archive entry or download, and keeps type SKILL in the"
+            + " manifest")
+    void buildZip_skillColumn_writtenVerbatimAndNeverDownloaded() throws IOException {
+        List<FieldDefinitionDto> schema = List.of(
+                FieldDefinitionDto.builder()
+                        .name("document")
+                        .type(SchemaFieldType.FILE)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("skill")
+                        .type(SchemaFieldType.SKILL)
+                        .build());
+        when(datasetSchemaProvider.getSchema(datasetId)).thenReturn(schema);
+        when(dialFileClient.getBucket()).thenReturn(REAL_BUCKET);
+        stubDownload("file bytes");
+
+        String ref = BUCKET_ALIAS + "/datasets/" + datasetId + "/report.pdf";
+        String skillRef = "skills/my-bucket/summariser";
+        TestCase testCase = TestCase.builder()
+                .testCaseName("case-1")
+                .data("{\"document\":\"" + ref + "\",\"skill\":\"" + skillRef + "\"}")
+                .build();
+        stubOnePageOfCases(List.of(testCase));
+
+        Map<String, byte[]> entries = buildAndReadZip();
+
+        long fileEntryCount =
+                entries.keySet().stream().filter(k -> k.startsWith("files/")).count();
+        assertThat(fileEntryCount).isEqualTo(1);
+        verify(dialFileClient, times(1)).downloadTo(anyString(), any());
+        String csv = new String(entries.get("test-cases.csv"), StandardCharsets.UTF_8);
+        assertThat(csv).contains(skillRef);
+
+        ZipManifestSerializer manifestSerializer = new ZipManifestSerializer(
+                new ObjectMapper(), Validation.buildDefaultValidatorFactory().getValidator());
+        ZipManifest manifest = manifestSerializer.read(entries.get("manifest.json"));
+        assertThat(manifest.files()).hasSize(1);
+        assertThat(manifest.testCaseSchema())
+                .extracting(FieldDefinitionDto::getType)
+                .containsExactly(SchemaFieldType.FILE, SchemaFieldType.SKILL);
     }
 
     @Test

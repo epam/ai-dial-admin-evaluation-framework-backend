@@ -82,6 +82,16 @@ class ResponseColumnTypeReconcilerTest {
     }
 
     @Test
+    @DisplayName("SKILL behaves like STRING")
+    void skillBehavesLikeString() {
+        assertThat(reconciler.reconcile("skills/b/x", SchemaFieldType.SKILL)).isEqualTo("skills/b/x");
+        assertThat(reconciler.reconcile(5, SchemaFieldType.SKILL)).isEqualTo("5");
+        assertThatThrownBy(() -> reconciler.reconcile(List.of("skills/b/x"), SchemaFieldType.SKILL))
+                .isInstanceOf(TypeMismatchException.class)
+                .hasMessage("Type mismatch: expected SKILL, got ARRAY");
+    }
+
+    @Test
     @DisplayName("INTEGER + whole-valued Double normalizes to Long")
     void integerFromWholeDoubleNormalizes() {
         Object result = reconciler.reconcile(42.0, SchemaFieldType.INTEGER);

@@ -1,0 +1,31 @@
+{
+  "id": "660e8400-e29b-41d4-a716-446655440002",
+  "name": "Skill Evaluation Dataset",
+  "description": "Dataset whose test cases reference an existing DIAL skill",
+  "visibility": "PUBLIC",
+  "testCaseSchema": [
+    {
+      "id": "7c9e6679-7425-40de-944b-e07fc1f90ae8",
+      "name": "question",
+      "displayName": "Question",
+      "type": "STRING",
+      "required": true,
+      "perTurn": false
+    },
+    {
+      "id": "a3bb189e-8bf9-3888-9912-ace4e6543003",
+      "name": "skillField",
+      "displayName": "Skill",
+      "type": "SKILL",
+      "description": "Reference to an existing DIAL skill: skills/{bucket}/{path-to-skill}",
+      "required": false,
+      "perTurn": false
+    }
+  ],
+  "valid": true,
+  "validationWarnings": [],
+  "version": 1,
+  "createdBy": "maintainer@example.com",
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000
+}

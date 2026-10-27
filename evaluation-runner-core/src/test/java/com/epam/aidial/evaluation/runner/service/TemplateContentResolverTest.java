@@ -5,14 +5,18 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolverStubs;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,8 +51,11 @@ class TemplateContentResolverTest {
 
     @BeforeEach
     void setUp() {
+        DialFileRefResolverStubs.withRealFileDetection(dialFileRefResolver);
         resolver = new TemplateContentResolver(
-                templateVariableResolver, dialFileRefResolver, new FilePlaceholderDetector());
+                templateVariableResolver,
+                new ResourceRefPlaceholderResolver(
+                        dialFileRefResolver, new SkillRefResolver(new BindingTypeResolver())));
         warnings = new ArrayList<>();
     }
 
@@ -165,7 +172,7 @@ class TemplateContentResolverTest {
         Object result = resolver.resolveObject("${{t}}", Map.of("t", binding), Map.of(), warnings, SCHEMA);
 
         assertThat(result).isEqualTo("@ef/datasets/abc/doc.pdf");
-        verifyNoInteractions(dialFileRefResolver);
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
     }
 
     @Test
@@ -178,7 +185,7 @@ class TemplateContentResolverTest {
         Object result = resolver.resolveObject("see ${{doc}}", Map.of("doc", binding), Map.of(), warnings, SCHEMA);
 
         assertThat(result).isEqualTo("see @ef/datasets/abc/doc.pdf");
-        verifyNoInteractions(dialFileRefResolver);
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
     }
 
     @Test
@@ -191,7 +198,7 @@ class TemplateContentResolverTest {
         Object result = resolver.resolveObject("${{doc|string}}", Map.of("doc", binding), Map.of(), warnings, SCHEMA);
 
         assertThat(result).isEqualTo("@ef/datasets/abc/doc.pdf");
-        verifyNoInteractions(dialFileRefResolver);
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
     }
 
     @Test
@@ -204,7 +211,7 @@ class TemplateContentResolverTest {
         Object result = resolver.resolveObject("${{doc}}", Map.of("doc", binding), Map.of(), warnings, null);
 
         assertThat(result).isEqualTo("@ef/datasets/abc/doc.pdf");
-        verifyNoInteractions(dialFileRefResolver);
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
     }
 
     @Test
@@ -277,5 +284,138 @@ class TemplateContentResolverTest {
         String preserved = TemplateContentResolver.serializeJsonPreservingNulls(nonNullMapper, withNull);
         assertThat(preserved).contains("\"user\":null");
         assertThat(preserved).contains("\"prompt\":\"hello\"");
+    }
+
+    private static final List<FieldDefinitionDto> SKILL_SCHEMA = List.of(FieldDefinitionDto.builder()
+            .name("skill")
+            .type(SchemaFieldType.SKILL)
+            .build());
+
+    private void stubSkillValue(String variable, Object value) {
+        when(templateVariableResolver.resolveVariable(eq(variable), isNull(), any(), anyMap(), any()))
+                .thenReturn(value);
+    }
+
+    @Test
+    @DisplayName("resolveObject canonicalises a |skill full-value placeholder without touching DialFileRefResolver")
+    void resolveObjectCanonicalisesSkillHint() {
+        stubSkillValue("s", "skills/b/summariser/");
+
+        Object result = resolver.resolveObject("${{s|skill}}", Map.of(), Map.of(), warnings, null);
+
+        assertThat(result).isEqualTo("skills/b/summariser");
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
+    }
+
+    @Test
+    @DisplayName("resolveObject treats the skill hint case-insensitively")
+    void resolveObjectSkillHintIsCaseInsensitive() {
+        stubSkillValue("s", "skills/b/x/");
+
+        Object result = resolver.resolveObject("${{s|SKILL}}", Map.of(), Map.of(), warnings, null);
+
+        assertThat(result).isEqualTo("skills/b/x");
+    }
+
+    @Test
+    @DisplayName("resolveObject canonicalises a hintless placeholder bound to a SKILL column")
+    void resolveObjectCanonicalisesHintlessSkillColumn() {
+        InputBindingDto binding = binding("s", "skill");
+        when(templateVariableResolver.resolveVariable(eq("s"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn(" skills/b/x ");
+
+        Object result = resolver.resolveObject("${{s}}", Map.of("s", binding), Map.of(), warnings, SKILL_SCHEMA);
+
+        assertThat(result).isEqualTo("skills/b/x");
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
+    }
+
+    @Test
+    @DisplayName("resolveObject keeps the raw value for |string on a SKILL column (explicit hint wins)")
+    void resolveObjectExplicitStringHintWinsOverSkillColumn() {
+        InputBindingDto binding = binding("s", "skill");
+        when(templateVariableResolver.resolveVariable(eq("s"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn(" skills/b/x ");
+
+        Object result = resolver.resolveObject("${{s|string}}", Map.of("s", binding), Map.of(), warnings, SKILL_SCHEMA);
+
+        assertThat(result).isEqualTo(" skills/b/x ");
+    }
+
+    @Test
+    @DisplayName("resolveObject canonicalises an explicit |skill hint on a STRING column without a schema change")
+    void resolveObjectExplicitSkillHintOnStringColumn() {
+        InputBindingDto binding = binding("s", "text");
+        List<FieldDefinitionDto> stringSchema = List.of(FieldDefinitionDto.builder()
+                .name("text")
+                .type(SchemaFieldType.STRING)
+                .build());
+        when(templateVariableResolver.resolveVariable(eq("s"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn(" skills/b/x ");
+
+        Object result = resolver.resolveObject("${{s|skill}}", Map.of("s", binding), Map.of(), warnings, stringSchema);
+
+        assertThat(result).isEqualTo("skills/b/x");
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
+    }
+
+    @Test
+    @DisplayName("resolveObject does not canonicalise a |skill placeholder embedded in surrounding text")
+    void resolveObjectDoesNotCanonicaliseEmbeddedSkill() {
+        stubSkillValue("s", "skills/b/x/");
+
+        Object result = resolver.resolveObject("use ${{s|skill}} now", Map.of(), Map.of(), warnings, null);
+
+        assertThat(result).isEqualTo("use skills/b/x/ now");
+    }
+
+    @Test
+    @DisplayName("resolveObject passes a non-String |skill value through unchanged")
+    void resolveObjectSkillNonStringUnchanged() {
+        stubSkillValue("s", 5);
+
+        Object result = resolver.resolveObject("${{s|skill}}", Map.of(), Map.of(), warnings, null);
+
+        assertThat(result).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("resolveObject passes a malformed |skill value through unchanged")
+    void resolveObjectSkillMalformedUnchanged() {
+        stubSkillValue("s", "not-a-skill");
+
+        Object result = resolver.resolveObject("${{s|skill}}", Map.of(), Map.of(), warnings, null);
+
+        assertThat(result).isEqualTo("not-a-skill");
+    }
+
+    @Test
+    @DisplayName("resolveObject canonicalises a skill nested as custom_content.skills[{url}] in a message")
+    void resolveObjectCanonicalisesSkillNestedInMessageCustomContent() {
+        InputBindingDto binding = binding("skill", "skill");
+        when(templateVariableResolver.resolveVariable(eq("skill"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn("skills/public/vc-test/");
+        Map<String, Object> body = Map.of(
+                "messages",
+                List.of(Map.of(
+                        "role",
+                        "user",
+                        "content",
+                        "hi",
+                        "custom_content",
+                        Map.of("skills", List.of(Map.of("url", "${{skill}}"))))));
+
+        Object result = resolver.resolveObject(body, Map.of("skill", binding), Map.of(), warnings, SKILL_SCHEMA);
+
+        assertThat(result)
+                .isEqualTo(Map.of(
+                        "messages",
+                        List.of(Map.of(
+                                "role",
+                                "user",
+                                "content",
+                                "hi",
+                                "custom_content",
+                                Map.of("skills", List.of(Map.of("url", "skills/public/vc-test")))))));
     }
 }

@@ -3,6 +3,8 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import java.util.List;
 import java.util.Map;
@@ -133,5 +135,42 @@ class SchemaValidationServiceTest {
 
         assertThat(error).isPresent();
         assertThat(error.get()).containsIgnoringCase("properties2");
+    }
+
+    @Test
+    @DisplayName("buildFieldSchema maps FILE and SKILL fields to JSON-schema type string")
+    void buildFieldSchema_fileAndSkillFieldsAreStrings() {
+        List<FieldDefinitionDto> fields = List.of(
+                FieldDefinitionDto.builder()
+                        .name("attachment")
+                        .type(SchemaFieldType.FILE)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("skill")
+                        .type(SchemaFieldType.SKILL)
+                        .required(true)
+                        .build());
+
+        Map<String, Object> schema = SchemaValidationService.buildFieldSchema(fields);
+
+        assertThat(schema.get("properties"))
+                .isEqualTo(Map.of("attachment", Map.of("type", "string"), "skill", Map.of("type", "string")));
+        assertThat(schema.get("required")).isEqualTo(List.of("skill"));
+    }
+
+    @Test
+    @DisplayName("validate accepts a string for a SKILL field and rejects a number")
+    void validate_skillField_acceptsStringRejectsNumber() {
+        Map<String, Object> schema = SchemaValidationService.buildFieldSchema(List.of(FieldDefinitionDto.builder()
+                .name("skill")
+                .type(SchemaFieldType.SKILL)
+                .build()));
+
+        assertThat(schemaValidationService
+                        .validate(Map.of("skill", "skills/my-bucket/summariser"), schema)
+                        .isValid())
+                .isTrue();
+        assertThat(schemaValidationService.validate(Map.of("skill", 42), schema).isValid())
+                .isFalse();
     }
 }

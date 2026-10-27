@@ -59,7 +59,6 @@ import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
-import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
@@ -67,6 +66,7 @@ import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.TryItOutService.TryItOutValidationException;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
@@ -199,7 +199,7 @@ class TryItOutServiceTest {
                 openTelemetry,
                 grafanaLinkBuilder,
                 FIXED_CLOCK,
-                new TryItOutVariableBindings(new FilePlaceholderDetector()),
+                new TryItOutVariableBindings(new BindingTypeResolver()),
                 sseEventParser,
                 evaluationRunProperties,
                 dialCoreProperties,

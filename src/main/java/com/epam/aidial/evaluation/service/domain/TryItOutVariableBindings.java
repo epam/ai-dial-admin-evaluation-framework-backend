@@ -4,7 +4,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class TryItOutVariableBindings {
 
-    private final FilePlaceholderDetector filePlaceholderDetector;
+    private final BindingTypeResolver bindingTypeResolver;
 
     /**
      * Returns request index to constant bindings for every index {@code 0..requestCount-1}; an absent or
@@ -73,13 +73,14 @@ public class TryItOutVariableBindings {
     }
 
     /**
-     * Keeps a supplied variable bound to the suite's FILE column so it resolves like in a real run: when the
-     * suite's own binding for the variable names a {@code FILE} schema field, the constant binding also
-     * carries that field as its {@code dataField}. The resolver takes the value from the constant (it wins
-     * over {@code dataField}), while {@code FilePlaceholderDetector} reads the {@code dataField} to see the
-     * column type and convert the value to a DIAL ref. Because the value never goes through a per-field
-     * data slot, any number of variables can share one FILE column, each keeping its own value. Every other
-     * variable stays a plain constant binding (and needs an explicit {@code |file} hint, as before).
+     * Keeps a supplied variable bound to the suite's FILE or SKILL column so it resolves like in a real run:
+     * when the suite's own binding for the variable names a {@code FILE} or {@code SKILL} schema field, the
+     * constant binding also carries that field as its {@code dataField}. The resolver takes the value from
+     * the constant (it wins over {@code dataField}), while {@code BindingTypeResolver} reads the
+     * {@code dataField} to see the column type and convert the value to a DIAL ref (FILE) or canonical skill
+     * ref (SKILL). Because the value never goes through a per-field data slot, any number of variables can
+     * share one FILE/SKILL column, each keeping its own value. Every other variable stays a plain constant
+     * binding (and needs an explicit {@code |file} / {@code |skill} hint, as before).
      *
      * @param constantBindings the request's constant bindings built from the supplied variables
      * @param suiteBindings    the request's own {@code inputBindings} as saved on the suite (nullable)
@@ -101,12 +102,12 @@ public class TryItOutVariableBindings {
         final List<InputBindingDto> bindings = new ArrayList<>();
         for (InputBindingDto constant : constantBindings) {
             final InputBindingDto suiteBinding = suiteBindingByVariable.get(constant.getTemplateVariable());
-            final boolean fileColumn = filePlaceholderDetector
-                    .boundFieldType(suiteBinding, schema)
-                    .filter(SchemaFieldType.FILE::equals)
+            final boolean referenceColumn = bindingTypeResolver
+                    .resolveType(suiteBinding, schema)
+                    .filter(type -> type == SchemaFieldType.FILE || type == SchemaFieldType.SKILL)
                     .isPresent();
             bindings.add(
-                    fileColumn
+                    referenceColumn
                             ? InputBindingDto.builder()
                                     .templateVariable(constant.getTemplateVariable())
                                     .dataField(suiteBinding.getDataField())

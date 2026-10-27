@@ -279,7 +279,8 @@ public class TestCaseController {
                     + "response starts; if a referenced file cannot be downloaded from DIAL storage, the request "
                     + "fails with a JSON error naming the test case (name and id) and the reference, and no ZIP "
                     + "is sent. "
-                    + "Set materializeFiles=false to export raw DIAL file paths in a plain CSV.")
+                    + "Set materializeFiles=false to export raw DIAL file paths in a plain CSV. "
+                    + "SKILL-type fields (DIAL skill references) never trigger a ZIP and are exported verbatim.")
     @ApiResponse(
             responseCode = "200",
             description = "CSV file or ZIP archive",

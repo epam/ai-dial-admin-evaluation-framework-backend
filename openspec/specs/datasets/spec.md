@@ -8,7 +8,7 @@ Status: **Planned**
 
 ## Key Terms
 - **Dataset**: An entity owning a `testCaseSchema` (list of `FieldDefinitionDto`) and the collection of `TestCase` rows that conform to that schema. Identity: `id` (UUID), `name` (globally unique on `LOWER(name)`).
-- **testCaseSchema**: A JSONB list of `FieldDefinitionDto` (server-assigned `id`, name, displayName, type ∈ `STRING`/`INTEGER`/`NUMBER`/`BOOLEAN`/`OBJECT`/`ARRAY`/`FILE`, required, description). Defines the shape every TestCase's `data` map must conform to. Owned by Dataset, sourced by TestSuite via `DatasetSchemaProvider` at validation/snapshot time.
+- **testCaseSchema**: A JSONB list of `FieldDefinitionDto` (server-assigned `id`, name, displayName, type ∈ `STRING`/`INTEGER`/`NUMBER`/`BOOLEAN`/`OBJECT`/`ARRAY`/`FILE`/`SKILL`, required, description). Defines the shape every TestCase's `data` map must conform to. Owned by Dataset, sourced by TestSuite via `DatasetSchemaProvider` at validation/snapshot time.
 - **DatasetSchemaProvider**: An injectable `@Component` returning `List<FieldDefinitionDto>` for a given `datasetId`. Used to break the would-be circular dependency between `DatasetService` and `TestSuiteService`.
 - **Dataset-rooted RevalidationTask**: The task run synchronously by a dataset PUT (or import) that mutates `testCaseSchema`. Runs two phases — Phase 1 (test cases, fail-fast) and Phase 2 (dependent suites, per-suite resilient). See `test-cases` spec for Phase 1 semantics and `test-suites` spec for Phase 2 semantics.
 
@@ -279,7 +279,7 @@ Status: **Planned**
 - **THEN** the payload SHALL include `id` (UUID), `name`, `description`, `visibility` (one of `PUBLIC`/`PRIVATE`), `testCaseSchema` (list of `FieldDefinitionDto`), `isValid` (boolean), `validationWarnings` (list of structured warnings), `version` (Long), `createdBy`, `createdAt` (epoch ms), `updatedAt` (epoch ms)
 
 ### Requirement: Dataset testCaseSchema structure and validation
-The system SHALL validate the `testCaseSchema` on every dataset create/update: schema is a list of `FieldDefinitionDto` entries where each entry's `name` is non-blank, unique within the schema (case-insensitive), at most 255 characters, and matches the identifier pattern that prohibits the `:` character; `type` is one of `STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY`, `FILE`; `displayName` is at most 255 characters; `description` is at most 2000 characters; `required` is a boolean; `perTurn` is a boolean (default `false`) that marks the field's **scope** — `true` = per-turn (the field's value may vary between turns of a multi-turn case and lives in each `multiTurnData[i]` map), `false`/absent = shared (test-case-level, constant across turns, lives in the `data` map). Scope is a schema-level declaration and applies uniformly to every test case in the dataset. A missing `perTurn` SHALL be treated as `false`, so schemas authored before this field are unchanged. `id` is optional on input and governed by the "Dataset schema field identity" requirement.
+The system SHALL validate the `testCaseSchema` on every dataset create/update: schema is a list of `FieldDefinitionDto` entries where each entry's `name` is non-blank, unique within the schema (case-insensitive), at most 255 characters, and matches the identifier pattern that prohibits the `:` character; `type` is one of `STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY`, `FILE`, `SKILL`; `displayName` is at most 255 characters; `description` is at most 2000 characters; `required` is a boolean; `perTurn` is a boolean (default `false`) that marks the field's **scope** — `true` = per-turn (the field's value may vary between turns of a multi-turn case and lives in each `multiTurnData[i]` map), `false`/absent = shared (test-case-level, constant across turns, lives in the `data` map). Scope is a schema-level declaration and applies uniformly to every test case in the dataset. A missing `perTurn` SHALL be treated as `false`, so schemas authored before this field are unchanged. `id` is optional on input and governed by the "Dataset schema field identity" requirement.
 Status: **Planned**
 
 #### Scenario: Empty schema accepted
@@ -297,6 +297,10 @@ Status: **Planned**
 #### Scenario: Unknown field type
 - **WHEN** client sends a field with `type: "TIMESTAMP"`
 - **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
+
+#### Scenario: SKILL field type accepted
+- **WHEN** client sends a field with `type: "SKILL"`
+- **THEN** the request SHALL succeed and the dataset SHALL store and return the field with `type: "SKILL"`
 
 #### Scenario: Field exceeds max length
 - **WHEN** client sends a field with `name` longer than 255 characters or `description` longer than 2000 characters

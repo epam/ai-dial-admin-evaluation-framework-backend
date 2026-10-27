@@ -26,8 +26,8 @@ public class TemplateVariableDto {
     private InputBindingDto binding;
 
     @Schema(
-            description = "Type explicitly declared in the placeholder syntax via |type (e.g., ${{doc|file}}). "
-                    + "Null when no type hint is present in the placeholder.",
+            description = "Type explicitly declared in the placeholder syntax via |type (e.g., ${{doc|file}} or "
+                    + "${{selectedSkill|skill}}). Null when no type hint is present in the placeholder.",
             nullable = true,
             example = "FILE")
     private SchemaFieldType declaredType;
@@ -37,7 +37,7 @@ public class TemplateVariableDto {
             description = "Fully resolved type for this variable, determined by priority chain: "
                     + "(1) declaredType from placeholder syntax, "
                     + "(2) endpointRef schema type, "
-                    + "(3) testCaseSchema field type via binding's dataField, "
+                    + "(3) testCaseSchema field type via binding's dataField (FILE and SKILL columns included), "
                     + "(4) STRING fallback.",
             example = "STRING")
     private SchemaFieldType effectiveType;

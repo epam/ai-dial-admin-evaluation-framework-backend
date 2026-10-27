@@ -60,7 +60,7 @@ Status: **Implemented**
 - **NOTE**: the check is a coarse presence check (`multiTurnData != null`), not a `PerTurnBindingDetector`-based collapse check — it rejects even when the data would collapse to a single turn, matching the existing run-creation guard's coarseness.
 
 ### Requirement: Try it out with variables
-The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/try-it-out` accepting a `variables` object in the request body, keyed by **request index** (`"0"` = the suite's own request, `"n"` = `additionalRequests[n-1]`; the same index semantics as the template-variables response and `resolved-request?requestIndex`). Each value maps template variable names to constant values for that request. The system SHALL resolve each request's template by treating each of that request's variables as a constant-value binding, except that a variable the suite binds via `dataField` to a `FILE` schema column SHALL keep its constant value but additionally carry that column as its `dataField` (via `TryItOutVariableBindings.bindToFileColumns`; the resolver takes the value from the constant, the FILE detector reads the column type) so a hintless `${{var}}` resolves to a DIAL file ref as in a real run, and any number of variables MAY share one FILE column, each keeping its own value, send the resolved request(s) to the DIAL Core deployment, and return the response.
+The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/try-it-out` accepting a `variables` object in the request body, keyed by **request index** (`"0"` = the suite's own request, `"n"` = `additionalRequests[n-1]`; the same index semantics as the template-variables response and `resolved-request?requestIndex`). Each value maps template variable names to constant values for that request. The system SHALL resolve each request's template by treating each of that request's variables as a constant-value binding, except that a variable the suite binds via `dataField` to a `FILE` or `SKILL` schema column SHALL keep its constant value but additionally carry that column as its `dataField` (via `TryItOutVariableBindings.bindToFileColumns`; the resolver takes the value from the constant, the FILE and SKILL detectors read the column type) so a hintless `${{var}}` resolves to a DIAL file ref (FILE column) or the canonical `skills/{bucket}/{path}` ref (SKILL column) as in a real run, and any number of variables MAY share one FILE or SKILL column, each keeping its own value, send the resolved request(s) to the DIAL Core deployment, and return the response.
 
 Status: **Implemented**
 
@@ -111,8 +111,6 @@ Status: **Implemented**
 #### Scenario: Test suite not found
 - **WHEN** user sends try-it-out request with non-existent `testSuiteId`
 - **THEN** the system SHALL return HTTP 404 with error code `NOT_FOUND`
-
----
 
 ### Requirement: Validation before invocation
 The system SHALL validate the test suite configuration before invoking the deployment, the global route or the MCP tool. The request SHALL be rejected if preconditions are not met. Validation SHALL be type-aware: DEPLOYMENT suites validate HTTP preconditions including `deploymentRef`, ROUTE suites validate the same HTTP preconditions with `routesRef` in place of `deploymentRef`, and MCP_TOOL suites validate MCP preconditions.
@@ -612,3 +610,21 @@ Status: **Implemented**
 - MCP transport propagation: `TryItOutService` reads `mcpDeploymentRef.transport`, defaults to `McpTransport.STREAMABLE_HTTP` when null, passes to `McpToolInvoker`
 - Reuse `TryItOutResponseDto` structure — `resolvedRequest.body` contains arguments as JSON, `response.body` contains serialized MCP response
 - Resolved request-model validation: `TryItOutService.invokeTurn` calls `RequestModelValidator.validateForExecution` before building the URL — deliberately not inside `validateResolutionResult`, which the single-invocation path shares. `invokeAndBuildResponse` converts the resulting `RequestBodyValidationException` into the established HTTP 400 via `toTryItOutValidationException`, which appends a `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR` warning to the returned `resolvedRequest`; `runChain` catches it separately from `RequestBodyEvaluationException` and builds the status-code-zero `buildModelValidationFailureResult` envelope that retains the resolved request in both the top-level response and `history`, stopping the chain.
+
+### Requirement: Try-it-out resolves skill placeholders to canonical references
+Test-case try-out, variables try-out and the resolved-request preview SHALL resolve full-value skill placeholders exactly as a run does (see `request-template`, "Runtime skill reference resolution for full-value placeholders"): the resolved request shown/sent SHALL contain the canonical `skills/{bucket}/{path}` value. In variables mode, a user-supplied value for a variable whose `effectiveType` is `SKILL` SHALL be treated as that variable's constant and canonicalised. No DIAL Core skill route and no file download SHALL be invoked as part of resolving a skill value; only the deployment/tool invocation itself is performed.
+
+Status: **Implemented**
+Implementation notes: resolution shares `ResourceRefPlaceholderResolver`; variables mode keeps the column type via `TryItOutVariableBindings.bindToFileColumns` (now FILE or SKILL). Tests: `TryItOutVariableBindingsTest`, `SkillFieldFunctionalTests` (test-case try-out, both variables try-out cases).
+
+#### Scenario: Test-case try-out sends the canonical ref
+- **WHEN** a suite body carries `"custom_content": {"skills": [{"url": "${{s}}"}]}`, `s` is bound to a `SKILL` column, and the test case holds `"skills/b/x/"`
+- **THEN** the resolved request SHALL contain `"skills": [{"url": "skills/b/x"}]`
+
+#### Scenario: Variables try-out for a SKILL variable
+- **WHEN** the client calls variables try-out with `{"s": "skills/b/x"}` for a `${{s|skill}}` template
+- **THEN** the resolved request SHALL contain `"skills/b/x"` and the variables listing SHALL report `effectiveType: SKILL`
+
+#### Scenario: No skill download
+- **WHEN** a try-out resolves a skill value
+- **THEN** no file download/upload and no skill-route call SHALL occur

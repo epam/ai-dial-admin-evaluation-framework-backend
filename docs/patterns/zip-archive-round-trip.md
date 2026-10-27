@@ -36,4 +36,6 @@ Preview runs the same pipeline without writes or If-Match, so FILE cells show th
 
 **Export**: `ZipExportService.buildZip` builds a temp ZIP (paged, `TestCaseExportRowProjector` shared with CSV export, each ref downloaded once and its response `Content-Type` recorded in the manifest) and returns an `AutoCloseable` handle; the controller sets `application/zip` headers only after it succeeds. A download failure throws (mapped DIAL error status, 502), never a partial ZIP; the message names the test case (name + id) and the ref. The endpoint has no `produces` and the `DialCoreClientException` handler presets `application/json`, so the error JSON is written even for `Accept: text/csv`.
 
+**SKILL columns**: a `SKILL` value is a plain string reference, not a file. `ZipExportService.hasFileFields` stays FILE-only (a SKILL-only dataset exports as CSV), `SKILL` cells are written verbatim with no archive entry, the manifest records the column with type `SKILL`, and `ZipImportColumnTypeResolver.eligibleForRewrite` is false for it, so import neither rewrites nor uploads anything for it.
+
 **Out of scope**: suite config (`additionalRequests`) is not in the archive; unreferenced files are not deleted after OVERRIDE; no content-hash compare.

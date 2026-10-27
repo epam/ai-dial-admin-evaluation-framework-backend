@@ -276,6 +276,60 @@ class SchemaChangeCoercerTest {
     }
 
     @Nested
+    @DisplayName("SKILL target")
+    class SkillTarget {
+
+        @Test
+        @DisplayName("String identity")
+        void stringIdentity() {
+            String input = "skills/my-bucket/summariser";
+            assertThat(coercer.coerce(input, SchemaFieldType.SKILL)).isSameAs(input);
+        }
+
+        @Test
+        @DisplayName("Malformed String is kept — format is checked downstream by the validator")
+        void malformedStringKept() {
+            String input = "not-a-skill";
+            assertThat(coercer.coerce(input, SchemaFieldType.SKILL)).isSameAs(input);
+        }
+
+        @Test
+        @DisplayName("Boolean → SKILL is skipped")
+        void booleanToSkillSkipped() {
+            Object input = Boolean.TRUE;
+            assertThat(coercer.coerce(input, SchemaFieldType.SKILL)).isSameAs(input);
+        }
+
+        @Test
+        @DisplayName("Long → SKILL is skipped")
+        void longToSkillSkipped() {
+            Object input = 42L;
+            assertThat(coercer.coerce(input, SchemaFieldType.SKILL)).isSameAs(input);
+        }
+
+        @Test
+        @DisplayName("Double → SKILL is skipped")
+        void doubleToSkillSkipped() {
+            Object input = 3.14;
+            assertThat(coercer.coerce(input, SchemaFieldType.SKILL)).isSameAs(input);
+        }
+
+        @Test
+        @DisplayName("Map → SKILL is skipped")
+        void mapToSkillSkipped() {
+            Object input = Map.of("a", 1);
+            assertThat(coercer.coerce(input, SchemaFieldType.SKILL)).isSameAs(input);
+        }
+
+        @Test
+        @DisplayName("List → SKILL is skipped")
+        void listToSkillSkipped() {
+            Object input = List.of("a");
+            assertThat(coercer.coerce(input, SchemaFieldType.SKILL)).isSameAs(input);
+        }
+    }
+
+    @Nested
     @DisplayName("Null and OBJECT/ARRAY")
     class NullAndContainerTargets {
 

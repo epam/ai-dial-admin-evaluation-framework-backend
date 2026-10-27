@@ -9,8 +9,8 @@ Status: **Implemented**
 Implementation notes: resolution shares `ResourceRefPlaceholderResolver`; variables mode keeps the column type via `TryItOutVariableBindings.bindToFileColumns` (now FILE or SKILL). Tests: `TryItOutVariableBindingsTest`, `SkillFieldFunctionalTests` (test-case try-out, both variables try-out cases).
 
 #### Scenario: Test-case try-out sends the canonical ref
-- **WHEN** a suite body has `{"skill": "${{s|skill}}"}`, `s` is bound to a `SKILL` column, and the test case holds `"skills/b/x/"`
-- **THEN** the resolved request SHALL contain `"skill": "skills/b/x"`
+- **WHEN** a suite body carries `"custom_content": {"skills": [{"url": "${{s}}"}]}`, `s` is bound to a `SKILL` column, and the test case holds `"skills/b/x/"`
+- **THEN** the resolved request SHALL contain `"skills": [{"url": "skills/b/x"}]`
 
 #### Scenario: Variables try-out for a SKILL variable
 - **WHEN** the client calls variables try-out with `{"s": "skills/b/x"}` for a `${{s|skill}}` template

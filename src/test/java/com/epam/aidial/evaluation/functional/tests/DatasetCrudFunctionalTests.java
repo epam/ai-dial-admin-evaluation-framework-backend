@@ -367,5 +367,26 @@ public abstract class DatasetCrudFunctionalTests extends BaseFunctionalTest {
                 .path("application/json")
                 .path("examples");
         assertThat(responseExamples.propertyNames()).contains("skill");
+
+        final JsonNode suiteExamples = root.path("paths")
+                .path("/api/v1/test-suites")
+                .path("post")
+                .path("requestBody")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+        assertThat(suiteExamples.propertyNames()).contains("skill");
+        final JsonNode skillItem = objectMapper
+                .readTree(suiteExamples.path("skill").path("value").asString())
+                .path("requestTemplate")
+                .path("body")
+                .path("content")
+                .path("messages")
+                .get(0)
+                .path("custom_content")
+                .path("skills")
+                .get(0);
+        assertThat(skillItem.isObject()).isTrue();
+        assertThat(skillItem.path("url").asString()).isEqualTo("${{skill}}");
     }
 }

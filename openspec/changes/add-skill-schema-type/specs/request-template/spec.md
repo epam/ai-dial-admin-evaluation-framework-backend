@@ -77,8 +77,8 @@ Status: **Implemented**
 Implementation notes: `runner/service/ResourceRefPlaceholderResolver.java` (single seam), `FilePlaceholderDetector.isSkillReference`, called from `TemplateContentResolver.resolveObject` (JSON / URL-encoded), `JsonataSourcePreprocessor.resolveTypedValue` (JSONata) and `McpRequestResolver`. Tests: `ResourceRefPlaceholderResolverTest`, `FilePlaceholderDetectorTest`, `TemplateContentResolverTest`, `JsonataSourcePreprocessorTest`, `McpRequestResolverTest`, `SkillFieldFunctionalTests` (run).
 
 #### Scenario: Explicit hint in JSON body
-- **WHEN** a JSON body contains `{"skill": "${{s|skill}}"}` and `s` resolves to `"skills/b/summariser/"`
-- **THEN** the request body SHALL contain `{"skill": "skills/b/summariser"}`
+- **WHEN** a JSON body contains a message with `"custom_content": {"skills": [{"url": "${{s|skill}}"}]}` and `s` resolves to `"skills/b/summariser/"`
+- **THEN** the request body SHALL contain `"custom_content": {"skills": [{"url": "skills/b/summariser"}]}` — the placeholder is resolved at any depth inside objects and lists
 
 #### Scenario: Hint is case-insensitive at runtime
 - **WHEN** the body uses `${{s|SKILL}}`

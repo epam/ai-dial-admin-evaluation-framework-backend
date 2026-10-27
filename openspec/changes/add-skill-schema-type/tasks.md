@@ -61,3 +61,8 @@ Groups are sized for the ≤5-tasks / 1-group-per-iteration batch rule. Design r
 ## 8. Code-review fixes
 
 - [x] 8.1 Run `/review` before creating the PR and record any findings as sub-tasks here (done: findings resolved or consciously deferred) — `/opsx:review` 2026-10-26, 2 iterations, both READY (0 CRITICAL / 0 MAJOR); S1–S8 and R1, R3 fixed; R2 (7.5 "verify only" note) and R4 (proposal wording for `TemplateVariableService`) consciously deferred as cosmetic
+
+## 9. Request-shape correction (post-implementation, found by running against a real DIAL Core)
+
+- [x] 9.1 DIAL Core requires each `custom_content.skills` item to be an object with a non-blank `url` (a plain string → 400 `Invalid skill attachment`); the first examples/docs wrongly showed a flat `skill` key. Add `api-v1-test-suites-POST-{request,response-201}-skill.json` showing the correct template, update the `request-template`, `try-it-out` and `mcp-tool-invocation` delta-spec scenarios, and document the shape, the "Core only checks/shares, a skill-aware application loads it" behaviour and the `skill_used` / `skill_stage` response columns in `docs/patterns/jsonata-evaluation-seam.md` and `dial-file-storage.md` (done: files updated; no framework code change was needed — the placeholder already resolves at any depth)
+- [x] 9.2 Tests: `TemplateContentResolverTest` nested `custom_content.skills[{url}]` case, new `SkillUsageExpressionsTest` (the documented response-column expressions, incl. the emoji regex, against a real skill-aware response shape), and a `/v3/api-docs` assertion for the suite `skill` example in `DatasetCrudFunctionalTests.openApiDocumentsSkillFieldType` (done: green; checkstyle and spotless pass; the full build was not re-run after this group)

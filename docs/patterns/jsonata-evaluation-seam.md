@@ -28,6 +28,24 @@ Exceptions, deliberately outside the rule (hintless detection applies only where
 - **URL-encoded values**: resolved with `resolveString` (stringify-only, hints ignored), so they never convert.
 - **Multipart parts**: a SKILL value is never a multipart part and is never materialized as binary.
 
+**Skills in a request body**: where a skill goes is the deployment's contract, not the framework's. DIAL Core reads `messages[*].custom_content.skills`, and every item must be an **object with a non-blank `url`** (a plain string is rejected with HTTP 400 `Invalid skill attachment`; a missing/blank `url` with `Missing url in skill attachment`):
+
+```json
+{"messages": [{"role": "user", "content": "${{message}}",
+  "custom_content": {"skills": [{"url": "${{skill}}"}]}}]}
+```
+
+With `skill` bound to a `SKILL` column (or written `${{skill|skill}}`), `url` becomes the canonical `skills/<bucket>/<name>`; the placeholder is resolved at any depth. A blank `SKILL` value gives a blank `url` and Core rejects the call, so mark the column required for suites that always send a skill.
+
+Core only checks and shares the skill (read access for the deployment for that request); it never loads `SKILL.md` or touches the prompt. A raw model deployment therefore ignores the skill. A skill-aware DIAL application loads it itself and reports it as a stage named `Reading Skill: <name>` in `choices[0].message.custom_content.stages`, which is the reliable usage signal. Response columns that read it (pinned by `SkillUsageExpressionsTest`):
+
+| Column | Type | Expression |
+|---|---|---|
+| `skill_used` | BOOLEAN | `$exists(choices[0].message.custom_content.stages[$contains(name, "Reading Skill")])` |
+| `skill_stage` | STRING | `choices[0].message.custom_content.stages[$contains(name, "Reading Skill")][0].name` |
+
+A typed `/skill-name` in the message text is not an activation: it reaches the model as plain text.
+
 **Try-it-out with variables**: variables mode turns each typed value into a `constantValue` binding, which has no column. `TryItOutVariableBindings.bindToFileColumns` adds the column back as `dataField` (the binding keeps its `constantValue`, which the resolver reads first, while the FILE detector reads the column type) when the suite binds that variable to a `FILE` or `SKILL` column, so variables mode matches a real run and variables sharing one column each keep their own value. Variables bound to other columns, constants or nothing keep needing an explicit `|file` / `|skill`.
 
 ## Response-column extraction bindings

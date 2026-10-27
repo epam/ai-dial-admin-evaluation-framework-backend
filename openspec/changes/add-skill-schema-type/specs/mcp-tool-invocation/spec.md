@@ -9,7 +9,7 @@ Status: **Implemented**
 Implementation notes: `McpRequestResolver.resolveStringValue` → `resolveResourceRef` → `ResourceRefPlaceholderResolver.resolve` (shared with the HTTP body paths). Tests: `McpRequestResolverTest` (`SkillTypeHintResolution`).
 
 #### Scenario: Explicit |skill argument
-- **WHEN** `argumentTemplate.arguments = {"skill": "${{s|skill}}"}` and `s` resolves to `"skills/b/x/"`
+- **WHEN** `argumentTemplate.arguments = {"skill": "${{s|skill}}"}` (an MCP tool argument is whatever the tool defines, so the key name is the tool's) and `s` resolves to `"skills/b/x/"`
 - **THEN** the MCP tool call arguments SHALL contain `"skill": "skills/b/x"`
 
 #### Scenario: Hintless argument bound to a SKILL column

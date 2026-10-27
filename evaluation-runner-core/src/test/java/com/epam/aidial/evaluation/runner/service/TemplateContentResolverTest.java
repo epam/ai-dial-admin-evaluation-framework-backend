@@ -384,4 +384,34 @@ class TemplateContentResolverTest {
 
         assertThat(result).isEqualTo("not-a-skill");
     }
+
+    @Test
+    @DisplayName("resolveObject canonicalises a skill nested as custom_content.skills[{url}] in a message")
+    void resolveObjectCanonicalisesSkillNestedInMessageCustomContent() {
+        InputBindingDto binding = binding("skill", "skill");
+        when(templateVariableResolver.resolveVariable(eq("skill"), isNull(), eq(binding), anyMap(), any()))
+                .thenReturn("skills/public/vc-test/");
+        Map<String, Object> body = Map.of(
+                "messages",
+                List.of(Map.of(
+                        "role",
+                        "user",
+                        "content",
+                        "hi",
+                        "custom_content",
+                        Map.of("skills", List.of(Map.of("url", "${{skill}}"))))));
+
+        Object result = resolver.resolveObject(body, Map.of("skill", binding), Map.of(), warnings, SKILL_SCHEMA);
+
+        assertThat(result)
+                .isEqualTo(Map.of(
+                        "messages",
+                        List.of(Map.of(
+                                "role",
+                                "user",
+                                "content",
+                                "hi",
+                                "custom_content",
+                                Map.of("skills", List.of(Map.of("url", "skills/public/vc-test")))))));
+    }
 }

@@ -11,7 +11,7 @@ Status: **Implemented**
 - **ResponseColumn**: A named column definition attached to a TestSuite that describes how to extract a display value from a test result's response body using a JSONata expression.
 - **name**: Stable identifier for the column. Used as key in `extracted_columns`, CSV headers, and FE references. Must be unique within the suite's response columns array.
 - **displayName**: Optional human-friendly UI label. FE falls back to `name` if not set.
-- **SchemaFieldType**: Shared type enum (`STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY`, `FILE`) used for both testCaseSchema fields and response columns. `FILE` is a display hint indicating the value is a DIAL file reference path.
+- **SchemaFieldType**: Shared type enum (`STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY`, `FILE`, `SKILL`) used for both testCaseSchema fields and response columns. `FILE` is a display hint indicating the value is a DIAL file reference path; `SKILL` is a string-backed DIAL skill reference (`skills/{bucket}/{path}`, see `dial-skill-ref`).
 
 ## Data Shape
 
@@ -526,3 +526,21 @@ Status: **Implemented**
 - Eval results CSV export with extracted columns.
 - Unified schema at suite level (merging testCaseSchema + responseColumns).
 - Import/export of response columns as part of suite CSV import (suite JSON export includes them naturally).
+
+### Requirement: SKILL type in response column definitions
+The `SKILL` value of `SchemaFieldType` SHALL be a supported `ResponseColumnDefinitionDto.type`. A `SKILL` response column indicates that the JSONata expression extracts a DIAL skill reference (`skills/{bucket}/{path}`) from the response. Storage and reconciliation SHALL be identical to `STRING` (`ResponseColumnTypeReconciler` handles `SKILL` like `STRING`); the extracted value is stored as a string, is NOT format-validated, and `SKILL` is NOT auto-inferred from the extracted value. Clients MAY use the type as a rendering hint. Extraction failures behave as for every other type.
+
+Status: **Implemented**
+Implementation notes: `ResponseColumnTypeReconciler.reconcile` (`case STRING, FILE, SKILL`). Tests: `ResponseColumnTypeReconcilerTest` (`skillBehavesLikeString`).
+
+#### Scenario: SKILL response column accepted
+- **WHEN** a client saves a suite with a response column `{"name": "used_skill", "expression": "choices[0].message.custom_content.selected_skill", "type": "SKILL"}` (the expression is illustrative — it assumes a deployment that echoes the skill reference it used; standard Core responses carry no such field, and skill *usage* is better read via the `skill_used` / `skill_stage` columns documented in `docs/patterns/jsonata-evaluation-seam.md`)
+- **THEN** the column SHALL be persisted and returned with `type: "SKILL"`
+
+#### Scenario: SKILL column value stored as string
+- **WHEN** a result is written and a `SKILL` column's expression resolves to `"skills/b/x"`
+- **THEN** `extracted_columns["used_skill"]` SHALL be the string `"skills/b/x"` with no extraction warning
+
+#### Scenario: Non-string result is reconciled like STRING
+- **WHEN** a `SKILL` column's expression resolves to the number `5`
+- **THEN** the reconciliation outcome SHALL be identical to that of a `STRING` column with the same result

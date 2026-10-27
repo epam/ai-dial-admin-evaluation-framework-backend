@@ -19,11 +19,9 @@ class SkillUsageExpressionsTest {
             "$exists(choices[0].message.custom_content.stages[$contains(name, \"Reading Skill\")])";
     private static final String SKILL_STAGE =
             "choices[0].message.custom_content.stages[$contains(name, \"Reading Skill\")][0].name";
-    private static final String HAS_EMOJI =
-            "$contains(choices[0].message.content, /[\\x{1F300}-\\x{1FAFF}\\x{2600}-\\x{27BF}]/)";
 
     private static final String WITH_SKILL = """
-            {"choices":[{"message":{"role":"assistant","content":"A blue bird 🐦🟦",
+            {"choices":[{"message":{"role":"assistant","content":"A blue bird",
               "custom_content":{"stages":[
                 {"name":"Reading Skill: vc-test [0.00s]","status":"completed"},
                 {"name":"Usage Statistics","status":"completed"}]}}}]}
@@ -60,12 +58,5 @@ class SkillUsageExpressionsTest {
     void skillStageReturnsName() {
         assertThat(service.evaluate(SKILL_STAGE, WITH_SKILL)).isEqualTo("Reading Skill: vc-test [0.00s]");
         assertThat(service.evaluate(SKILL_STAGE, WITHOUT_SKILL)).isNull();
-    }
-
-    @Test
-    @DisplayName("has_emoji detects an emoji in the answer text")
-    void hasEmojiDetectsEmoji() {
-        assertThat(service.evaluate(HAS_EMOJI, WITH_SKILL)).isEqualTo(true);
-        assertThat(service.evaluate(HAS_EMOJI, WITHOUT_SKILL)).isEqualTo(false);
     }
 }

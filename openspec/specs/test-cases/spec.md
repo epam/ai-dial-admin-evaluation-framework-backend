@@ -16,7 +16,7 @@ Status: **Planned** (dataset-rooted re-scoping).
 |------|--------------|---------------------|-------------------|
 | `STRING` | `String` | `"value"` | Yes (default) |
 | `INTEGER` | `Long` | `123` | Yes |
-| `NUMBER` | `Double` | `123.45` | Yes |
+| `NUMBER` | `Number` (whole values normalized with `BigDecimal` on API writes) | `123.45`, `1.0` | Yes |
 | `BOOLEAN` | `Boolean` | `true`/`false` | Yes |
 | `OBJECT` | `Map<String, Object>` | `{...}` | No (requires schema) |
 | `ARRAY` | `List<Object>` | `[...]` | No (requires schema) |
@@ -38,6 +38,28 @@ All timestamps in API responses use **epoch milliseconds (Long)**.
 - Repeatable `sort=<field>[,<asc|desc>]`; default `createdAt,desc`.
 
 ## Requirements
+
+### Requirement: Normalize whole NUMBER values before API persistence
+Status: **Implemented**
+
+Test-case API writes that perform per-row validation SHALL normalize actual numeric values in schema-declared `NUMBER` fields to decimal JSON with at least one fractional digit before persistence. This applies to shared `data` and each `multiTurnData` map. Adding the fractional digit SHALL NOT round integral values through binary floating-point conversion. Fractional values, `INTEGER` fields, unknown fields, nested values, strings, booleans, nulls, and missing fields SHALL remain unchanged by normalization.
+
+#### Scenario: Frontend-style update submits a whole-number value
+- **WHEN** a test case stores `{"numeric":1.0}` for a `NUMBER` field
+- **AND** a PUT update submits `{"numeric":1}`
+- **THEN** the persisted data and PUT response SHALL contain `{"numeric":1.0}`
+
+#### Scenario: Normalize shared and per-turn numeric fields
+- **WHEN** a test-case API write submits whole numeric values in shared and per-turn `NUMBER` fields
+- **THEN** each submitted numeric value SHALL be persisted with a fractional digit, preserving turn order
+
+#### Scenario: Retain non-numeric input for validation
+- **WHEN** a `NUMBER` field contains a string or boolean
+- **THEN** normalization SHALL NOT coerce that value to a number, and existing validation SHALL evaluate the original value
+
+#### Implementation notes
+- `TestCaseService.runValidationAndNormalization` normalizes shared and per-turn maps before persistence.
+- Covered by `TestCaseServiceNumberNormalizationTest` and `TestCaseFunctionalTests.shouldPreserveNumberDecimalRepresentationOnUpdate`.
 
 ### Requirement: Create and manage TestCases inside a Dataset
 The service SHALL manage TestCases as children of a Dataset with full CRUD operations. TestCases store a unified `data` map (Map<String, Object>). Per-case overrides of suite-level templates and bindings are no longer supported; test cases carry only their identity, the data map, and validity metadata. A test case carries no per-suite participation state: which of a dataset's test cases a given suite runs is decided solely by that suite's `testCaseFilter` (see `suite-test-case-filter`).

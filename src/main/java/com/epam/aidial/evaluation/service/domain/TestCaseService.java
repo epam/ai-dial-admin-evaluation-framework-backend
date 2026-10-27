@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimes
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
@@ -32,6 +33,7 @@ import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.mapper.TestCaseMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -78,7 +80,7 @@ public class TestCaseService {
     public TestCaseResponseDto create(UUID datasetId, TestCaseRequestDto dto, boolean includeWarnings) {
         List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(datasetId);
         TestCase entity = testCaseMapper.toEntity(dto, datasetId);
-        runValidation(entity, schema);
+        runValidationAndNormalization(entity, schema);
         try {
             TestCase saved = testCaseRepository.save(entity);
             return testCaseMapper.toDto(saved, includeWarnings);
@@ -127,7 +129,7 @@ public class TestCaseService {
                 .orElseThrow(() -> new EntityNotFoundException("TestCase not found: " + id));
         List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(datasetId);
         testCaseMapper.updateEntity(existing, dto);
-        runValidation(existing, schema);
+        runValidationAndNormalization(existing, schema);
         try {
             TestCase updated = testCaseRepository.update(existing);
             if (updated == null) {
@@ -150,7 +152,7 @@ public class TestCaseService {
                 .orElseThrow(() -> new EntityNotFoundException("TestCase not found: " + id));
         List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(datasetId);
         applyMergePatch(existing, patchBody);
-        runValidation(existing, schema);
+        runValidationAndNormalization(existing, schema);
         try {
             TestCase updated = testCaseRepository.update(existing);
             if (updated == null) {
@@ -184,7 +186,7 @@ public class TestCaseService {
         }
 
         validateBatchNameUniqueness(entities, datasetId);
-        entities.forEach(e -> runValidation(e, schema));
+        entities.forEach(e -> runValidationAndNormalization(e, schema));
         persistBatch(entities);
 
         return entities.stream()
@@ -213,7 +215,7 @@ public class TestCaseService {
         }
 
         validateBatchNameUniqueness(entities, datasetId);
-        entities.forEach(e -> runValidation(e, schema));
+        entities.forEach(e -> runValidationAndNormalization(e, schema));
         persistBatch(entities);
 
         return entities.stream()
@@ -266,7 +268,7 @@ public class TestCaseService {
 
             applyMergePatch(existing, op.getPatch());
             if (touchesValidationRelevantField(op.getPatch())) {
-                runValidation(existing, schema);
+                runValidationAndNormalization(existing, schema);
             }
 
             boolean changed = !equalForUpdate(before, existing);
@@ -439,13 +441,14 @@ public class TestCaseService {
     }
 
     /**
-     * Runs schema-shape validation of the test-case data against the dataset's testCaseSchema.
+     * Normalizes whole NUMBER values to decimal JSON and runs schema-shape validation against the
+     * dataset's testCaseSchema, before the entity is persisted.
      * Template-variable and FILE-reference validation are not performed here — they live at the
      * suite level and are handled by suite/run-time validation (or Phase 2 of dataset revalidation).
      */
-    private void runValidation(TestCase entity, List<FieldDefinitionDto> schema) {
-        Map<String, Object> dataMap = warningsSerializer.deserializeMap(entity.getData());
-        List<Map<String, Object>> turns = entity.getMultiTurnData() != null
+    private void runValidationAndNormalization(TestCase entity, List<FieldDefinitionDto> schema) {
+        final Map<String, Object> dataMap = warningsSerializer.deserializeMap(entity.getData());
+        final List<Map<String, Object>> turns = entity.getMultiTurnData() != null
                 ? testCaseTurnsSerializer.deserializeTurns(entity.getMultiTurnData())
                 : null;
 
@@ -453,6 +456,17 @@ public class TestCaseService {
         // an invalidating warning handled below, not a 400. `data` (shared) and `multiTurnData` (per-turn)
         // may coexist; placement is validated against the dataset schema's perTurn flags.
         multiTurnFieldsValidator.validateStructure(dataMap, turns, schema);
+
+        final Set<String> numberFields = schema.stream()
+                .filter(field -> field.getType() == SchemaFieldType.NUMBER)
+                .map(FieldDefinitionDto::getName)
+                .collect(Collectors.toSet());
+        if (normalizeNumberValues(dataMap, numberFields)) {
+            entity.setData(warningsSerializer.serializeMap(dataMap));
+        }
+        if (normalizeMultiTurnNumberValues(turns, numberFields)) {
+            entity.setMultiTurnData(testCaseTurnsSerializer.serializeTurns(turns));
+        }
 
         ValidationResult result = turns != null
                 ? testCaseValidationService.validateMultiTurn(
@@ -462,6 +476,37 @@ public class TestCaseService {
         entity.setValid(result.isValid());
         entity.setValidationWarnings(
                 warningsSerializer.serializeWarnings(result.getWarnings() != null ? result.getWarnings() : List.of()));
+    }
+
+    private boolean normalizeNumberValues(Map<String, Object> data, Set<String> numberFields) {
+        if (data == null) {
+            return false;
+        }
+        boolean changed = false;
+        for (final Map.Entry<String, Object> entry : data.entrySet()) {
+            if (numberFields.contains(entry.getKey()) && entry.getValue() instanceof Number number) {
+                // BigDecimal adds a fractional digit without rounding large integral values through Double.
+                final BigDecimal decimal = new BigDecimal(number.toString());
+                if (decimal.scale() < 1) {
+                    entry.setValue(decimal.setScale(1));
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private boolean normalizeMultiTurnNumberValues(List<Map<String, Object>> turns, Set<String> numberFields) {
+        if (turns == null) {
+            return false;
+        }
+        boolean changed = false;
+        for (final Map<String, Object> turn : turns) {
+            if (normalizeNumberValues(turn, numberFields)) {
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     /** True when the dataset contains at least one multi-turn test case. Used by run-creation guards. */
@@ -565,7 +610,8 @@ public class TestCaseService {
             entity.setTestCaseName(patch.get("testCaseName").toString());
         }
         // `data` (shared) and `multiTurnData` (per-turn) are independent buckets: patching one does NOT
-        // clear the other. Post-merge placement + per-scope validation (runValidation) governs correctness.
+        // clear the other. Post-merge placement + per-scope validation (runValidationAndNormalization) governs
+        // correctness.
         if (patch.containsKey("data")) {
             Object v = patch.get("data");
             if (v instanceof Map) {

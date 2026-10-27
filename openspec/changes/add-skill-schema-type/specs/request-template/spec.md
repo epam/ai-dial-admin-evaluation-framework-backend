@@ -116,6 +116,10 @@ Implementation notes: `runner/service/ResourceRefPlaceholderResolver.java` (sing
 - **WHEN** `${{s|skill}}` resolves to `"not-a-skill"`
 - **THEN** the request body SHALL contain `"not-a-skill"` unchanged and the run SHALL NOT fail locally
 
+#### Scenario: Blank value passes through
+- **WHEN** `${{s|skill}}` resolves to `""` or whitespace-only `"   "` (blank is malformed per `dial-skill-ref`)
+- **THEN** the request body SHALL contain the value unchanged (an empty `url` that DIAL Core rejects) and the run SHALL NOT fail locally; making the column required (so a blank value is flagged at authoring time) is the template author's responsibility
+
 ### Requirement: Template variables report SKILL types
 `declaredType` and `effectiveType` of a template variable (variables APIs and try-it-out variable discovery) MAY be `SKILL`. `effectiveType` SHALL follow the existing precedence (declared hint, then endpoint type, then bound schema field type, default `STRING`), so a hintless variable bound to a `SKILL` column SHALL report `effectiveType: SKILL`. A `constantValue`-only binding (no `dataField`) is treated as a skill only with an explicit `|skill` hint, as for `FILE`.
 

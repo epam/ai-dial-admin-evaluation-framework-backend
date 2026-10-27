@@ -9,7 +9,7 @@ Status: **Implemented**
 Implementation notes: `ResponseColumnTypeReconciler.reconcile` (`case STRING, FILE, SKILL`). Tests: `ResponseColumnTypeReconcilerTest` (`skillBehavesLikeString`).
 
 #### Scenario: SKILL response column accepted
-- **WHEN** a client saves a suite with a response column `{"name": "used_skill", "expression": "skill.id", "type": "SKILL"}`
+- **WHEN** a client saves a suite with a response column `{"name": "used_skill", "expression": "choices[0].message.custom_content.selected_skill", "type": "SKILL"}` (the expression is illustrative — it assumes a deployment that echoes the skill reference it used; standard Core responses carry no such field, and skill *usage* is better read via the `skill_used` / `skill_stage` columns documented in `docs/patterns/jsonata-evaluation-seam.md`)
 - **THEN** the column SHALL be persisted and returned with `type: "SKILL"`
 
 #### Scenario: SKILL column value stored as string

@@ -1,0 +1,48 @@
+{
+  "name": "Skill Evaluation Suite",
+  "description": "Calls a skill-aware DIAL application; the skill reference comes from the test case SKILL column",
+  "datasetId": "660e8400-e29b-41d4-a716-446655440002",
+  "deploymentRef": {
+    "id": "skill-aware-application",
+    "name": "Skill-aware application",
+    "type": "dial-application"
+  },
+  "endpointRef": {
+    "method": "POST",
+    "relativeUrlPattern": "/chat/completions"
+  },
+  "responseColumns": [
+    {
+      "name": "answer",
+      "expression": "choices[0].message.content",
+      "type": "STRING"
+    },
+    {
+      "name": "skill_used",
+      "displayName": "Skill used",
+      "expression": "$exists(choices[0].message.custom_content.stages[$contains(name, \"Reading Skill\")])",
+      "type": "BOOLEAN"
+    }
+  ],
+  "requestTemplate": {
+    "urlTemplate": "/chat/completions",
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "${{message}}",
+            "custom_content": {
+              "skills": [{"url": "${{skill}}"}]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "inputBindings": [
+    {"templateVariable": "message", "dataField": "question"},
+    {"templateVariable": "skill", "dataField": "skillField"}
+  ]
+}

@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
@@ -93,7 +94,8 @@ class ZipImportServiceTest {
     void setUp() {
         CsvImportProperties csvImportProperties = csvImportProperties(DataSize.ofKilobytes(10));
         DialFileStorageProperties fileStorageProperties = fileStorageProperties();
-        DialFileRefResolver dialFileRefResolver = new DialFileRefResolver(dialFileClient, fileStorageProperties);
+        DialFileRefResolver dialFileRefResolver =
+                new DialFileRefResolver(dialFileClient, fileStorageProperties, new BindingTypeResolver());
 
         zipImportService = new ZipImportService(
                 new ZipArchiveReader(csvImportProperties, fileStorageProperties),
@@ -274,7 +276,9 @@ class ZipImportServiceTest {
                         Validation.buildDefaultValidatorFactory().getValidator()),
                 new ZipCsvFileRefRewriter(),
                 new ZipImportColumnTypeResolver(),
-                new ZipFileImportPlanner(fileService, new DialFileRefResolver(dialFileClient, fileStorageProperties())),
+                new ZipFileImportPlanner(
+                        fileService,
+                        new DialFileRefResolver(dialFileClient, fileStorageProperties(), new BindingTypeResolver())),
                 datasetSchemaProvider,
                 datasetService,
                 fileService,

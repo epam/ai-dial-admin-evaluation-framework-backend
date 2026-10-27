@@ -15,9 +15,10 @@ import org.springframework.stereotype.Component;
  * a SKILL reference becomes its canonical form ({@code skills/<bucket>/<path>}).
  *
  * <p>Shared by {@link TemplateContentResolver}, {@link JsonataSourcePreprocessor} and
- * {@link McpRequestResolver} so the paths cannot drift. The decisions come from
- * {@link FilePlaceholderDetector}; a value that is not a {@code String}, or a placeholder that is neither FILE
- * nor SKILL, is returned unchanged. A SKILL value is never routed through {@link DialFileRefResolver}.
+ * {@link McpRequestResolver} so the paths cannot drift. Each reference type owns its own decision
+ * ({@link DialFileRefResolver#isFileReference}, {@link SkillRefResolver#isSkillReference}); a value that is not
+ * a {@code String}, or a placeholder that is neither FILE nor SKILL, is returned unchanged. A SKILL value is
+ * never converted by {@link DialFileRefResolver#resolveToDialRef}.
  */
 @Component
 @LogExecution
@@ -26,7 +27,6 @@ public class ResourceRefPlaceholderResolver {
 
     private final DialFileRefResolver dialFileRefResolver;
     private final SkillRefResolver skillRefResolver;
-    private final FilePlaceholderDetector filePlaceholderDetector;
 
     /**
      * Converts {@code resolved} when it is a {@code String} and the placeholder is a FILE or SKILL reference.
@@ -40,10 +40,10 @@ public class ResourceRefPlaceholderResolver {
         if (!(resolved instanceof String ref)) {
             return resolved;
         }
-        if (filePlaceholderDetector.isFileReference(typeHint, binding, schema)) {
+        if (dialFileRefResolver.isFileReference(typeHint, binding, schema)) {
             return dialFileRefResolver.resolveToDialRef(ref);
         }
-        if (filePlaceholderDetector.isSkillReference(typeHint, binding, schema)) {
+        if (skillRefResolver.isSkillReference(typeHint, binding, schema)) {
             return skillRefResolver.toCanonicalRef(ref);
         }
         return resolved;

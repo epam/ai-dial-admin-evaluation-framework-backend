@@ -73,7 +73,7 @@ public class TemplateContentResolver {
      * Recursively resolves {@code ${{}}} placeholders in a structural value (String, Map, List, or
      * passthrough primitive). A full-value string placeholder (the entire string is exactly one
      * placeholder) preserves the resolved value's type instead of stringifying it, and a FILE placeholder
-     * (see {@link FilePlaceholderDetector}: an explicit {@code |file} hint, or no hint and a binding to a FILE
+     * (see {@code DialFileRefResolver#isFileReference}: an explicit {@code |file} hint, or no hint and a binding to a FILE
      * schema field) resolves a String result to DIAL ref format. A SKILL placeholder (an explicit {@code |skill}
      * hint, or a binding to a SKILL schema field) resolves it to the canonical skill reference instead (see
      * {@link ResourceRefPlaceholderResolver}).

@@ -207,7 +207,7 @@ Status: **Implemented**
 #### Scenario: |FILE uppercase type hint resolves as file ref (case-insensitive)
 - **WHEN** the argument template contains `{"document": "${{contract|FILE}}"}`
 - **AND** the resolved value for `contract` is `"@ef/suites/abc/contract.pdf"`
-- **THEN** the resolver SHALL treat `FILE` the same as `file` (case-insensitive match, decided by `FilePlaceholderDetector`)
+- **THEN** the resolver SHALL treat `FILE` the same as `file` (case-insensitive match, decided by `DialFileRefResolver.isFileReference`)
 - **AND** return the value resolved via `DialFileRefResolver.resolveToDialRef()`
 
 #### Scenario: Multiple |file variables in same argument template resolved independently
@@ -218,7 +218,7 @@ Status: **Implemented**
 
 ### Requirement: MCP argument resolution converts placeholders bound to FILE columns without a type hint
 
-In addition to the `|file` type-hint behaviour of `McpRequestResolver`, a full-value placeholder with **no** type hint whose binding `dataField` names a schema field of type `FILE` SHALL be resolved via `DialFileRefResolver.resolveToDialRef()` when the resolved value is a `String`, using the shared `FilePlaceholderDetector` rule (see `dial-file-ref` spec). The resolver's `resolve` method SHALL receive the test case schema (`List<FieldDefinitionDto>`, nullable) as an additional parameter; `null`/empty schema means only explicit hints convert. `resolveWithVariables` (an alias of `resolve`) SHALL be removed; variables-mode try-out SHALL call `resolve` with the dataset schema, and a supplied variable that the suite binds via `dataField` to a `FILE` column SHALL be passed as a `dataField` binding with the value in the data map, so it converts like in a run. Embedded (mixed-text) placeholders SHALL remain string-concatenated without conversion.
+In addition to the `|file` type-hint behaviour of `McpRequestResolver`, a full-value placeholder with **no** type hint whose binding `dataField` names a schema field of type `FILE` SHALL be resolved via `DialFileRefResolver.resolveToDialRef()` when the resolved value is a `String`, using the shared `DialFileRefResolver.isFileReference` rule (see `dial-file-ref` spec). The resolver's `resolve` method SHALL receive the test case schema (`List<FieldDefinitionDto>`, nullable) as an additional parameter; `null`/empty schema means only explicit hints convert. `resolveWithVariables` (an alias of `resolve`) SHALL be removed; variables-mode try-out SHALL call `resolve` with the dataset schema, and a supplied variable that the suite binds via `dataField` to a `FILE` column SHALL be passed as a `dataField` binding with the value in the data map, so it converts like in a run. Embedded (mixed-text) placeholders SHALL remain string-concatenated without conversion.
 
 Status: Implemented
 
@@ -249,7 +249,7 @@ Status: Implemented
 - **THEN** the resolver SHALL still convert the value via `DialFileRefResolver.resolveToDialRef()`
 
 #### Implementation notes
-- `McpRequestResolver.resolveFileRef` delegates to `FilePlaceholderDetector`; callers: `EvaluationWorker` (schema from `EvaluationContext.snapshotTestCaseSchema`) and `TryItOutService` (dataset schema).
+- `McpRequestResolver.resolveFileRef` delegates to `ResourceRefPlaceholderResolver` (`DialFileRefResolver.isFileReference`); callers: `EvaluationWorker` (schema from `EvaluationContext.snapshotTestCaseSchema`) and `TryItOutService` (dataset schema).
 
 ### Requirement: McpResponseSerializer converts CallToolResult to JSON
 
@@ -373,7 +373,7 @@ Status: **Implemented**
 `McpRequestResolver` SHALL resolve a full-value argument placeholder that is a skill placeholder (explicit `|skill` hint, case-insensitive, or no hint and a binding to a `SKILL` schema field — see `request-template`, "Runtime skill reference resolution for full-value placeholders") to its canonical skill reference `skills/{bucket}/{path}` when the resolved value is a `String`. The decision SHALL use the same shared component as the HTTP body paths. Embedded placeholders SHALL stay verbatim; a malformed value SHALL pass through unchanged; `|file` resolution SHALL be unchanged.
 
 Status: **Implemented**
-Implementation notes: `McpRequestResolver.resolveStringValue` → `resolveResourceRef` → `ResourceRefPlaceholderResolver.resolve` (shared with the HTTP body paths). Tests: `McpRequestResolverTest` (`SkillTypeHintResolution`).
+Implementation notes: `McpRequestResolver.resolveStringValue` → `ResourceRefPlaceholderResolver.resolve` (shared with the HTTP body paths). Tests: `McpRequestResolverTest` (`SkillTypeHintResolution`).
 
 #### Scenario: Explicit |skill argument
 - **WHEN** `argumentTemplate.arguments = {"skill": "${{s|skill}}"}` (an MCP tool argument is whatever the tool defines, so the key name is the tool's) and `s` resolves to `"skills/b/x/"`

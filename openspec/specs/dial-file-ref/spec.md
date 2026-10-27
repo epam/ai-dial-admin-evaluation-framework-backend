@@ -124,7 +124,7 @@ The system SHALL resolve FILE-typed binding values (both constant values and val
 
 This ensures `JsonRequestBodySerializer` forwards DIAL-resolvable paths (not `@ef` aliases) when embedding file references as string values in deployment request payloads.
 
-A full-value placeholder SHALL be treated as FILE-typed per the `FilePlaceholderDetector` rule: it carries a `|file` type hint (e.g., `${{attachment|file}}`), **or** it carries no type hint and its binding's `dataField` names a schema field of type `FILE`. Resolution applies at any nesting depth in the JSON body — the resolver recurses into nested objects and arrays. Applies to JSON (structural `content` and `jsonataContent`) bodies and to `TEXT` multipart form parts. URL-encoded form values are always stringified (the `|file` hint is ignored there too), so a FILE-bound placeholder in a URL-encoded value is not converted.
+A full-value placeholder SHALL be treated as FILE-typed per the `DialFileRefResolver.isFileReference` rule: it carries a `|file` type hint (e.g., `${{attachment|file}}`), **or** it carries no type hint and its binding's `dataField` names a schema field of type `FILE`. Resolution applies at any nesting depth in the JSON body — the resolver recurses into nested objects and arrays. Applies to JSON (structural `content` and `jsonataContent`) bodies and to `TEXT` multipart form parts. URL-encoded form values are always stringified (the `|file` hint is ignored there too), so a FILE-bound placeholder in a URL-encoded value is not converted.
 
 Note: Multipart `FormPartDto` FILE parts (`FormPartDto.type == FILE`) are excluded from schema-type-driven resolution — they remain as short-format refs in `ResolvedFormPartDto.resolvedValue` and are materialized as file bytes directly by `MultipartFormDataRequestBodySerializer`.
 
@@ -178,7 +178,7 @@ Note: Multipart `FormPartDto` FILE parts (`FormPartDto.type == FILE`) are exclud
 
 ### Requirement: Single FILE-placeholder decision rule shared by all template resolvers
 
-The system SHALL decide whether a full-value `${{...}}` placeholder is a FILE reference in exactly one component, `FilePlaceholderDetector` (`runner.service`, `evaluation-runner-core`), used by `TemplateContentResolver`, `JsonataSourcePreprocessor` and `McpRequestResolver`. The rule SHALL be:
+The system SHALL decide whether a full-value `${{...}}` placeholder is a FILE reference in exactly one component, `DialFileRefResolver.isFileReference` (`runner.client.dialcore`, `evaluation-runner-core`, on top of `runner.util.BindingTypeResolver`), used by `TemplateContentResolver`, `JsonataSourcePreprocessor` and `McpRequestResolver`. The rule SHALL be:
 
 Status: Implemented
 
@@ -211,7 +211,7 @@ Only a `String` resolved value SHALL be converted via `DialFileRefResolver.resol
 - **THEN** resolution SHALL propagate the `ValidationException` from `DialFileRefResolver.resolveToDialRef()` exactly as for an explicit `|file` hint
 
 #### Implementation notes
-- `evaluation-runner-core`: `runner.service.FilePlaceholderDetector` (new), `TemplateContentResolver.resolveObject`, `JsonataSourcePreprocessor.resolveTypedValue`, `McpRequestResolver.resolveFileRef`, `RequestResolver.resolveMultipartBody` (passes no schema for `FILE` parts).
+- `evaluation-runner-core`: `runner.client.dialcore.DialFileRefResolver.isFileReference` (new, over `runner.util.BindingTypeResolver`), `TemplateContentResolver.resolveObject`, `JsonataSourcePreprocessor.resolveTypedValue`, `McpRequestResolver.resolveFileRef`, `RequestResolver.resolveMultipartBody` (passes no schema for `FILE` parts).
 - Call sites receiving the schema: `TurnLoopExecutor`, `EvaluationWorker`, `TryItOutService`, `ResolvedRequestService`.
 
 ### Requirement: Prefix whitelist validation

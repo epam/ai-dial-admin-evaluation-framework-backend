@@ -22,6 +22,7 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.csv.TestCaseExportRowProjector;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.zip.ZipExportFileCollector;
@@ -80,7 +81,8 @@ class ZipExportServiceTest {
 
         DialFileStorageProperties fileStorageProperties = new DialFileStorageProperties();
         fileStorageProperties.setBucketAlias(BUCKET_ALIAS);
-        DialFileRefResolver dialFileRefResolver = new DialFileRefResolver(dialFileClient, fileStorageProperties);
+        DialFileRefResolver dialFileRefResolver =
+                new DialFileRefResolver(dialFileClient, fileStorageProperties, new BindingTypeResolver());
         FileRefValidator fileRefValidator = new FileRefValidator(fileStorageProperties);
         ZipExportFileCollector zipExportFileCollector =
                 new ZipExportFileCollector(dialFileRefResolver, fileRefValidator);

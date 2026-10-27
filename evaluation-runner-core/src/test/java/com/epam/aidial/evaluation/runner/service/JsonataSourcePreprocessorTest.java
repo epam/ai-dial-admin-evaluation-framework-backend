@@ -5,15 +5,19 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolverStubs;
 import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -44,10 +48,11 @@ class JsonataSourcePreprocessorTest {
     private List<ValidationWarningDto> warnings;
 
     private void setUp() {
+        DialFileRefResolverStubs.withRealFileDetection(dialFileRefResolver);
         preprocessor = new JsonataSourcePreprocessor(
                 templateVariableResolver,
                 new ResourceRefPlaceholderResolver(
-                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()),
+                        dialFileRefResolver, new SkillRefResolver(new BindingTypeResolver())),
                 objectMapper);
         warnings = new ArrayList<>();
     }
@@ -206,7 +211,7 @@ class JsonataSourcePreprocessorTest {
                     preprocessor.preprocess("\"see ${{doc}}\"", Map.of("doc", fileBinding), Map.of(), warnings, schema);
 
             assertThat(result).isEqualTo("\"see " + SHORT_REF + "\"");
-            verifyNoInteractions(dialFileRefResolver);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
 
         @Test
@@ -219,7 +224,7 @@ class JsonataSourcePreprocessorTest {
                     preprocessor.preprocess("\"${{doc}}\"", Map.of("doc", fileBinding), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("\"" + SHORT_REF + "\"");
-            verifyNoInteractions(dialFileRefResolver);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
     }
 
@@ -553,7 +558,8 @@ class JsonataSourcePreprocessorTest {
 
             preprocessor.neutralize("{\"q\": ${{question}}, \"d\": \"${{doc|file}}\"}");
 
-            verifyNoInteractions(templateVariableResolver, dialFileRefResolver);
+            verifyNoInteractions(templateVariableResolver);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
     }
 
@@ -644,7 +650,7 @@ class JsonataSourcePreprocessorTest {
             String result = preprocessor.preprocess("\"${{s|skill}}\"", Map.of(), Map.of(), warnings, null);
 
             assertThat(result).isEqualTo("\"skills/b/x\"");
-            verifyNoInteractions(dialFileRefResolver);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
 
         @Test

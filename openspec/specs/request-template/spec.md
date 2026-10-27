@@ -667,7 +667,7 @@ Status: Implemented
 - **AND** a run SHALL send the DIAL ref, not the raw `@ef/...` value
 
 #### Implementation notes
-- Runtime: `FilePlaceholderDetector` (see `dial-file-ref` spec). Effective-type inference: `TemplateVariableService` (unchanged).
+- Runtime: `DialFileRefResolver.isFileReference` / `SkillRefResolver.isSkillReference` (see `dial-file-ref` spec). Effective-type inference: `TemplateVariableService` (unchanged).
 
 ### Requirement: Runtime request assembly contract
 The service SHALL assemble an HTTP request from template, bindings, and test case data according to the contract below (used by the runner implementation and the try-it-out feature).
@@ -918,7 +918,7 @@ Status: **Implemented**
 When a placeholder is a **full-value** placeholder (the entire string is exactly one `${{...}}`) and is a *skill placeholder*, and its resolved value is a `String`, the resolved value SHALL be replaced by its canonical skill reference `skills/{bucket}/{path-to-skill}` (see `dial-skill-ref`). A placeholder is a skill placeholder when it carries an explicit `|skill` hint (case-insensitive), or when it has **no** type hint and its binding's `dataField` names a schema field of type `SKILL`. An explicit hint of any other type (e.g. `|string`, `|file`) SHALL take precedence over the bound column's type. This SHALL apply identically to: structured JSON `content` bodies, URL-encoded bodies, `jsonataContent` bodies (typed placeholder values) and MCP tool `arguments`. A non-String resolved value SHALL be passed through unchanged. A malformed String value SHALL be passed through unchanged (DIAL Core rejects it). Placeholders **embedded** in a longer string SHALL be interpolated verbatim with no canonicalisation. A skill placeholder SHALL NOT trigger `DialFileRefResolver` conversion and SHALL NOT be eligible for multipart file-part resolution. The `FILE` resolution behaviour SHALL be unchanged. The decision SHALL be made in one shared component used by all four paths.
 
 Status: **Implemented**
-Implementation notes: `runner/service/ResourceRefPlaceholderResolver.java` (single seam), `FilePlaceholderDetector.isSkillReference`, called from `TemplateContentResolver.resolveObject` (JSON / URL-encoded), `JsonataSourcePreprocessor.resolveTypedValue` (JSONata) and `McpRequestResolver`. Tests: `ResourceRefPlaceholderResolverTest`, `FilePlaceholderDetectorTest`, `TemplateContentResolverTest`, `JsonataSourcePreprocessorTest`, `McpRequestResolverTest`, `SkillFieldFunctionalTests` (run).
+Implementation notes: `runner/service/ResourceRefPlaceholderResolver.java` (single seam), `SkillRefResolver.isSkillReference`, called from `TemplateContentResolver.resolveObject` (JSON / URL-encoded), `JsonataSourcePreprocessor.resolveTypedValue` (JSONata) and `McpRequestResolver`. Tests: `ResourceRefPlaceholderResolverTest`, `BindingTypeResolverTest`, `DialFileRefResolverTest`, `SkillRefResolverTest`, `TemplateContentResolverTest`, `JsonataSourcePreprocessorTest`, `McpRequestResolverTest`, `SkillFieldFunctionalTests` (run).
 
 #### Scenario: Explicit hint in JSON body
 - **WHEN** a JSON body contains a message with `"custom_content": {"skills": [{"url": "${{s|skill}}"}]}` and `s` resolves to `"skills/b/summariser/"`

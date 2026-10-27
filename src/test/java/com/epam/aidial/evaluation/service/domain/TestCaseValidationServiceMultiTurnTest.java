@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,7 +64,7 @@ class TestCaseValidationServiceMultiTurnTest {
                 templateVariableExtractor,
                 validationProperties,
                 fileRefValidator,
-                new SkillRefResolver(),
+                new SkillRefResolver(new BindingTypeResolver()),
                 props,
                 new TestCaseFieldScopeResolver(),
                 new TestCaseDataScopeResolver(new TestCaseFieldScopeResolver()));

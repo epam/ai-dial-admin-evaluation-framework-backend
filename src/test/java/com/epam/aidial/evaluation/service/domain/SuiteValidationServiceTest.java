@@ -31,6 +31,7 @@ import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
@@ -72,7 +73,7 @@ class SuiteValidationServiceTest {
     @BeforeEach
     void setUp() {
         templateVariableExtractor = new TemplateVariableExtractor();
-        bindingValidator = new BindingValidator(fileRefValidator, new SkillRefResolver());
+        bindingValidator = new BindingValidator(fileRefValidator, new SkillRefResolver(new BindingTypeResolver()));
         service = new SuiteValidationService(
                 templateVariableExtractor,
                 evaluationRunProperties,

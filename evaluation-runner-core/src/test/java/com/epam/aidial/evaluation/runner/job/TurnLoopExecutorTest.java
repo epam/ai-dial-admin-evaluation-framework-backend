@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolverStubs;
 import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
@@ -36,7 +37,6 @@ import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
-import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
 import com.epam.aidial.evaluation.runner.service.RequestBodyEvaluator;
@@ -49,6 +49,7 @@ import com.epam.aidial.evaluation.runner.service.ResponseColumnTypeReconciler;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
 import com.epam.aidial.evaluation.runner.service.TemplateContentResolver;
 import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.runner.util.QuietJsonService;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
@@ -109,11 +110,12 @@ class TurnLoopExecutorTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         TemplateVariableResolver templateVariableResolver = new TemplateVariableResolver();
-        DialFileRefResolver dialFileRefResolver = mock(DialFileRefResolver.class);
+        DialFileRefResolver dialFileRefResolver =
+                DialFileRefResolverStubs.withRealFileDetection(mock(DialFileRefResolver.class));
         TemplateContentResolver templateContentResolver = new TemplateContentResolver(
                 templateVariableResolver,
                 new ResourceRefPlaceholderResolver(
-                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()));
+                        dialFileRefResolver, new SkillRefResolver(new BindingTypeResolver())));
         JsonataProperties jsonataProperties = new JsonataProperties();
         jsonataProperties.setEvaluationTimeoutMs(5000L);
         jsonataProperties.setMaxRecursionDepth(500);
@@ -122,7 +124,7 @@ class TurnLoopExecutorTest {
         JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
                 templateVariableResolver,
                 new ResourceRefPlaceholderResolver(
-                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()),
+                        dialFileRefResolver, new SkillRefResolver(new BindingTypeResolver())),
                 objectMapper);
         RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
                 templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);

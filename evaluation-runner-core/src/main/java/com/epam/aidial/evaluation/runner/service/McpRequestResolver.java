@@ -135,11 +135,11 @@ public class McpRequestResolver {
             final InputBindingDto binding = bindingByVar.get(varName);
             Object resolved = resolveVariable(varName, bindingByVar, data);
             if (resolved != null) {
-                return resolveResourceRef(resolved, typeHint, binding, testCaseSchema);
+                return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
             }
             if (defaultValue != null) {
                 Object parsedDefault = parseDefaultValue(defaultValue);
-                return resolveResourceRef(parsedDefault, typeHint, binding, testCaseSchema);
+                return resourceRefPlaceholderResolver.resolve(parsedDefault, typeHint, binding, testCaseSchema);
             }
             // Variable not found and no default — add REQUIRED warning
             warnings.add(ValidationWarningDto.builder()
@@ -177,16 +177,6 @@ public class McpRequestResolver {
         }
         matcher.appendTail(result);
         return result.toString();
-    }
-
-    /**
-     * Converts a resolved value when the placeholder is a FILE reference (short-format reference to a DIAL API
-     * path) or a SKILL reference (canonical {@code skills/<bucket>/<path>}) and the value is a String; see
-     * {@link ResourceRefPlaceholderResolver}.
-     */
-    private Object resolveResourceRef(
-            Object resolved, String typeHint, InputBindingDto binding, List<FieldDefinitionDto> testCaseSchema) {
-        return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
     }
 
     /**

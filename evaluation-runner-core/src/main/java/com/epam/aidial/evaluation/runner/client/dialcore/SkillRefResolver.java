@@ -1,7 +1,13 @@
 package com.epam.aidial.evaluation.runner.client.dialcore;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
+import java.util.List;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,11 +24,30 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @LogExecution
+@RequiredArgsConstructor
 public class SkillRefResolver {
 
     private static final String SKILLS_PREFIX = "skills/";
     private static final String SEGMENT_SEPARATOR = "/";
     private static final int MIN_SEGMENTS = 2;
+
+    private final BindingTypeResolver bindingTypeResolver;
+
+    /**
+     * Returns whether a full-value placeholder with the given type hint and binding is a SKILL reference whose
+     * resolved {@code String} value must be canonicalised with {@link #toCanonicalRef(String)}.
+     *
+     * <p>Same rule shape as {@code DialFileRefResolver#isFileReference}: an explicit type hint decides
+     * ({@code skill}, case-insensitive, is SKILL; any other hint is not); with no hint the placeholder is SKILL
+     * iff its binding's {@code dataField} names a schema field of type {@link SchemaFieldType#SKILL}.
+     *
+     * @param typeHint raw type hint from the placeholder ({@code null} when absent)
+     * @param binding  the placeholder variable's binding, nullable
+     * @param schema   test case schema, nullable
+     */
+    public boolean isSkillReference(String typeHint, InputBindingDto binding, List<FieldDefinitionDto> schema) {
+        return bindingTypeResolver.isOfType(SchemaFieldType.SKILL, typeHint, binding, schema);
+    }
 
     /**
      * Checks that a value is a well-formed skill reference.

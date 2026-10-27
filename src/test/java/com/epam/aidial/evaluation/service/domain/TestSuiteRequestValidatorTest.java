@@ -25,11 +25,11 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
-import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
 import com.epam.aidial.evaluation.runner.service.ResourceRefPlaceholderResolver;
 import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
@@ -61,7 +61,7 @@ class TestSuiteRequestValidatorTest {
         JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
                 mock(TemplateVariableResolver.class),
                 new ResourceRefPlaceholderResolver(
-                        mock(DialFileRefResolver.class), new SkillRefResolver(), new FilePlaceholderDetector()),
+                        mock(DialFileRefResolver.class), new SkillRefResolver(new BindingTypeResolver())),
                 new ObjectMapper());
         JsonbMapper jsonbMapper = new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
         validator = new TestSuiteRequestValidator(
@@ -602,7 +602,7 @@ class TestSuiteRequestValidatorTest {
             JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
                     mock(TemplateVariableResolver.class),
                     new ResourceRefPlaceholderResolver(
-                            mock(DialFileRefResolver.class), new SkillRefResolver(), new FilePlaceholderDetector()),
+                            mock(DialFileRefResolver.class), new SkillRefResolver(new BindingTypeResolver())),
                     new ObjectMapper());
             JsonbMapper jsonbMapper = new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
             return new TestSuiteRequestValidator(

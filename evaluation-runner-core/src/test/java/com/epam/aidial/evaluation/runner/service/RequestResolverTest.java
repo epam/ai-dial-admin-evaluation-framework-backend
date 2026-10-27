@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolverStubs;
 import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
@@ -28,6 +30,7 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedUrlEncodedBodyDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.UrlEncodedFormRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,10 +68,11 @@ class RequestResolverTest {
 
     @BeforeEach
     void setUp() {
+        DialFileRefResolverStubs.withRealFileDetection(dialFileRefResolver);
         TemplateContentResolver templateContentResolver = new TemplateContentResolver(
                 templateVariableResolver,
                 new ResourceRefPlaceholderResolver(
-                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()));
+                        dialFileRefResolver, new SkillRefResolver(new BindingTypeResolver())));
         ObjectMapper objectMapper = new ObjectMapper();
         JsonataProperties jsonataProperties = new JsonataProperties();
         jsonataProperties.setEvaluationTimeoutMs(5000L);
@@ -78,7 +82,7 @@ class RequestResolverTest {
         JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
                 templateVariableResolver,
                 new ResourceRefPlaceholderResolver(
-                        dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector()),
+                        dialFileRefResolver, new SkillRefResolver(new BindingTypeResolver())),
                 objectMapper);
         RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
                 templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
@@ -559,7 +563,7 @@ class RequestResolverTest {
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("title", "plain");
-            verifyNoInteractions(dialFileRefResolver);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
 
         @Test
@@ -575,7 +579,7 @@ class RequestResolverTest {
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("message", "see " + SHORT_REF);
-            verifyNoInteractions(dialFileRefResolver);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
 
         @Test
@@ -591,7 +595,7 @@ class RequestResolverTest {
 
             var jsonBody = (ResolvedJsonBodyDto) result.getBody();
             assertThat(jsonBody.getContent()).containsEntry("document", SHORT_REF);
-            verifyNoInteractions(dialFileRefResolver);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
 
         @Test
@@ -607,7 +611,7 @@ class RequestResolverTest {
 
             var multipartBody = (ResolvedMultipartBodyDto) result.getBody();
             assertThat(multipartBody.getParts().get(0).getResolvedValue()).isEqualTo(SHORT_REF);
-            verifyNoInteractions(dialFileRefResolver);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
 
         @Test
@@ -645,7 +649,7 @@ class RequestResolverTest {
 
             var urlEncodedBody = (ResolvedUrlEncodedBodyDto) result.getBody();
             assertThat(urlEncodedBody.getEntries().get(0).getValue()).isEqualTo(SHORT_REF);
-            verifyNoInteractions(dialFileRefResolver);
+            verify(dialFileRefResolver, never()).resolveToDialRef(any());
         }
 
         private RequestTemplateDto multipartTemplate(FormPartType partType) {

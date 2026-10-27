@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.runner.service.FilePlaceholderDetector;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 
 class TryItOutVariableBindingsTest {
 
-    private final TryItOutVariableBindings bindings = new TryItOutVariableBindings(new FilePlaceholderDetector());
+    private final TryItOutVariableBindings bindings = new TryItOutVariableBindings(new BindingTypeResolver());
 
     @Test
     @DisplayName("Every index 0..requestCount-1 is present, in order")

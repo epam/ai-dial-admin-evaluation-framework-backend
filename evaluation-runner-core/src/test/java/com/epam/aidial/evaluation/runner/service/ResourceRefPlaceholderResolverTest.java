@@ -1,14 +1,18 @@
 package com.epam.aidial.evaluation.runner.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolverStubs;
 import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,8 +46,9 @@ class ResourceRefPlaceholderResolverTest {
 
     @BeforeEach
     void setUp() {
+        DialFileRefResolverStubs.withRealFileDetection(dialFileRefResolver);
         resolver = new ResourceRefPlaceholderResolver(
-                dialFileRefResolver, new SkillRefResolver(), new FilePlaceholderDetector());
+                dialFileRefResolver, new SkillRefResolver(new BindingTypeResolver()));
     }
 
     private static InputBindingDto binding(String dataField) {
@@ -79,7 +84,7 @@ class ResourceRefPlaceholderResolverTest {
         Object result = resolver.resolve(" skills/b/x/ ", "skill", null, null);
 
         assertThat(result).isEqualTo("skills/b/x");
-        verifyNoInteractions(dialFileRefResolver);
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
     }
 
     @Test
@@ -88,7 +93,7 @@ class ResourceRefPlaceholderResolverTest {
         Object result = resolver.resolve("skills/b/x/", null, binding("skill"), SCHEMA);
 
         assertThat(result).isEqualTo("skills/b/x");
-        verifyNoInteractions(dialFileRefResolver);
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
     }
 
     @Test
@@ -98,7 +103,7 @@ class ResourceRefPlaceholderResolverTest {
                 .isEqualTo("skills/b/x/");
         assertThat(resolver.resolve("skills/b/x/", "string", binding("skill"), SCHEMA))
                 .isEqualTo("skills/b/x/");
-        verifyNoInteractions(dialFileRefResolver);
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
     }
 
     @Test
@@ -107,7 +112,7 @@ class ResourceRefPlaceholderResolverTest {
         assertThat(resolver.resolve(5, "skill", null, null)).isEqualTo(5);
         assertThat(resolver.resolve(5, "file", null, null)).isEqualTo(5);
         assertThat(resolver.resolve(null, "skill", null, null)).isNull();
-        verifyNoInteractions(dialFileRefResolver);
+        verify(dialFileRefResolver, never()).resolveToDialRef(any());
     }
 
     @Test

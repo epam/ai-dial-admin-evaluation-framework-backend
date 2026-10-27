@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import java.util.List;
 import java.util.Map;
@@ -46,7 +47,7 @@ class TestCaseValidationServiceTypeTest {
                 templateVariableExtractor,
                 validationProperties,
                 fileRefValidator,
-                new SkillRefResolver(),
+                new SkillRefResolver(new BindingTypeResolver()),
                 testCaseProperties,
                 new TestCaseFieldScopeResolver(),
                 new TestCaseDataScopeResolver(new TestCaseFieldScopeResolver()));

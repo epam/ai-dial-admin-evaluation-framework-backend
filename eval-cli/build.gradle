@@ -106,11 +106,17 @@ dependencies {
     annotationProcessor "org.projectlombok:lombok:1.18.48"
 
     constraints {
+        implementation ('com.google.guava:guava:33.7.2-jre') {
+            because("CVE-2026-102554: CompactHashMap/CompactHashSet/MapMakerInternalMap deserialization uncontrolled memory allocation")
+        }
         checkstyle ('org.apache.commons:commons-lang3:3.21.0') {
             because("CVE-2025-48924: uncontrolled recursion in ClassUtils.getClass on long inputs")
         }
         checkstyle ('org.codehaus.plexus:plexus-utils:3.6.1') {
             because("CVE-2025-67030: directory traversal vulnerability in extractFile method")
+        }
+        checkstyle ('com.google.guava:guava:33.7.2-jre') {
+            because("CVE-2026-102554: CompactHashMap/CompactHashSet/MapMakerInternalMap deserialization uncontrolled memory allocation")
         }
     }
 

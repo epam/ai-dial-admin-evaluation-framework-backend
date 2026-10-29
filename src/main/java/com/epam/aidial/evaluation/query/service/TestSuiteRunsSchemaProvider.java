@@ -54,6 +54,7 @@ public class TestSuiteRunsSchemaProvider implements QueryableEntitySchemaProvide
             }
         }
         schema.add(new QuerySchemaFieldDto(METRIC_NAMES_FIELD, QueryFieldType.ARRAY, METRIC_NAMES_SOURCE));
+        schema.add(new QuerySchemaFieldDto("overall_score_threshold", QueryFieldType.DECIMAL, SUITE_SNAPSHOT_COLUMN));
         this.baseSchema = List.copyOf(schema);
     }
 

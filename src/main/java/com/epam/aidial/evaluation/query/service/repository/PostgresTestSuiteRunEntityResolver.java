@@ -107,6 +107,9 @@ public class PostgresTestSuiteRunEntityResolver implements StructuredQueryEntity
                 .as(DSL.name(SUITE_TYPE_FIELD)));
         projection.addAll(buildRefFields(jsonPathAccessor));
         projection.add(buildMetricNamesField());
+        projection.add(jsonPathAccessor
+                .jsonbAtAsNumeric(TEST_SUITE_RUNS.SUITE_SNAPSHOT, DSL.val("overallScoreThreshold"))
+                .as(DSL.name("overall_score_threshold")));
         return DSL.select(projection).from(TEST_SUITE_RUNS).asTable(TABLE_ALIAS);
     }
 

@@ -7,6 +7,8 @@ import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.M
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.NUMBER_OF_RUNS_CONFIG_KEY;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.NUMBER_OF_RUNS_FIELD;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.REF_DESCRIPTORS;
+import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.SCORE_THRESHOLD_FIELD;
+import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.SCORE_THRESHOLD_SNAPSHOT_KEY;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.SUITE_TYPE_FIELD;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.SUITE_TYPE_SNAPSHOT_KEY;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.subField;
@@ -108,8 +110,8 @@ public class PostgresTestSuiteRunEntityResolver implements StructuredQueryEntity
         projection.addAll(buildRefFields(jsonPathAccessor));
         projection.add(buildMetricNamesField());
         projection.add(jsonPathAccessor
-                .jsonbAtAsNumeric(TEST_SUITE_RUNS.SUITE_SNAPSHOT, DSL.val("overallScoreThreshold"))
-                .as(DSL.name("overall_score_threshold")));
+                .jsonbAtAsNumeric(TEST_SUITE_RUNS.SUITE_SNAPSHOT, DSL.val(SCORE_THRESHOLD_SNAPSHOT_KEY))
+                .as(DSL.name(SCORE_THRESHOLD_FIELD)));
         return DSL.select(projection).from(TEST_SUITE_RUNS).asTable(TABLE_ALIAS);
     }
 
@@ -174,6 +176,11 @@ public class PostgresTestSuiteRunEntityResolver implements StructuredQueryEntity
         bindings.put(
                 METRIC_NAMES_FIELD,
                 new QueryFieldBinding(METRIC_NAMES_FIELD, requireField(tsr, METRIC_NAMES_FIELD), QueryFieldType.ARRAY));
+
+        bindings.put(
+                SCORE_THRESHOLD_FIELD,
+                new QueryFieldBinding(
+                        SCORE_THRESHOLD_FIELD, requireField(tsr, SCORE_THRESHOLD_FIELD), QueryFieldType.DECIMAL));
 
         return Map.copyOf(bindings);
     }

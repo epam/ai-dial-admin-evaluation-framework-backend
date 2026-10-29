@@ -47,6 +47,7 @@ The `test_suite_runs` entity SHALL expose exactly the following flat **queryable
 | `mcp_deployment_ref::type` | `string` | `suite_snapshot` | |
 | `mcp_deployment_ref::transport` | `string` | `suite_snapshot` | |
 | `metric_names` | `array` | `run_metric_snapshots` | see "Latest-computation metric names" |
+| `overall_score_threshold` | `decimal` | `suite_snapshot` | `(suite_snapshot ->> 'overallScoreThreshold')::numeric`; nullable, snapshot-only |
 
 The columns `suite_snapshot`, `run_config` and `error_details` SHALL NOT be exposed as fields, SHALL NOT be accepted in `filter`/`select`/`sort`/`group_by`, and SHALL NOT be part of the row projection when `select` is empty — this holds for `run_config` even though `number_of_runs` is derived from it. The entity SHALL carry no **queryable** field that is derived outside the database (e.g. the REST listing's `grafanaExploreUrl`). Extension-derived result keys are not queryable fields and are governed by `query-result-page-extension`.
 Status: **Implemented**
@@ -80,6 +81,32 @@ Status: **Implemented**
 #### Scenario: Missing configuration key yields null
 - **WHEN** a run's `run_config` does not contain `numberOfRuns`
 - **THEN** `number_of_runs` is null for that run and the query succeeds
+
+### Requirement: Overall score threshold is derived from the run's own snapshot only
+`overall_score_threshold` SHALL be read in-database from the run's `suite_snapshot` key `overallScoreThreshold` as a flat `decimal` field. The field SHALL be accepted in `select`, `filter`, `sort` and `group_by`, and included in the row projection when `select` is empty. Fractional values SHALL NOT be rounded to integers. The system SHALL NOT fall back to the current `test_suites` row or substitute a default threshold.
+
+A null snapshot, missing key or explicit JSON null SHALL yield null without failing the query. A non-numeric stored value SHALL fail the query rather than silently yield null. The `suite_snapshot` column itself SHALL remain non-exposed. Unlike the extension-only `overall_score_value`, this threshold is a queryable field resolved on the meta datasource before paging.
+Status: **Implemented**
+
+#### Scenario: Fractional and boundary thresholds are preserved
+- **WHEN** runs with snapshot thresholds `0`, `0.75` and `1` are selected with `overall_score_threshold`
+- **THEN** their returned thresholds are numerically equal to `0`, `0.75` and `1`, respectively
+
+#### Scenario: Snapshot threshold survives a later suite edit
+- **WHEN** a run's snapshot captured threshold `0.75` and the suite's threshold is later changed to `0.9`
+- **THEN** selecting `overall_score_threshold` for that run still returns `0.75`
+
+#### Scenario: Missing snapshot threshold yields null without fallback
+- **WHEN** a run has a null snapshot, a snapshot without `overallScoreThreshold`, or an explicit JSON null at that key
+- **THEN** its `overall_score_threshold` is null and the query succeeds, regardless of the current suite's threshold
+
+#### Scenario: Threshold is filterable, sortable and groupable as a decimal
+- **WHEN** runs have snapshot thresholds `0.25`, `0.75`, `0.75` and `1`, and an aggregate query filters thresholds greater than `0.5`, groups by `overall_score_threshold`, selects the threshold and `count`, and sorts by threshold ascending
+- **THEN** the response contains threshold `0.75` with count `2`, followed by threshold `1` with count `1`
+
+#### Scenario: Invalid stored threshold fails fast
+- **WHEN** a selected run's snapshot contains a non-numeric `overallScoreThreshold` value
+- **THEN** the query fails rather than returning a null or default threshold
 
 ### Requirement: Deployment reference fields come from the run's own snapshot only
 `suite_type`, `deployment_ref::*`, `routes_ref::name` and `mcp_deployment_ref::*` SHALL be read from the run's `suite_snapshot` — the configuration the run actually executed against — and SHALL NOT fall back to the current `test_suites` row. A run whose `suite_snapshot` is null (legacy run, or a run that has not reached the snapshot phase) SHALL yield null for all of these fields. A `DEPLOYMENT` run SHALL yield nulls for `mcp_deployment_ref::*` and `routes_ref::name`, an `MCP` run SHALL yield nulls for `deployment_ref::*` and `routes_ref::name`, and a `ROUTE` run SHALL yield nulls for `deployment_ref::*` and `mcp_deployment_ref::*`.
@@ -276,8 +303,9 @@ Status: **Implemented**
 - `TestSuiteRunQueryFields` registers the `routes_ref` descriptor over snapshot key `routesRef` between deployment and MCP descriptors; `PostgresTestSuiteRunEntityResolver` and `TestSuiteRunsSchemaProvider` consume that vocabulary.
 - Entity resolver (derived table `tsr`, `run_config` scalar extraction, correlated `metric_names` scalar subquery): `src/main/java/com/epam/aidial/evaluation/query/service/repository/PostgresTestSuiteRunEntityResolver.java`
 - Base schema provider: `src/main/java/com/epam/aidial/evaluation/query/service/TestSuiteRunsSchemaProvider.java`
-- Shared field vocabulary (entity name, excluded columns, ref descriptors, `number_of_runs`, `metric_names`): `src/main/java/com/epam/aidial/evaluation/query/service/TestSuiteRunQueryFields.java`
-- JSONB scalar extraction SPI (`jsonbAtAsInteger`): `src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/json/JsonPathAccessor.java` / `PostgresJsonPathAccessor.java`
+- Shared field vocabulary (entity name, excluded columns, ref descriptors, `number_of_runs`, `metric_names`, `overall_score_threshold` and its snapshot key): `src/main/java/com/epam/aidial/evaluation/query/service/TestSuiteRunQueryFields.java`
+- JSONB scalar extraction SPI (`jsonbAtAsInteger`, one-/two-key `jsonbAtAsNumeric`): `src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/json/JsonPathAccessor.java` / `PostgresJsonPathAccessor.java`
+- Unit coverage for threshold schema/type, projection/binding parity and parameterized numeric SQL extraction: `TestSuiteRunsSchemaProviderTest`, `PostgresTestSuiteRunEntityResolverTest`, `PostgresJsonPathAccessorTest`. Threshold value/null/history behavior requires PostgreSQL functional coverage.
 - Composite index serving the latest-computation lookup: `src/main/resources/db/migration/meta/POSTGRES/V1.34__ReplaceRunMetricSnapshotsRunIndex.sql`
 - Functional coverage: `src/test/java/com/epam/aidial/evaluation/functional/tests/TestSuiteRunStructuredQueryFunctionalTests.java` (nested `TestSuiteRunStructuredQueryTests` in `PostgresFunctionalTests`), plus `QuerySchemaDiscoveryFunctionalTests` and `StructuredQueryExecuteFunctionalTests`
 - Pattern doc with EXPLAIN evidence: `docs/patterns/test-suite-runs-query-entity.md`

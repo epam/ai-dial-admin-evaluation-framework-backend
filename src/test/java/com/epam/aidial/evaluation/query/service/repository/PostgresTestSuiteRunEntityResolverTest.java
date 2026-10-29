@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields;
 import com.epam.aidial.evaluation.query.service.dto.QueryFieldType;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -44,7 +45,8 @@ class PostgresTestSuiteRunEntityResolverTest {
             "mcp_deployment_ref::name",
             "mcp_deployment_ref::type",
             "mcp_deployment_ref::transport",
-            "metric_names");
+            "metric_names",
+            "overall_score_threshold");
 
     private final PostgresTestSuiteRunEntityResolver resolver = new PostgresTestSuiteRunEntityResolver(
             mock(DSLContext.class), new JooqTableSchemaResolver(), new PostgresJsonPathAccessor());
@@ -56,7 +58,7 @@ class PostgresTestSuiteRunEntityResolverTest {
     }
 
     @Test
-    @DisplayName("bindings contain exactly the 22 spec'd field names and none of the excluded columns")
+    @DisplayName("bindings contain exactly the 23 spec'd field names and none of the excluded columns")
     void shouldExposeExactlyTheSpecFieldSet() {
         final Map<String, QueryFieldBinding> bindings = resolver.bindings(mock(StructuredQuery.class));
 
@@ -113,15 +115,52 @@ class PostgresTestSuiteRunEntityResolverTest {
         assertThat(bindings.get("mcp_deployment_ref::type").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("mcp_deployment_ref::transport").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("metric_names").type()).isEqualTo(QueryFieldType.ARRAY);
+        assertThat(bindings.get("overall_score_threshold").type()).isEqualTo(QueryFieldType.DECIMAL);
     }
 
     @Test
-    @DisplayName("derived table projects exactly the 22 spec'd field names")
+    @DisplayName("derived table projects exactly the 23 spec'd field names")
     void shouldProjectExactlyTheSpecFieldSet() {
         final List<String> fieldNames =
                 List.of(resolver.table().fields()).stream().map(Field::getName).toList();
 
         assertThat(fieldNames).containsExactlyInAnyOrderElementsOf(EXPECTED_FIELDS);
+    }
+
+    @Test
+    @DisplayName("derived-table field names are in parity with the resolver's binding keys")
+    void shouldBindExactlyTheProjectedFields() {
+        final Map<String, QueryFieldBinding> bindings = resolver.bindings(mock(StructuredQuery.class));
+
+        assertThat(List.of(resolver.table().fields()))
+                .extracting(Field::getName)
+                .containsExactlyInAnyOrderElementsOf(bindings.keySet());
+    }
+
+    @Test
+    @DisplayName("overall_score_threshold binds the derived numeric column with DECIMAL type")
+    void shouldBindOverallScoreThresholdAsDecimal() {
+        final QueryFieldBinding binding =
+                resolver.bindings(mock(StructuredQuery.class)).get("overall_score_threshold");
+
+        assertThat(binding).isNotNull();
+        assertThat(binding.type()).isEqualTo(QueryFieldType.DECIMAL);
+        assertThat(binding.field()).isEqualTo(resolver.table().field("overall_score_threshold"));
+        assertThat(binding.field().getType()).isEqualTo(BigDecimal.class);
+    }
+
+    @Test
+    @DisplayName(
+            "overall_score_threshold SQL extracts and casts the run's snapshot value without joining current suites")
+    void shouldExtractOverallScoreThresholdFromSnapshotOnly() {
+        final DSLContext postgres = DSL.using(SQLDialect.POSTGRES);
+        final String sql = postgres.renderInlined(postgres.selectFrom(resolver.table()));
+
+        assertThat(sql)
+                .contains("\"suite_snapshot\"->>'overallScoreThreshold'")
+                .contains("as numeric")
+                .contains("as \"overall_score_threshold\"")
+                .doesNotContain("\"test_suites\"");
     }
 
     @Test

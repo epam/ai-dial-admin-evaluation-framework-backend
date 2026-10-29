@@ -468,7 +468,8 @@ public class PostgresFunctionalTests extends FunctionalTests {
             properties = {
                 "app.grafana.base-url=http://grafana:3000",
                 "otel.sdk.disabled=false",
-                "otel.traces.exporter=none",
+                // OTel 1.67+ returns a no-op tracer without a span processor; use a local exporter.
+                "otel.traces.exporter=console",
                 "otel.metrics.exporter=none",
                 "otel.logs.exporter=none"
             })

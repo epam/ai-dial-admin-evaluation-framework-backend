@@ -166,8 +166,9 @@ dependencies {
     // Metrics & Monitoring
     implementation 'io.micrometer:micrometer-registry-prometheus'
     implementation 'io.micrometer:context-propagation'
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.32.0')
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:2.32.0-alpha')
+    // CVE-2026-118259: this BOM aligns instrumentation with OTel API/SDK 1.67.0 and imports
+    // both stable BOMs. implementation also covers tests, so no separate overrides are needed.
+    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:2.33.0-alpha')
     implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
     implementation 'io.opentelemetry.instrumentation:opentelemetry-log4j-appender-2.17'
     runtimeOnly 'io.grpc:grpc-netty-shaded'  // gRPC transport for OTEL_EXPORTER_OTLP_PROTOCOL=grpc
@@ -231,10 +232,6 @@ dependencies {
         implementation ('com.google.guava:guava:33.7.2-jre') {
             because("CVE-2026-102554: CompactHashMap/CompactHashSet/MapMakerInternalMap deserialization uncontrolled memory allocation")
         }
-        implementation("io.opentelemetry:opentelemetry-api:1.67.0") {
-            because("CVE-2026-118259")
-        }
-
         checkstyle ('org.apache.commons:commons-lang3:3.21.0') {
             because("previous versions have vulnerabilities")
         }

@@ -7,6 +7,7 @@ import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.M
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.NUMBER_OF_RUNS_FIELD;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.REF_DESCRIPTORS;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.RUN_CONFIG_COLUMN;
+import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.SCORE_THRESHOLD_FIELD;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.SUITE_SNAPSHOT_COLUMN;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.SUITE_TYPE_FIELD;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.subField;
@@ -54,6 +55,7 @@ public class TestSuiteRunsSchemaProvider implements QueryableEntitySchemaProvide
             }
         }
         schema.add(new QuerySchemaFieldDto(METRIC_NAMES_FIELD, QueryFieldType.ARRAY, METRIC_NAMES_SOURCE));
+        schema.add(new QuerySchemaFieldDto(SCORE_THRESHOLD_FIELD, QueryFieldType.DECIMAL, SUITE_SNAPSHOT_COLUMN));
         this.baseSchema = List.copyOf(schema);
     }
 

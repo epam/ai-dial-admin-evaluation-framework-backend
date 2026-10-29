@@ -95,6 +95,13 @@ class TestSuiteRunsSchemaProviderTest {
     }
 
     @Test
+    @DisplayName("base schema includes overall_score_threshold as a DECIMAL sourced from suite_snapshot")
+    void shouldIncludeOverallScoreThreshold() {
+        assertThat(provider.baseSchema())
+                .contains(new QuerySchemaFieldDto("overall_score_threshold", QueryFieldType.DECIMAL, "suite_snapshot"));
+    }
+
+    @Test
     @DisplayName("has no detailed schema, being a simple entity")
     void shouldThrowUnsupported_whenDetailedSchemaRequested() {
         assertThatThrownBy(() -> provider.detailedSchema(Map.of("test_suite_id", "any-id")))

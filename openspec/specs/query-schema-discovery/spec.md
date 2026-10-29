@@ -80,6 +80,7 @@ sourced from the run's `suite_snapshot`, not from `test_suites`:
 | `mcp_deployment_ref::type` | `string` | `suite_snapshot` |
 | `mcp_deployment_ref::transport` | `string` | `suite_snapshot` |
 | `metric_names` | `array` | `run_metric_snapshots` |
+| `overall_score_threshold` | `decimal` | `suite_snapshot` |
 
 Status: **Implemented**
 
@@ -112,7 +113,13 @@ Status: **Implemented**
   `suite_type` and the nine `deployment_ref::*`/`routes_ref::name`/`mcp_deployment_ref::*` entries each typed `string`
   with source `suite_snapshot`, contains `number_of_runs` typed `integer` with source `run_config`
   (a derived scalar, which is why the `run_config` column itself stays unpublished), and contains
-  `metric_names` typed `array` with source `run_metric_snapshots`
+  `metric_names` typed `array` with source `run_metric_snapshots` and `overall_score_threshold`
+  typed `decimal` with source `suite_snapshot`
+
+#### Scenario: Snapshot threshold is advertised as a queryable decimal, not an extension key
+- **WHEN** `GET /api/v1/queries/entities/schema/test_suite_runs` is called
+- **THEN** the schema includes `overall_score_threshold` with type `decimal` and source `suite_snapshot`,
+  while the result-only `overall_score_value` remains absent
 
 #### Scenario: test_suite_runs base schema matches what the executor accepts
 - **WHEN** every field name returned by `GET /api/v1/queries/entities/schema/test_suite_runs` is used

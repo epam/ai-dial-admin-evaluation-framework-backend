@@ -63,6 +63,7 @@ repositories {
 }
 
 dependencies {
+    implementation platform("io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:${open_tel_version}")
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
     implementation platform('com.fasterxml.jackson:jackson-bom:2.22.4')
     implementation platform('tools.jackson:jackson-bom:3.2.4')
@@ -80,6 +81,8 @@ dependencies {
     implementation "org.apache.logging.log4j:log4j-core:${log4j_version}"
     implementation "org.apache.logging.log4j:log4j-jul:${log4j_version}"
     implementation 'org.slf4j:jcl-over-slf4j'
+
+    implementation 'io.opentelemetry:opentelemetry-api'
 
     // Bean Validation (jakarta.validation-api + Hibernate Validator)
     implementation 'jakarta.validation:jakarta.validation-api'
@@ -121,6 +124,7 @@ dependencies {
     }
 
     // Testing
+    testImplementation 'io.opentelemetry:opentelemetry-sdk-testing'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

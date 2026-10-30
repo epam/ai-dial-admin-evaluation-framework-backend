@@ -1,8 +1,10 @@
 package com.epam.aidial.evaluation.client.dialcore;
 
 import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
+import com.epam.aidial.evaluation.constants.SecurityConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
+import com.epam.aidial.evaluation.utils.CorrelationIdContext;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -60,6 +62,12 @@ public class DialRouteTriggerClient {
                     .post()
                     .uri(routeUrl)
                     .header(jwtCredential.headerName(), jwtCredential.headerValue())
+                    .headers(headers -> {
+                        final String correlationId = CorrelationIdContext.currentId();
+                        if (correlationId != null) {
+                            headers.set(SecurityConstants.CORRELATION_ID_HEADER_NAME, correlationId);
+                        }
+                    })
                     .retrieve()
                     .toEntity(InputStream.class);
         } catch (RestClientResponseException e) {

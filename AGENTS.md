@@ -103,6 +103,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | Pattern | Why it matters |
 |---------|----------------|
 | [TokenPropagationHelper](docs/patterns/token-propagation.md) | Propagate the caller's credential (bearer JWT or API key, with kind) across `CompletableFuture.supplyAsync` and other pooled-thread boundaries |
+| [Evaluation tracing](docs/patterns/evaluation-tracing.md) | Explicit native OTel job-context capture; run-owned `EvaluationTraceSession` links independent case/repetition roots to orchestration and parents Phase 2 metrics; never persist span contexts |
 | [TransactionTimestampContext + Aspect](docs/patterns/transaction-timestamp.md) | One shared `createdAt`/`updatedAt` per `@Transactional`; explicit-param repo signatures for `TransactionTemplate` callers |
 | [Dual Datasource (Meta + Analytics)](docs/patterns/dual-datasource.md) | Required `@Qualifier`s for DSLContext / tx manager / conditionals — getting these wrong silently uses the wrong DB; also the meta-after-analytics Flyway ordering and the SQL-only-DDL rule for Java migrations |
 | [CursorCodec & Keyset Pagination](docs/patterns/cursor-pagination.md) | Analytics layer; `LIMIT size+1` pattern + opaque Base64 cursor |

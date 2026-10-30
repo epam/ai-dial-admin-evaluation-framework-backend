@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -16,8 +17,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.configuration.AsyncConfiguration;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
+import com.epam.aidial.evaluation.constants.SecurityConstants;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
+import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
@@ -36,6 +40,8 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.job.EvaluationTraceSession;
+import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
 import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
@@ -43,29 +49,51 @@ import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
+import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotDatasetMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
+import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.ObjectMapper;
@@ -128,9 +156,17 @@ class TestSuiteEvaluationJobTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private TestSuiteEvaluationJob job;
+    private InMemorySpanExporter exporter;
+    private OpenTelemetrySdk telemetry;
 
     @BeforeEach
     void setUp() {
+        exporter = InMemorySpanExporter.create();
+        telemetry = OpenTelemetrySdk.builder()
+                .setTracerProvider(SdkTracerProvider.builder()
+                        .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+                        .build())
+                .build();
         job = new TestSuiteEvaluationJob(
                 repository,
                 testSuiteRepository,
@@ -149,7 +185,108 @@ class TestSuiteEvaluationJobTest {
                 clock,
                 metaTransactionManager,
                 taskExecutor,
-                registry);
+                registry,
+                telemetry);
+    }
+
+    @AfterEach
+    void closeTelemetry() {
+        telemetry.close();
+        MDC.remove(SecurityConstants.CORRELATION_ID_MDC_KEY);
+    }
+
+    private SpanData runSpan() {
+        return exporter.getFinishedSpanItems().stream()
+                .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_RUN))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName(
+            "dispatch preserves native span context, baggage and correlation ID on the configured virtual/platform executor")
+    void dispatchPropagatesNativeContext(boolean virtual) throws Exception {
+        final UUID runId = UUID.randomUUID();
+        final RunHandle handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
+        handle.cancel();
+        when(registry.registerIfAbsent(runId)).thenReturn(Optional.of(handle));
+        final CompletableFuture<SpanContext> observedSpan = new CompletableFuture<>();
+        final CompletableFuture<String> observedBaggage = new CompletableFuture<>();
+        final CompletableFuture<String> observedCorrelation = new CompletableFuture<>();
+        doAnswer(inv -> {
+                    observedSpan.complete(Span.current().getSpanContext());
+                    observedBaggage.complete(Baggage.current().getEntryValue("probe"));
+                    observedCorrelation.complete(MDC.get(SecurityConstants.CORRELATION_ID_MDC_KEY));
+                    return 1;
+                })
+                .when(repository)
+                .updateToCancelled(eq(runId), anyLong(), anyLong());
+        final Span parent = telemetry.getTracer("test").spanBuilder("incoming").startSpan();
+        final Context parentContext = Context.current()
+                .with(parent)
+                .with(Baggage.builder().put("probe", "retained").build());
+        try (SimpleAsyncTaskExecutor executor = (SimpleAsyncTaskExecutor)
+                new AsyncConfiguration().testSuiteRunExecutor(new RunExecutorFactory(virtual))) {
+            ReflectionTestUtils.setField(job, "taskExecutor", executor);
+            MDC.put(SecurityConstants.CORRELATION_ID_MDC_KEY, "originalCorrelation");
+            try (Scope ignored = parentContext.makeCurrent()) {
+                job.dispatch(runId, null, true);
+            }
+            assertThat(observedSpan.get(5, TimeUnit.SECONDS).getTraceId())
+                    .isEqualTo(parent.getSpanContext().getTraceId());
+            assertThat(observedBaggage.get(5, TimeUnit.SECONDS)).isEqualTo("retained");
+            assertThat(observedCorrelation.get(5, TimeUnit.SECONDS)).isEqualTo("originalCorrelation");
+            await().atMost(5, TimeUnit.SECONDS)
+                    .untilAsserted(
+                            () -> assertThat(exporter.getFinishedSpanItems()).hasSize(1));
+            assertThat(runSpan().getParentSpanId())
+                    .isEqualTo(parent.getSpanContext().getSpanId());
+            assertThat(runSpan().getAttributes().get(AttributeKey.stringKey(TracingConstants.EVAL_RUN_ID)))
+                    .isEqualTo(runId.toString());
+        } finally {
+            parent.end();
+        }
+    }
+
+    @Test
+    @DisplayName("dispatch restores the previous native context and correlation ID when the submitted job throws")
+    void dispatchRestoresContextWhenJobThrows() {
+        final UUID runId = UUID.randomUUID();
+        final RunHandle handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
+        handle.cancel();
+        when(registry.registerIfAbsent(runId)).thenReturn(Optional.of(handle));
+        doThrow(new IllegalStateException("terminal write failed"))
+                .when(repository)
+                .updateToCancelled(eq(runId), anyLong(), anyLong());
+        final Span original =
+                telemetry.getTracer("test").spanBuilder("original").startSpan();
+        final Span previous =
+                telemetry.getTracer("test").spanBuilder("previous").startSpan();
+        final ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
+        MDC.put(SecurityConstants.CORRELATION_ID_MDC_KEY, "originalCorrelation");
+        try (Scope ignored = Context.current()
+                .with(original)
+                .with(Baggage.builder().put("probe", "original").build())
+                .makeCurrent()) {
+            job.dispatch(runId, null, true);
+        }
+        verify(taskExecutor).execute(task.capture());
+        MDC.put(SecurityConstants.CORRELATION_ID_MDC_KEY, "previousCorrelation");
+        try (Scope ignored = Context.current()
+                .with(previous)
+                .with(Baggage.builder().put("probe", "previous").build())
+                .makeCurrent()) {
+            assertThatThrownBy(() -> task.getValue().run()).isInstanceOf(IllegalStateException.class);
+            assertThat(Span.current().getSpanContext()).isEqualTo(previous.getSpanContext());
+            assertThat(Baggage.current().getEntryValue("probe")).isEqualTo("previous");
+            assertThat(MDC.get(SecurityConstants.CORRELATION_ID_MDC_KEY)).isEqualTo("previousCorrelation");
+            assertThat(runSpan().getParentSpanId())
+                    .isEqualTo(original.getSpanContext().getSpanId());
+        } finally {
+            original.end();
+            previous.end();
+        }
     }
 
     @Nested
@@ -714,6 +851,61 @@ class TestSuiteEvaluationJobTest {
             when(evaluationRunProperties.getRetry()).thenReturn(retry);
         }
 
+        @ParameterizedTest
+        @ValueSource(strings = {"completed", "failed", "cancelled"})
+        @DisplayName(
+                "the same tracing session spans both phases and closes all roots on completed, failed and cancelled exits")
+        void sessionIsSharedAndAlwaysClosed(String outcome) {
+            stubResolvableRun();
+            stubExecutionRunProperties();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            if (outcome.equals("completed")) {
+                when(repository.updateToCompleted(eq(runId), anyLong(), anyLong()))
+                        .thenReturn(1);
+            }
+            final UUID caseId = UUID.randomUUID();
+            final AtomicReference<EvaluationTraceSession> seen = new AtomicReference<>();
+            doAnswer(inv -> {
+                        final EvaluationContext context = inv.getArgument(0);
+                        seen.set(context.getTraceSession());
+                        context.getTraceSession()
+                                .startSpan(telemetry.getTracer("test").spanBuilder("execution"), caseId, "case", 0)
+                                .end();
+                        return null;
+                    })
+                    .when(evaluationExecutor)
+                    .execute(any());
+            doAnswer(inv -> {
+                        final MetricEvaluationContext context = inv.getArgument(0);
+                        assertThat(context.getTraceSession()).isSameAs(seen.get());
+                        context.getTraceSession()
+                                .startSpan(telemetry.getTracer("test").spanBuilder("metric"), caseId, "case", 0)
+                                .end();
+                        if (outcome.equals("failed")) {
+                            throw new AnalyticsWriteException("failed", new IllegalStateException("DB"));
+                        }
+                        if (outcome.equals("cancelled")) {
+                            handle.cancel();
+                            throw new RejectedExecutionException("cancelled");
+                        }
+                        return null;
+                    })
+                    .when(metricEvaluationExecutor)
+                    .execute(any());
+            job.run(runId, null, false, handle);
+            assertThat(exporter.getFinishedSpanItems().stream()
+                            .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE))
+                            .toList())
+                    .hasSize(1);
+            assertThat(seen.get()
+                            .startSpan(telemetry.getTracer("test").spanBuilder("late"), caseId, "case", 0)
+                            .getSpanContext()
+                            .isValid())
+                    .isFalse();
+            assertThat(ReflectionTestUtils.getField(seen.get(), "roots")).isEqualTo(Map.of());
+            assertThat(handle.executor().isShutdown()).isTrue();
+        }
+
         @Test
         @DisplayName("runs Phase 2 + Phase 3 but never Phase 1, and completes the run")
         void runsPhase2And3NeverPhase1() {
@@ -735,6 +927,13 @@ class TestSuiteEvaluationJobTest {
             verify(runnableTestCaseSelector, never()).loadRunnablePage(any(), any(), anyInt(), anyInt());
             verify(repository, never()).updateNumberOfTestCases(any(), anyInt(), anyLong());
             verify(registry).remove(runId);
+
+            assertThat(runSpan().getParentSpanContext().isValid()).isFalse();
+            assertThat(runSpan().getSpanContext().isValid()).isTrue();
+            assertThat(runSpan().getAttributes().get(AttributeKey.stringKey(TracingConstants.EVAL_RUN_STATUS)))
+                    .isEqualTo("COMPLETED");
+            assertThat(runSpan().getAttributes().get(AttributeKey.stringKey(TracingConstants.EVAL_SUITE_ID)))
+                    .isEqualTo(suiteId.toString());
         }
 
         @Test
@@ -782,6 +981,9 @@ class TestSuiteEvaluationJobTest {
             verify(repository, never()).updateSuiteSnapshot(any(), any(), anyLong());
             verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
             verify(registry).remove(runId);
+            assertThat(runSpan().getAttributes().get(AttributeKey.stringKey(TracingConstants.EVAL_RUN_STATUS)))
+                    .isEqualTo("CANCELLED");
+            assertThat(runSpan().getStatus().getStatusCode()).isEqualTo(StatusCode.UNSET);
         }
 
         @Test
@@ -833,6 +1035,9 @@ class TestSuiteEvaluationJobTest {
             ArgumentCaptor<String> detailsCaptor = ArgumentCaptor.forClass(String.class);
             verify(repository).updateToFailed(eq(runId), any(), detailsCaptor.capture(), anyLong(), anyLong());
             assertThat(detailsCaptor.getValue()).contains(AnalyticsWriteException.ERROR_CODE);
+            assertThat(runSpan().getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+            assertThat(runSpan().getAttributes().get(AttributeKey.stringKey(TracingConstants.EVAL_RUN_STATUS)))
+                    .isEqualTo("FAILED");
             verify(metricScoreComputation, never()).execute(any());
             verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
         }
@@ -850,6 +1055,9 @@ class TestSuiteEvaluationJobTest {
             verify(repository).updateToFailed(eq(runId), any(), any(), anyLong(), anyLong());
             verify(sseService, times(1)).notifyStatusUpdate(any());
             verify(registry).remove(runId);
+            assertThat(runSpan().getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+            assertThat(runSpan().getAttributes().get(AttributeKey.stringKey(TracingConstants.EVAL_SUITE_ID)))
+                    .isEqualTo(suiteId.toString());
         }
 
         @Test
@@ -864,6 +1072,37 @@ class TestSuiteEvaluationJobTest {
 
             verify(repository).updateToFailed(eq(runId), any(), any(), anyLong(), anyLong());
             verify(sseService, never()).notifyStatusUpdate(any());
+            verify(registry).remove(runId);
+        }
+
+        @ParameterizedTest
+        @EnumSource(
+                value = RunStatus.class,
+                names = {"CANCELLED", "COMPLETED", "FAILED"})
+        @DisplayName("a rejected snapshot failure write exports the persisted terminal outcome without notifying SSE")
+        void rejectedSnapshotFailureUsesPersistedOutcome(RunStatus terminalStatus) {
+            run.setStatus(RunStatus.PENDING.name());
+            final TestSuiteRun terminal = TestSuiteRun.builder()
+                    .id(runId)
+                    .testSuiteId(suiteId)
+                    .status(terminalStatus.name())
+                    .build();
+            when(repository.findById(runId)).thenReturn(Optional.of(run)).thenReturn(Optional.of(terminal));
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.empty());
+            when(repository.updateToFailed(eq(runId), any(), any(), anyLong(), anyLong()))
+                    .thenReturn(0);
+
+            job.run(runId, null, true, handle);
+
+            assertThat(runSpan().getAttributes().get(AttributeKey.stringKey(TracingConstants.EVAL_RUN_STATUS)))
+                    .isEqualTo(terminalStatus.name());
+            assertThat(runSpan().getStatus().getStatusCode())
+                    .isEqualTo(terminalStatus == RunStatus.FAILED ? StatusCode.ERROR : StatusCode.UNSET);
+            assertThat(runSpan().getEvents()).hasSize(1);
+            verify(repository, times(2)).findById(runId);
+            verify(repository).updateToFailed(eq(runId), any(), any(), anyLong(), anyLong());
+            verify(sseService, never()).notifyStatusUpdate(any());
+            verify(metricEvaluationExecutor, never()).execute(any());
             verify(registry).remove(runId);
         }
 
@@ -901,6 +1140,7 @@ class TestSuiteEvaluationJobTest {
             ArgumentCaptor<String> detailsCaptor = ArgumentCaptor.forClass(String.class);
             verify(repository).updateToFailed(eq(runId), any(), detailsCaptor.capture(), anyLong(), anyLong());
             assertThat(detailsCaptor.getValue()).contains("UNEXPECTED_ERROR");
+            assertThat(runSpan().getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
             verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
             verify(metricEvaluationExecutor, never()).execute(any());
         }
@@ -923,6 +1163,7 @@ class TestSuiteEvaluationJobTest {
 
             verify(registry).remove(runId);
             verify(handle).close();
+            assertThat(exporter.getFinishedSpanItems()).isEmpty();
         }
     }
 }

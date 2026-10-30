@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -58,7 +59,7 @@ public class MetricEvaluationWorker {
             Semaphore providerSemaphore,
             MetricEvaluationContext context)
             throws InterruptedException {
-        Span span = openTelemetry
+        final SpanBuilder spanBuilder = openTelemetry
                 .getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME)
                 .spanBuilder(TracingConstants.SPAN_METRIC_TSMD_EVALUATE)
                 .setAttribute(TracingConstants.TSMD_NAME, tsmd.getName())
@@ -73,8 +74,11 @@ public class MetricEvaluationWorker {
                 .setAttribute(
                         TracingConstants.EVAL_SUITE_ID, context.getTestSuiteId().toString())
                 .setAttribute(TracingConstants.METRIC_DECLARATION_NAME, tsmd.getMetricDeclarationName())
-                .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION)
-                .startSpan();
+                .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION);
+        final Span span = context.getTraceSession() == null
+                ? spanBuilder.startSpan()
+                : context.getTraceSession()
+                        .startSpan(spanBuilder, result.getTestCaseId(), result.getTestCaseName(), result.getRunIndex());
 
         Baggage baggage = EvalBaggage.withMetricContext(
                 context.getTestSuiteRunId(),

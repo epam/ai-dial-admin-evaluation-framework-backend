@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
+import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
@@ -23,10 +24,12 @@ import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.job.EvaluationTraceSession;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
+import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
@@ -34,6 +37,12 @@ import com.epam.aidial.evaluation.service.domain.dto.RunErrorCategory;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotDatasetMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
+import com.epam.aidial.evaluation.utils.CorrelationIdContext;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -89,6 +98,7 @@ public class TestSuiteEvaluationJob {
     private final AsyncTaskExecutor taskExecutor;
 
     private final ActiveRunRegistry registry;
+    private final OpenTelemetry openTelemetry;
 
     /**
      * Registers a {@link RunHandle} for the run (in the caller's thread, so a cancel request arriving
@@ -101,7 +111,8 @@ public class TestSuiteEvaluationJob {
         var handleOpt = registry.registerIfAbsent(runId);
         RunHandle handle = handleOpt.orElseThrow(() -> new RunAlreadyActiveException(runId));
         try {
-            taskExecutor.execute(() -> run(runId, credential, skipDeploymentPhase, handle));
+            taskExecutor.execute(Context.current()
+                    .wrap(CorrelationIdContext.wrap(() -> run(runId, credential, skipDeploymentPhase, handle))));
         } catch (RuntimeException | Error e) {
             // Platform-mode thread exhaustion at task submission surfaces as OutOfMemoryError, not a
             // RuntimeException; without this branch it would leak the just-registered handle and strand
@@ -124,11 +135,30 @@ public class TestSuiteEvaluationJob {
      * the handle was cancelled, otherwise FAILED.
      */
     void run(UUID runId, CallerCredential credential, boolean skipDeploymentPhase, RunHandle handle) {
+        final Span span = openTelemetry
+                .getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME)
+                .spanBuilder(TracingConstants.SPAN_EVAL_RUN)
+                .setAttribute(TracingConstants.EVAL_RUN_ID, runId.toString())
+                .startSpan();
+        try (Scope ignored = span.makeCurrent()) {
+            runPhases(runId, credential, skipDeploymentPhase, handle, span);
+        } catch (RuntimeException | Error e) {
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR, "Run orchestration failed");
+            throw e;
+        } finally {
+            span.end();
+        }
+    }
+
+    private void runPhases(
+            UUID runId, CallerCredential credential, boolean skipDeploymentPhase, RunHandle handle, Span span) {
         log.info("Starting test suite run {}", runId);
         // True once a status write performed by this job actually affected a row — the terminal SSE
         // notification in finally fires only then, so a no-op status write (run already terminal via
         // a concurrent cancel) does not emit a duplicate status-update event.
         boolean statusChanged = false;
+        EvaluationTraceSession traceSession = null;
         try {
             handle.throwIfCancelled();
 
@@ -140,6 +170,7 @@ public class TestSuiteEvaluationJob {
 
             long now = clock.millis();
             if (repository.updateToRunning(runId, now, now) == 0) {
+                span.setAttribute(TracingConstants.EVAL_RUN_STATUS, RunStatus.CANCELLED.name());
                 log.info("Run {} was cancelled while PENDING; exiting without executing any phase", runId);
                 return;
             }
@@ -148,13 +179,19 @@ public class TestSuiteEvaluationJob {
 
             TestSuiteRun run =
                     repository.findById(runId).orElseThrow(() -> new IllegalStateException("Run not found: " + runId));
+            span.setAttribute(
+                    TracingConstants.EVAL_SUITE_ID, run.getTestSuiteId().toString());
             Supplier<SuiteSnapshotDto> snapshot = lazySnapshot(run);
+            traceSession =
+                    new EvaluationTraceSession(openTelemetry, runId, run.getTestSuiteId(), span.getSpanContext());
 
             if (!skipDeploymentPhase) {
                 // Inconsistent snapshot guard
                 boolean hasSnapshot = run.getSuiteSnapshot() != null;
                 boolean hasInputs = testCaseRunInputRepository.existsByRunId(runId);
                 if (hasSnapshot != hasInputs) {
+                    span.setStatus(StatusCode.ERROR, "Inconsistent snapshot state");
+                    span.setAttribute(TracingConstants.EVAL_RUN_STATUS, RunStatus.FAILED.name());
                     log.error(
                             "Inconsistent snapshot state for run {}: suite_snapshot={}, inputs={}",
                             runId,
@@ -174,14 +211,18 @@ public class TestSuiteEvaluationJob {
 
                 handle.throwIfCancelled();
                 // Phase 1: Deployment evaluation
-                EvaluationContext context = buildContext(run, snapshot.get(), handle.executor(), credential);
+                EvaluationContext context = buildContext(run, snapshot.get(), handle.executor(), credential).toBuilder()
+                        .traceSession(traceSession)
+                        .build();
                 evaluationExecutor.execute(context);
             }
 
             handle.throwIfCancelled();
             // Phase 2: Metric evaluation
             MetricEvaluationContext metricContext =
-                    buildMetricEvaluationContext(run, snapshot.get(), handle.executor());
+                    buildMetricEvaluationContext(run, snapshot.get(), handle.executor()).toBuilder()
+                            .traceSession(traceSession)
+                            .build();
             metricEvaluationExecutor.execute(metricContext);
 
             handle.throwIfCancelled();
@@ -191,6 +232,7 @@ public class TestSuiteEvaluationJob {
 
             now = clock.millis();
             if (repository.updateToCompleted(runId, now, now) == 0) {
+                span.setAttribute(TracingConstants.EVAL_RUN_STATUS, RunStatus.CANCELLED.name());
                 int affected = repository.updateToCancelled(runId, now, now);
                 statusChanged = affected > 0;
                 if (affected > 0) {
@@ -199,10 +241,14 @@ public class TestSuiteEvaluationJob {
                     log.info("Run {} was already terminal when marking it cancelled", runId);
                 }
             } else {
+                span.setAttribute(TracingConstants.EVAL_RUN_STATUS, RunStatus.COMPLETED.name());
                 statusChanged = true;
                 log.info("Run {} completed", runId);
             }
         } catch (AnalyticsWriteException e) {
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR, "Analytics batch write failed");
+            span.setAttribute(TracingConstants.EVAL_RUN_STATUS, RunStatus.FAILED.name());
             log.error("Analytics batch write failed for run {}: {}", runId, e.getMessage(), e);
             long now = clock.millis();
             String errorDetails = buildErrorDetails(
@@ -213,6 +259,7 @@ public class TestSuiteEvaluationJob {
             int affected = repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now);
             statusChanged = affected > 0;
         } catch (CancellationException | RejectedExecutionException e) {
+            span.setAttribute(TracingConstants.EVAL_RUN_STATUS, RunStatus.CANCELLED.name());
             // Clear a stray interrupt flag before the terminal write: the job thread is interrupted only
             // when SimpleAsyncTaskExecutor.close() runs at container shutdown, and an interrupted thread
             // would fail Hikari connection acquisition for this write.
@@ -226,10 +273,14 @@ public class TestSuiteEvaluationJob {
             Thread.interrupted();
             long now = clock.millis();
             if (handle.isCancelled()) {
+                span.setAttribute(TracingConstants.EVAL_RUN_STATUS, RunStatus.CANCELLED.name());
                 log.info("Run {} cancelled, suppressing failure: {}", runId, e.getMessage(), e);
                 int affected = repository.updateToCancelled(runId, now, now);
                 statusChanged = affected > 0;
             } else {
+                span.recordException(e);
+                span.setStatus(StatusCode.ERROR, "Unexpected execution failure");
+                span.setAttribute(TracingConstants.EVAL_RUN_STATUS, RunStatus.FAILED.name());
                 log.error("Run {} failed unexpectedly: {}", runId, e.getMessage(), e);
                 String errorDetails = buildErrorDetails(
                         "UNEXPECTED_ERROR",
@@ -240,7 +291,13 @@ public class TestSuiteEvaluationJob {
                 statusChanged = affected > 0;
             }
         } finally {
-            handle.close();
+            try {
+                handle.close();
+            } finally {
+                if (traceSession != null) {
+                    traceSession.close();
+                }
+            }
             // registry.remove(runId) must be the LAST statement: notifySse performs a DB read
             // (repository.findById), and the functional-test drain waits on registry.activeCount() == 0
             // before tearing down its schema, so the handle must stay registered until every DB access
@@ -277,6 +334,7 @@ public class TestSuiteEvaluationJob {
                     continue;
                 }
                 log.error("Snapshot phase failed for run {} (attempt {})", runId, attempt + 1, e);
+                Span.current().recordException(e);
                 long now = clock.millis();
                 String code = SQLSTATE_SERIALIZATION_FAILURE.equals(sqlState)
                         ? "SNAPSHOT_SERIALIZATION_CONFLICT"
@@ -284,6 +342,7 @@ public class TestSuiteEvaluationJob {
                 String errorDetails = buildErrorDetails(
                         code, RunErrorCategory.INTERNAL, "Snapshot phase failed: " + e.getMessage(), null);
                 int affected = repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now);
+                recordSnapshotFailureOutcome(runId, affected);
                 if (affected == 0) {
                     log.info("Run {} was already terminal when the snapshot phase attempted to mark it FAILED", runId);
                     return SnapshotPhaseOutcome.FAILED_NO_ROW_UPDATED;
@@ -292,6 +351,19 @@ public class TestSuiteEvaluationJob {
             }
         }
         return SnapshotPhaseOutcome.FAILED_NO_ROW_UPDATED;
+    }
+
+    private void recordSnapshotFailureOutcome(UUID runId, int affected) {
+        final String status = affected > 0
+                ? RunStatus.FAILED.name()
+                : repository.findById(runId).map(TestSuiteRun::getStatus).orElse(null);
+        if (status != null) {
+            final Span span = Span.current();
+            span.setAttribute(TracingConstants.EVAL_RUN_STATUS, status);
+            if (RunStatus.FAILED.name().equals(status)) {
+                span.setStatus(StatusCode.ERROR, "Snapshot phase failed");
+            }
+        }
     }
 
     private void attemptSnapshot(UUID runId, boolean captureTestCaseInputs) {
@@ -305,11 +377,13 @@ public class TestSuiteEvaluationJob {
                 pgRepo.deleteByRunId(runId);
             }
 
+            final TestSuiteRun run =
+                    repository.findById(runId).orElseThrow(() -> new IllegalStateException("Run not found: " + runId));
+            Span.current()
+                    .setAttribute(
+                            TracingConstants.EVAL_SUITE_ID, run.getTestSuiteId().toString());
             TestSuite suite = testSuiteRepository
-                    .findById(repository
-                            .findById(runId)
-                            .orElseThrow(() -> new IllegalStateException("Run not found: " + runId))
-                            .getTestSuiteId())
+                    .findById(run.getTestSuiteId())
                     .orElseThrow(() -> new SnapshotSuiteMissingException("Suite not found for run: " + runId));
 
             Dataset dataset = datasetRepository

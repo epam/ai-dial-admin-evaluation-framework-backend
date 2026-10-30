@@ -168,7 +168,7 @@ dependencies {
     implementation 'io.micrometer:context-propagation'
     // CVE-2026-118259: this BOM aligns instrumentation with OTel API/SDK 1.67.0 and imports
     // both stable BOMs. implementation also covers tests, so no separate overrides are needed.
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:2.33.0-alpha')
+    implementation platform("io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:${open_tel_version}")
     implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
     implementation 'io.opentelemetry.instrumentation:opentelemetry-log4j-appender-2.17'
     runtimeOnly 'io.grpc:grpc-netty-shaded'  // gRPC transport for OTEL_EXPORTER_OTLP_PROTOCOL=grpc
@@ -212,6 +212,7 @@ dependencies {
 
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.opentelemetry:opentelemetry-sdk-testing'
     testImplementation 'org.springframework.boot:spring-boot-resttestclient'
     testImplementation "org.testcontainers:testcontainers"
     testImplementation "org.testcontainers:testcontainers-junit-jupiter"

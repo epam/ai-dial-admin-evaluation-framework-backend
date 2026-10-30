@@ -85,6 +85,7 @@ context: |
   - mcp is a peer of web (not web.mcp): outbound it may use service, configuration, constants, utils, client.*.dto, runner.*; it must never use web or data; only configuration may access mcp. service is extended to allow mcp as a caller, symmetric with web. See docs/patterns/mcp-server.md.
 
   # Key Patterns
+  - Evaluation tracing: explicitly capture native OTel context at job dispatch; a run-owned, DB-free EvaluationTraceSession supplies linked per-repetition roots for both execution and Phase 2 metric children, closes after executor shutdown, and never persists span contexts (see docs/patterns/evaluation-tracing.md).
   - Use @Transactional in service layer for transaction boundaries
   - UUIDs stored as VARCHAR(36) in database
   - Use Lombok (@Data/@Builder/@RequiredArgsConstructor/@Slf4j) for boilerplate reduction
@@ -129,6 +130,7 @@ context: |
   - Standard ErrorCodes: VALIDATION_ERROR, NOT_FOUND, ACCESS_DENIED, VERSION_CONFLICT, UNIQUE_CONSTRAINT_VIOLATION
 
   # Testing Conventions
+  - Tracing functional tests use an isolated in-memory OTel exporter and close their extra application contexts after the suite (`@DirtiesContext(AFTER_CLASS)`) to release dual-datasource pools instead of exhausting the shared Postgres container's connection limit.
   - Functional tests extend BaseFunctionalTest (provides TestRestTemplate, baseUrl(), apiUrl(path), jsonEntity<T>(body))
   - Functional tests use @SpringBootTest with Testcontainers (PostgreSQL)
   - FunctionalTestConfiguration / PostgresFunctionalTestConfiguration for test wiring

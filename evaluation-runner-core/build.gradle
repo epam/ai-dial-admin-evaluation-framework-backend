@@ -131,6 +131,7 @@ dependencies {
 
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.opentelemetry:opentelemetry-sdk-testing'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     // Hibernate Validator's default message interpolator needs a jakarta.el impl on the classpath;

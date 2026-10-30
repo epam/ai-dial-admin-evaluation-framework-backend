@@ -20,6 +20,7 @@ import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerClient;
 import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerException;
 import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
+import com.epam.aidial.evaluation.constants.SecurityConstants;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
@@ -68,6 +69,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -168,6 +170,7 @@ class TestSuiteRunServiceTest {
 
     @AfterEach
     void tearDown() {
+        MDC.remove(SecurityConstants.CORRELATION_ID_MDC_KEY);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -356,7 +359,8 @@ class TestSuiteRunServiceTest {
         }
 
         @Test
-        @DisplayName("propagates the caller's OpenTelemetry context to the DialRouteTriggerClient virtual thread")
+        @DisplayName(
+                "propagates the caller's OpenTelemetry context and correlation ID to the DialRouteTriggerClient virtual thread")
         void propagatesTraceContextToRouteTriggerThread() throws InterruptedException {
             when(dialAppProperties.isEnabled()).thenReturn(true);
             CallerCredential credential = CallerCredential.bearer("jwt-token");
@@ -367,21 +371,25 @@ class TestSuiteRunServiceTest {
                     TraceState.getDefault());
 
             AtomicReference<SpanContext> observed = new AtomicReference<>();
+            AtomicReference<String> observedCorrelation = new AtomicReference<>();
             CountDownLatch latch = new CountDownLatch(1);
             doAnswer(invocation -> {
                         observed.set(Span.current().getSpanContext());
+                        observedCorrelation.set(MDC.get(SecurityConstants.CORRELATION_ID_MDC_KEY));
                         latch.countDown();
                         return null;
                     })
                     .when(dialRouteTriggerClient)
                     .triggerEvalRun(any(UUID.class), any(CallerCredential.class));
 
+            MDC.put(SecurityConstants.CORRELATION_ID_MDC_KEY, "callerCorrelation123");
             try (Scope ignored = Span.wrap(callerSpanContext).makeCurrent()) {
                 invokeDispatchEvaluation(runId, credential, false);
             }
 
             assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
             assertThat(observed.get()).isEqualTo(callerSpanContext);
+            assertThat(observedCorrelation.get()).isEqualTo("callerCorrelation123");
         }
 
         @Test

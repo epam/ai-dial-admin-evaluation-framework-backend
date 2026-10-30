@@ -63,6 +63,9 @@ repositories {
 }
 
 dependencies {
+    // Already present transitively at runtime through the runner; used directly for session ownership.
+    implementation 'io.opentelemetry:opentelemetry-api'
+    testImplementation 'io.opentelemetry:opentelemetry-sdk-testing'
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
     implementation platform('com.fasterxml.jackson:jackson-bom:2.22.4')
     implementation platform('tools.jackson:jackson-bom:3.2.4')

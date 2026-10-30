@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -17,6 +18,7 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.job.EvaluationTraceSession;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
@@ -26,6 +28,7 @@ import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -94,6 +97,7 @@ class RunOrchestrationServiceTest {
     @Test
     @DisplayName("delegates to TestCaseRunner submit and awaitCompletion — does not reimplement concurrency")
     void delegatesToTestCaseRunner() throws Exception {
+        final EvaluationTraceSession tracing = mock(EvaluationTraceSession.class);
         final UUID sourceSuiteId = UUID.randomUUID();
         final TestCaseResponseDto tc = TestCaseResponseDto.builder()
                 .id(UUID.randomUUID())
@@ -118,6 +122,7 @@ class RunOrchestrationServiceTest {
                 DeploymentReferenceDto.builder().id("target").name("Target").build();
 
         final EvaluationContext context = EvaluationContext.builder()
+                .traceSession(tracing)
                 .runId(UUID.randomUUID())
                 .suiteId(sourceSuiteId)
                 .datasetId(UUID.randomUUID())
@@ -152,6 +157,7 @@ class RunOrchestrationServiceTest {
         // Verify the runner was used, not a custom loop
         verify(testCaseRunner).submit(anyList());
         verify(testCaseRunner).awaitCompletion();
+        verify(tracing).close();
         verify(suiteContractValidator).validate(suite);
         assertThat(csvFile).exists();
     }
@@ -196,6 +202,36 @@ class RunOrchestrationServiceTest {
         service.run(bundle, targetRef, tempDir.toString());
 
         assertThat(context.getExecutor().isShutdown()).isTrue();
+    }
+
+    @Test
+    @DisplayName("setup failure before runner creation still shuts down the executor and closes tracing")
+    void setupFailureClosesAllRunResources() throws Exception {
+        final UUID suiteId = UUID.randomUUID();
+        final TestSuiteResponseDto suite =
+                TestSuiteResponseDto.builder().id(suiteId).name("suite").build();
+        final SuiteFetchBundle bundle = SuiteFetchBundle.builder()
+                .sourceSuiteId(suiteId)
+                .suite(suite)
+                .testCases(List.of())
+                .build();
+        final DeploymentReferenceDto target =
+                DeploymentReferenceDto.builder().id("target").build();
+        final EvaluationTraceSession tracing = mock(EvaluationTraceSession.class);
+        final var executor = Executors.newVirtualThreadPerTaskExecutor();
+        final EvaluationContext context = EvaluationContext.builder()
+                .runId(UUID.randomUUID())
+                .executor(executor)
+                .traceSession(tracing)
+                .build();
+        when(evaluationContextFactory.create(any(), eq(0), eq(target), any())).thenReturn(context);
+        final Path blocked = Files.createFile(tempDir.resolve("not-a-directory"));
+        assertThatThrownBy(() -> service.run(bundle, target, blocked.toString()))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Failed to create work directory");
+        assertThat(executor.isShutdown()).isTrue();
+        verify(tracing).close();
+        verifyNoInteractions(testCaseRunnerFactory);
     }
 
     @Test

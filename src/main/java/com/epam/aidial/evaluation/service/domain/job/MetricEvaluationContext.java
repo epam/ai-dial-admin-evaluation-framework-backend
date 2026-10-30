@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.job.EvaluationTraceSession;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import java.util.List;
 import java.util.UUID;
@@ -12,11 +13,11 @@ import lombok.Getter;
 
 /**
  * Immutable carrier for metric evaluation phase state.
- * Contains only serializable/transport-safe fields — execution-strategy-specific
- * concerns (e.g. semaphores) are built by the executor implementation.
+ * Includes run-owned executor and tracing handles; never serialized or persisted.
+ * Execution-strategy-specific concerns (e.g. semaphores) are built by the executor implementation.
  */
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class MetricEvaluationContext {
 
     private final UUID computationId;
@@ -32,6 +33,8 @@ public class MetricEvaluationContext {
      * down. Cancellation is delivered by the owner calling {@code shutdownNow()} on it.
      */
     private final ExecutorService executor;
+
+    private final EvaluationTraceSession traceSession;
 
     private final MetricEvaluationProperties.Retry retryConfig;
     private final int defaultConcurrencyPerProvider;

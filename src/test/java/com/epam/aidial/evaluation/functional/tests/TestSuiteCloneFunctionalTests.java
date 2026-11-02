@@ -31,12 +31,15 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteUpdateResultDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
+import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -364,6 +367,54 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
         assertThat(clonedTsmds)
                 .extracting(TestSuiteMetricDefinitionResponseDto::getId)
                 .doesNotContain(tsmd1.getId(), tsmd2.getId());
+    }
+
+    @Test
+    @DisplayName("clone of a suite whose score references resolve carries no score warnings in response or GET")
+    void shouldCloneWithoutScoreWarningsWhenReferencesResolve() {
+        TestSuiteRequestDto sourceRequest = TestSuiteRequestDto.builder()
+                .name("Score Resolve Source " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deploy-1")
+                        .name("Deployment One")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .build())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(false)
+                        .build())))
+                .overallScore(new WeightedMean(List.of(new WeightedMetric("M1", "score", BigDecimal.ONE))))
+                .build();
+        TestSuiteResponseDto source = restTemplate
+                .postForEntity(apiUrl("/test-suites"), jsonEntity(sourceRequest), TestSuiteResponseDto.class)
+                .getBody();
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                source.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "M1");
+
+        ResponseEntity<TestSuiteUpdateResultDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(TestSuiteCloneRequestDto.builder()
+                        .name("Score Resolve Clone " + UUID.randomUUID())
+                        .build()),
+                TestSuiteUpdateResultDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto cloned = response.getBody().getSuite();
+        assertThat(cloned.getOverallScore()).isNotNull();
+        assertThat(cloned.isValid()).isTrue();
+        assertThat(cloned.getValidationWarnings())
+                .noneMatch(w -> w.getPath() != null && w.getPath().startsWith("$.overallScore"));
+        TestSuiteResponseDto fetched = restTemplate
+                .getForEntity(apiUrl("/test-suites/" + cloned.getId()), TestSuiteResponseDto.class)
+                .getBody();
+        assertThat(fetched.getValidationWarnings())
+                .noneMatch(w -> w.getPath() != null && w.getPath().startsWith("$.overallScore"));
     }
 
     @Test

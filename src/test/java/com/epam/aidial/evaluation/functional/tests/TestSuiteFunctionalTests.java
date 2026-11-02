@@ -1,9 +1,11 @@
 package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
@@ -17,14 +19,19 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
+import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,8 +51,14 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("TestSuite Functional Tests")
 public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
 
+    private static final UUID SEED_ACCURACY_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID SEED_ACCURACY_VERSION_ID = UUID.fromString("770e8400-e29b-41d4-a716-446655440001");
+
     @Autowired
     private MetaTestDataHelper metaTestDataHelper;
+
+    @Autowired
+    private MetricDeclarationTestDataProvider metricDeclarationTestDataProvider;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -1476,6 +1489,131 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
     }
 
     // PUT-with-colon-in-schema-field-name test moved to DatasetCrudFunctionalTest (15.1).
+
+    @Test
+    @DisplayName("Should flag unresolved weighted overallScore and testCaseOverallScore references on create")
+    void shouldWarnOnUnresolvedWeightedReferencesOnCreate() {
+        TestSuiteRequestDto request = buildTestSuiteRequest("Unresolved Weighted Create", "Description");
+        request.setOverallScore(weightedMeanOf("Ghost"));
+        request.setTestCaseOverallScore(weightedMeanOf("Phantom"));
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isValid()).isFalse();
+        assertThat(response.getBody().getValidationWarnings())
+                .extracting(ValidationWarningDto::getPath, ValidationWarningDto::getCode)
+                .containsExactlyInAnyOrder(
+                        tuple("$.overallScore.weights[0].metricName", ValidationWarningCode.UNRESOLVED_REFERENCE),
+                        tuple(
+                                "$.testCaseOverallScore.weights[0].metricName",
+                                ValidationWarningCode.UNRESOLVED_REFERENCE));
+    }
+
+    @Test
+    @DisplayName("Should flag unresolved weighted reference on update and clear it once the metric exists")
+    void shouldWarnOnUnresolvedWeightedReferenceOnUpdateAndResolveWhenMetricExists() {
+        TestSuiteResponseDto created = createTestSuite("Unresolved Weighted Update");
+        final TestSuiteRequestDto updateRequest = buildTestSuiteRequest(created.getName(), "Description");
+        updateRequest.setDatasetId(created.getDatasetId());
+        updateRequest.setOverallScore(weightedMeanOf("Ghost"));
+
+        ResponseEntity<TestSuiteResponseDto> unresolved = putSuiteResponse(created, updateRequest);
+
+        assertThat(unresolved.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(unresolved.getBody().isValid()).isFalse();
+        assertThat(unresolved.getBody().getValidationWarnings())
+                .extracting(ValidationWarningDto::getPath)
+                .containsExactly("$.overallScore.weights[0].metricName");
+
+        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+        metricDeclarationTestDataProvider.insertSeedVersionForAccuracy();
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                created.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "Ghost");
+        ResponseEntity<TestSuiteResponseDto> resolved = putSuiteResponse(unresolved.getBody(), updateRequest);
+
+        assertThat(resolved.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resolved.getBody().isValid()).isTrue();
+        assertThat(resolved.getBody().getValidationWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should flag unresolved roc_auc metric operands with their argument path on create")
+    void shouldWarnOnUnresolvedRocAucReferencesOnCreate() {
+        TestSuiteRequestDto request = buildTestSuiteRequest("Unresolved RocAuc Create", "Description");
+        request.setOverallScore(new CustomFunction(
+                customFunctionExpression("roc_auc", "metric::Ghost::score", "metric::Phantom::label")));
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().isValid()).isFalse();
+        assertThat(response.getBody().getValidationWarnings())
+                .extracting(ValidationWarningDto::getPath, ValidationWarningDto::getCode)
+                .containsExactlyInAnyOrder(
+                        tuple(
+                                "$.overallScore.expression.select[0].expr.args[0].name",
+                                ValidationWarningCode.UNRESOLVED_REFERENCE),
+                        tuple(
+                                "$.overallScore.expression.select[0].expr.args[1].name",
+                                ValidationWarningCode.UNRESOLVED_REFERENCE));
+    }
+
+    @Test
+    @DisplayName("Should flag an unsupported overallScore custom function as UNSUPPORTED_SCORE_FUNCTION on create")
+    void shouldWarnOnUnsupportedCustomFunctionOnCreate() {
+        TestSuiteRequestDto request = buildTestSuiteRequest("Unsupported Function Create", "Description");
+        request.setOverallScore(
+                new CustomFunction(customFunctionExpression("avg", "metric::Relevancy::score", "metric::Other::score")));
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().isValid()).isFalse();
+        assertThat(response.getBody().getValidationWarnings())
+                .extracting(ValidationWarningDto::getCode)
+                .containsExactly(ValidationWarningCode.UNSUPPORTED_SCORE_FUNCTION);
+    }
+
+    private ResponseEntity<TestSuiteResponseDto> putSuiteResponse(TestSuiteResponseDto current, TestSuiteRequestDto request) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setIfMatch("\"" + current.getVersion() + "\"");
+        return restTemplate.exchange(
+                apiUrl("/test-suites/" + current.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(request, headers),
+                TestSuiteResponseDto.class);
+    }
+
+    private static OverallScoreDefinition weightedMeanOf(String metricName) {
+        return new WeightedMean(List.of(new WeightedMetric(metricName, "score", BigDecimal.ONE)));
+    }
+
+    private static Map<String, Object> customFunctionExpression(String function, String firstArg, String secondArg) {
+        return Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                function,
+                                "args",
+                                List.of(
+                                        Map.of("type", "field", "name", firstArg),
+                                        Map.of("type", "field", "name", secondArg))),
+                        "as",
+                        "value")));
+    }
 
     private TestSuiteResponseDto createTestSuite(String name) {
         TestSuiteRequestDto request = buildTestSuiteRequest(name, "Description for " + name);

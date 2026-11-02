@@ -61,12 +61,13 @@ by a `type` property, with exactly three variants:
   against `test_case_metric_scores` the same way as `mean` above (one sample per test case per metric,
   equally weighted across test cases). A metric/weight entry whose metric no test case in the run ever
   produced a value for is **coalesced to `0`** for its term, unchanged from the pre-existing formula. The
-  metric/weight references are still **not validated at write time** against the suite's
-  actually-configured metrics.
+  metric/weight references are not rejected at write time; references without a matching suite metric
+  definition produce suite validation warnings (see `test-suites` "Score metric reference validation").
 - **`custom_function`** — a self-contained Structured Query DSL expression, originally authored over the
   configured metric columns (`metric::<metricName>::<outputField>`) of raw `eval_summaries`, run with only
   the run-scoping params (`:runId`, `:computationId`); stored opaquely and not validated as a runnable
-  query at write time. This variant is **not** retargeted onto `test_case_metric_scores` — at Phase 3
+  query at write time. Only a single-select `roc_auc(field, field)` expression is a supported shape for
+  suite validity; other shapes produce a suite validation warning (see `test-suites`). This variant is **not** retargeted onto `test_case_metric_scores` — at Phase 3
   computation time the system SHALL resolve and execute it directly against `eval_summaries`, ungrouped,
   exactly as before this change: a test case's row count still weights its contribution to the result.
   This is an accepted, out-of-scope limitation for this capability. Unlike `custom_function`, the per-metric

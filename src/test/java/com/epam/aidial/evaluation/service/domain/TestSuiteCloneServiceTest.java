@@ -40,6 +40,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -416,6 +417,8 @@ class TestSuiteCloneServiceTest {
                         .valid(true)
                         .warnings(List.of())
                         .build());
+        when(suiteValidationService.withScoreReferences(any(), any(), any()))
+                .thenAnswer(inv -> inv.getArgument(0));
         when(warningsSerializer.serializeWarnings(anyList())).thenReturn("[]");
         when(tsmdRepository.findBatchByTestSuiteId(any(), anyInt(), anyInt())).thenReturn(List.of());
         when(testSuiteMapper.toDto(newEntity))
@@ -428,6 +431,45 @@ class TestSuiteCloneServiceTest {
         verify(datasetSchemaProvider, never()).getSchema(any());
         // Validation still runs, against an empty schema
         assertThat(schemaCaptor.getValue()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("(f2) pre-insert validation receives the source suite's metric definition names")
+    void clone_validatesAgainstSourceMetricNames() {
+        TestSuite source = buildSource();
+        source.setDatasetId(null);
+        UUID newId = UUID.randomUUID();
+        TestSuite newEntity = buildNewEntityWithId(source, newId);
+        newEntity.setDatasetId(null);
+        Set<String> sourceNames = Set.of("accuracy", "f1");
+
+        when(testSuiteRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        when(authorResolver.getCreatedBy(any())).thenReturn("user");
+        when(testSuiteMapper.toCloneEntity(any(), any(), any(), any())).thenReturn(newEntity);
+        when(testSuiteMapper.toRequestDto(newEntity))
+                .thenReturn(TestSuiteRequestDto.builder()
+                        .name(newEntity.getName())
+                        .suiteType(newEntity.getSuiteType())
+                        .inputBindings(List.of())
+                        .responseColumns(List.of())
+                        .build());
+        when(endpointSchemaRefResolver.resolve(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(suiteValidationService.validateSuite(any(TestSuiteRequestDto.class), isNull(), anyList()))
+                .thenReturn(ValidationResult.builder()
+                        .valid(true)
+                        .warnings(List.of())
+                        .build());
+        when(suiteValidationService.withScoreReferences(any(), any(), any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(warningsSerializer.serializeWarnings(anyList())).thenReturn("[]");
+        when(tsmdService.findNamesByTestSuiteId(sourceId)).thenReturn(sourceNames);
+        when(tsmdRepository.findBatchByTestSuiteId(any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(testSuiteMapper.toDto(newEntity))
+                .thenReturn(TestSuiteResponseDto.builder().build());
+
+        service.clone(sourceId, cloneRequestWithNameOnly(), null);
+
+        verify(suiteValidationService).withScoreReferences(any(), eq(newEntity), eq(sourceNames));
     }
 
     // -----------------------------------------------------------------------
@@ -709,6 +751,8 @@ class TestSuiteCloneServiceTest {
                         .valid(true)
                         .warnings(List.of())
                         .build());
+        when(suiteValidationService.withScoreReferences(any(), any(), any()))
+                .thenAnswer(inv -> inv.getArgument(0));
         when(warningsSerializer.serializeWarnings(anyList())).thenReturn("[]");
     }
 

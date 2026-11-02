@@ -50,6 +50,8 @@ public class SuiteValidationService {
     private final McpArgumentValidator mcpArgumentValidator;
     private final SuiteDefinitionResolver suiteDefinitionResolver;
     private final RequestModelValidator requestModelValidator;
+    private final ScoreReferenceValidator scoreReferenceValidator;
+    private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
 
     /**
      * Validates suite configuration: requestTemplate, inputBindings, testCaseSchema.
@@ -81,7 +83,26 @@ public class SuiteValidationService {
      *                          by the caller and reused across the suite fan-out)
      */
     public ValidationResult validateSuite(TestSuite suite, List<FieldDefinitionDto> testCaseSchema) {
-        return validate(suiteDefinitionResolver.fromEntity(suite), suite.getId(), testCaseSchema);
+        final Set<String> metricNames = suite.getId() == null
+                ? Set.of()
+                : testSuiteMetricDefinitionService.findNamesByTestSuiteId(suite.getId());
+        return withScoreReferences(
+                validate(suiteDefinitionResolver.fromEntity(suite), suite.getId(), testCaseSchema), suite, metricNames);
+    }
+
+    /**
+     * Appends {@link ScoreReferenceValidator} findings for {@code overallScore} / {@code testCaseOverallScore}
+     * to {@code base}; {@code valid} is recomputed as {@code warnings.isEmpty()}.
+     *
+     * @param metricNames names of the suite's metric definitions (exact, case-sensitive)
+     */
+    public ValidationResult withScoreReferences(ValidationResult base, TestSuite suite, Set<String> metricNames) {
+        final List<ValidationWarningDto> warnings = new ArrayList<>(base.getWarnings());
+        warnings.addAll(scoreReferenceValidator.validate(suite, metricNames));
+        return ValidationResult.builder()
+                .valid(warnings.isEmpty())
+                .warnings(warnings)
+                .build();
     }
 
     private ValidationResult validate(

@@ -314,9 +314,9 @@ The `endpointRef.requestBodySchema` and `endpointRef.responseBodySchema` fields 
 ### Requirement: Suite-level soft validation (`isValid` + `validationWarnings`)
 The TestSuite response SHALL include `isValid` (boolean) and `validationWarnings` (structured list, same format as TestCase validation warnings). Suite-level validation covers **configuration correctness only**. Test-case presence is **not** a component of stored suite validity and does not affect `isValid` or `validationWarnings` in the suite GET response. A bound suite with zero runnable test cases MAY be `isValid = true`; the run path enforces the presence requirement at run-creation time (see `test-suite-runs` spec).
 
-Suite-level configuration correctness covers: template + bindings, cross-checked against the **referenced dataset's** `testCaseSchema` (resolved via `DatasetSchemaProvider`) and the suite's `responseColumns` / `endpointRef`. This dimension is **independent of test case data**.
+Suite-level configuration correctness covers: template + bindings, cross-checked against the **referenced dataset's** `testCaseSchema` (resolved via `DatasetSchemaProvider`) and the suite's `responseColumns` / `endpointRef`, plus score metric references in `overallScore` / `testCaseOverallScore` checked against the suite's metric definition names (see "Score metric reference validation"). This dimension is **independent of test case data**.
 
-`isValid` SHALL be `true` only when the configuration dimension produces no warnings. `isValid` SHALL be recalculated on every suite create or update, and on dataset bind/detach and dataset schema revalidation (Phase 2). TestCase `isValid` (test-case **data** validation) is owned by the test-case domain and is never triggered by suite validation — the configuration and data layers remain independent.
+`isValid` SHALL be `true` only when the configuration dimension produces no warnings. `isValid` SHALL be recalculated on every suite create, update or clone, and on dataset bind/detach and dataset schema revalidation (Phase 2); score-reference warnings are additionally refreshed on metric definition create/update/delete. TestCase `isValid` (test-case **data** validation) is owned by the test-case domain and is never triggered by suite validation — the configuration and data layers remain independent.
 
 Status: **Implemented**
 
@@ -746,7 +746,7 @@ The system SHALL expose a `detach-dataset` action endpoint on the test-suite res
 - **THEN** the system processes the request according to the `detach-dataset` capability spec and returns `TestSuiteResponseDto`
 
 ### Requirement: Per-suite `overallScore` on the suite API
-The suite create and update request bodies SHALL accept an optional `overallScore` field — a JSON object holding a structured-query `StructuredQuery` expression that defines the run-level `overall` metric score for the suite. The system SHALL persist it verbatim to `test_suites.overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL, preserving the built-in default behavior (see `metric-score-statistics`). `overallScore` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. The expression SHALL be stored opaquely and SHALL NOT be validated as a runnable query at write time (a malformed or non-runnable expression surfaces at run-level computation, not at suite persistence).
+The suite create and update request bodies SHALL accept an optional `overallScore` field — a JSON object holding a structured-query `StructuredQuery` expression that defines the run-level `overall` metric score for the suite. The system SHALL persist it verbatim to `test_suites.overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL, preserving the built-in default behavior (see `metric-score-statistics`). `overallScore` SHALL affect suite validity only through score metric reference validation (see "Score metric reference validation"). The expression SHALL be stored opaquely and SHALL NOT be validated as a runnable query at write time (a malformed or non-runnable expression surfaces at run-level computation, not at suite persistence).
 Status: **Implemented**
 
 #### Scenario: Set overallScore on update and read it back
@@ -762,8 +762,8 @@ Status: **Implemented**
 - **THEN** system SHALL store `overall_score` as NULL and the suite response SHALL omit `overallScore` (or return it as null)
 
 #### Scenario: overallScore does not affect suite validity
-- **WHEN** client sets `overallScore` on an otherwise valid suite
-- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or content of `overallScore`
+- **WHEN** client sets an `overallScore` whose metric references all resolve, on an otherwise valid suite
+- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence of `overallScore`
 
 ### Requirement: Per-suite `overallScoreThreshold` on the suite API
 The suite create and update request bodies SHALL accept an optional `overallScoreThreshold` field — a numeric value (same type as the computed run-level `overall` metric score result) that a client can compare a run's `overall` score against, and that the system uses to derive a per-row `passed` value on each run's `EvalSummary` rows (see `eval-summary-scoring`). The system SHALL persist it verbatim to `test_suites.overall_score_threshold` (`DOUBLE PRECISION`) and SHALL return it on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `overallScoreThreshold` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. The system SHALL reject a value outside the inclusive range `0.0`–`1.0` with HTTP 400 `VALIDATION_ERROR` at write time and SHALL NOT persist it. At snapshot time (run start), the suite's current `overallScoreThreshold` SHALL be captured into the run's `SuiteSnapshotDto` (see `suite-run-snapshot`) and used thereafter to compute each row's `passed`; the system SHALL NOT perform any comparison against the run-level computed `overall` metric score result itself — evaluating the threshold against that run-level aggregate remains a client-side concern.
@@ -802,7 +802,7 @@ Status: **Implemented**
 - **THEN** the run's `SuiteSnapshotDto.overallScoreThreshold` SHALL equal the suite's current value at that moment, and subsequent edits to the suite's `overallScoreThreshold` SHALL NOT affect that run's already-computed or future `passed` values
 
 ### Requirement: Per-suite `testCaseOverallScore` on the suite API
-The suite create and update request bodies SHALL accept an optional `testCaseOverallScore` field — a JSON object holding an `OverallScoreDefinition` shape, but restricted to `Mean` or `WeightedMean` only (a `CustomFunction` `testCaseOverallScore` SHALL be rejected with HTTP 400 `ValidationException`). When present, `testCaseOverallScore` SHALL be used instead of `overallScore` to drive per-test-case `score`/`passed` computation on a run's `EvalSummary` rows (see `eval-summary-scoring`); when absent, per-test-case scoring SHALL fall back to `overallScore` unless `overallScore` is a `CustomFunction` (in which case there is no effective per-test-case definition — see `eval-summary-scoring`). The system SHALL persist it verbatim to `test_suites.test_case_overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `testCaseOverallScore` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. `testCaseOverallScore` SHALL NOT affect Phase 3's run-level `overall` metric-score result, which SHALL always be computed from `overallScore` regardless of whether `testCaseOverallScore` is configured.
+The suite create and update request bodies SHALL accept an optional `testCaseOverallScore` field — a JSON object holding an `OverallScoreDefinition` shape, but restricted to `Mean` or `WeightedMean` only (a `CustomFunction` `testCaseOverallScore` SHALL be rejected with HTTP 400 `ValidationException`). When present, `testCaseOverallScore` SHALL be used instead of `overallScore` to drive per-test-case `score`/`passed` computation on a run's `EvalSummary` rows (see `eval-summary-scoring`); when absent, per-test-case scoring SHALL fall back to `overallScore` unless `overallScore` is a `CustomFunction` (in which case there is no effective per-test-case definition — see `eval-summary-scoring`). The system SHALL persist it verbatim to `test_suites.test_case_overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `testCaseOverallScore` SHALL affect suite validity only through score metric reference validation (see "Score metric reference validation"). `testCaseOverallScore` SHALL NOT affect Phase 3's run-level `overall` metric-score result, which SHALL always be computed from `overallScore` regardless of whether `testCaseOverallScore` is configured.
 Status: **Implemented**
 
 #### Scenario: Set testCaseOverallScore independently of overallScore
@@ -818,8 +818,8 @@ Status: **Implemented**
 - **THEN** system SHALL store `test_case_overall_score` as NULL and the suite response SHALL omit `testCaseOverallScore` (or return it as null)
 
 #### Scenario: testCaseOverallScore does not affect suite validity
-- **WHEN** client sets `testCaseOverallScore` on an otherwise valid suite
-- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or content of `testCaseOverallScore`
+- **WHEN** client sets a `testCaseOverallScore` whose metric references all resolve, on an otherwise valid suite
+- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence of `testCaseOverallScore`
 
 #### Scenario: Clone inherits the source testCaseOverallScore
 - **WHEN** a suite carrying a `testCaseOverallScore` is cloned
@@ -991,6 +991,54 @@ Status: **Implemented**
 - **WHEN** a ROUTE suite's `routesRef.name` is changed without changing its `requestTemplate.urlTemplate`
 - **THEN** the path DIAL Core receives for a run or try-it-out of that suite SHALL be unchanged
 
+### Requirement: Score metric reference validation
+Suite configuration validation SHALL check the metric references in `overallScore` and `testCaseOverallScore` against the names of the suite's metric definitions (exact, case-sensitive; disabled and invalid definitions count as present). Findings SHALL be reported as suite `validationWarnings` and SHALL make `isValid = false`; they SHALL NOT cause HTTP 400.
+
+- `weighted_mean`: every `weights[i].metricName` without a matching definition SHALL produce an `UNRESOLVED_REFERENCE` warning with `fieldName` = the metric name and `path` = `$.<overallScore|testCaseOverallScore>.weights[i].metricName`.
+- `custom_function` in `overallScore`: the only supported shape is an expression with exactly one select item whose expression is `roc_auc(field, field)`. Each argument whose name starts with `metric::` names the TSMD as the text after `metric::` up to the last `::` (or the whole remainder when there is no further `::`); a TSMD name without a matching definition SHALL produce an `UNRESOLVED_REFERENCE` warning with `fieldName` = that name and `path` = `$.overallScore.expression.select[0].expr.args[i].name`. Other arguments (e.g. `data::`, `metricInfo::`) and the filter SHALL be ignored.
+- Any other `custom_function` expression, and a stored `overallScore` that cannot be read as a score definition, SHALL produce one `UNSUPPORTED_SCORE_FUNCTION` warning with `path` = `$.overallScore.expression`. Validation SHALL NOT fail because of score content.
+- `mean`, absent definitions, a (legacy) `custom_function` stored in `testCaseOverallScore`, and a stored `testCaseOverallScore` that cannot be read SHALL produce no warnings.
+
+Score-reference warnings are those whose `path` starts with `$.overallScore.` or `$.testCaseOverallScore.`. They SHALL be recomputed whenever suite validation runs (create, update, clone, dataset revalidation) and on metric definition create/update/delete (see `test-suite-metric-definitions`). On clone they SHALL be computed against the metric definition names the clone receives (the source suite's names).
+
+Status: **Implemented**
+
+#### Scenario: Weighted mean references a missing metric
+- **WHEN** a suite with no metric definition named `Accuracy` is created with `overallScore = weighted_mean` containing `metricName = "Accuracy"` at index 0
+- **THEN** the response SHALL have `valid = false` and a warning `{code: UNRESOLVED_REFERENCE, fieldName: "Accuracy", path: "$.overallScore.weights[0].metricName"}`
+
+#### Scenario: Weighted mean in testCaseOverallScore references a missing metric
+- **WHEN** a suite's `testCaseOverallScore` is `weighted_mean` with an unmatched `metricName` at index 1
+- **THEN** the suite SHALL carry an `UNRESOLVED_REFERENCE` warning at `$.testCaseOverallScore.weights[1].metricName`
+
+#### Scenario: Name match is case-sensitive
+- **WHEN** the suite has a metric definition `accuracy` and the score references `Accuracy`
+- **THEN** an `UNRESOLVED_REFERENCE` warning SHALL be produced
+
+#### Scenario: Disabled metric definition counts as present
+- **WHEN** the referenced metric definition exists but is disabled or invalid
+- **THEN** no score-reference warning SHALL be produced for it
+
+#### Scenario: roc_auc references a missing metric
+- **WHEN** `overallScore` is `custom_function` `roc_auc(data::label, metric::Classifier::probability)` and the suite has no `Classifier` metric definition
+- **THEN** the suite SHALL carry an `UNRESOLVED_REFERENCE` warning with `fieldName = "Classifier"` at `$.overallScore.expression.select[0].expr.args[1].name`, and no warning for `data::label`
+
+#### Scenario: Unsupported custom function
+- **WHEN** `overallScore` is a `custom_function` whose single select is `avg(metric::Relevancy::score)`, or that has more than one select item
+- **THEN** the request SHALL succeed and the suite SHALL carry one `UNSUPPORTED_SCORE_FUNCTION` warning at `$.overallScore.expression` with `valid = false`
+
+#### Scenario: All references resolved
+- **WHEN** every score reference matches a suite metric definition and the rest of the configuration is valid
+- **THEN** the suite SHALL be `valid = true` with no score-reference warnings
+
+#### Scenario: metric:: argument without output field
+- **WHEN** a `roc_auc` argument is named `metric::Classifier` and the suite has no `Classifier` metric definition
+- **THEN** the suite SHALL carry an `UNRESOLVED_REFERENCE` warning with `fieldName = "Classifier"`
+
+#### Scenario: Clone validates against copied metric definitions
+- **WHEN** a suite whose score references only its own metric definitions is cloned
+- **THEN** the clone response and a subsequent GET SHALL NOT carry score-reference warnings
+
 ## Implementation Notes
 
 - ROUTE persistence and mapping use `TestSuite`, `TestSuiteRecordMapper`, `PostgresTestSuiteRepository`, `JsonbMapper`, and `TestSuiteMapper`; `RouteReferenceDto` owns API-boundary canonical-name validation.
@@ -1014,6 +1062,7 @@ Status: **Implemented**
 - `testCaseOverallScore` (per-suite): DTO field `TestSuiteRequestDto.testCaseOverallScore` (`OverallScoreDefinition`, `@Valid`, no `example`/response-DTO split noted beyond the discriminated-type shape shared with `overallScore`), per the JSONB-as-object convention; conversion via `JsonbMapper.mapTestCaseOverallScore(OverallScoreDefinition)` (write) / `mapTestCaseOverallScore(String)` (read). Mapping in `TestSuiteMapper` `toEntity` / `toDto` / `toRequestDto` / `toCloneEntity` (raw JSONB string copied verbatim, same as `overallScore`). Model field: `TestSuite.testCaseOverallScore` (`String`, raw JSON); record mapping in `TestSuiteRecordMapper`. New column: `V1.31__AddTestCaseOverallScoreToTestSuites.sql` (`test_case_overall_score JSONB`), then `./gradlew generateJooq`. Not referenced anywhere in `SuiteValidationService` — exempt from `isValid`/`validationWarnings` exactly like `overallScore`.
 - Now captured into `SuiteSnapshotDto.testCaseOverallScore` by `SuiteSnapshotBuilder` at run-start (see `suite-run-snapshot`); `TestSuiteEvaluationJob.buildMetricEvaluationContext` resolves the fallback once, per run, before Phase 2 starts: `snapshot.getTestCaseOverallScore() != null ? ... : snapshot.getOverallScore()`. Phase 3's `MetricScoreComputationContext` always uses `snapshot.getOverallScore()` directly — the fallback is a Phase-2-only concern (see `eval-summary-scoring`).
 - Fixed-path request-model validation: `SuiteValidationService.validateFixedPathRequestModel` delegates to `RequestModelValidator` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service`) for requests whose `endpointRef.relativeUrlPattern` is exactly `ModelSelectingEndpointPaths.OPENAI_RESPONSES` or `ANTHROPIC_MESSAGES` and whose body is a plain `JsonRequestBodyDto.content`; failures become `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR` warnings. `jsonataContent` bodies are deferred to the run-time check in `TurnLoopExecutor` (see `request-template`).
+- Validator: `service.domain.ScoreReferenceValidator`; wired into `SuiteValidationService` (clone passes the source suite's metric names).
 
 ## Open Questions / TODO
 - Add explicit validation rules for `name`/`description` in DTOs (current behavior depends on DTO constraints).

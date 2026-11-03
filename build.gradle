@@ -217,7 +217,6 @@ dependencies {
     testImplementation "org.testcontainers:testcontainers-jdbc"
     testImplementation "org.testcontainers:testcontainers-postgresql"
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.1'
-    testImplementation 'net.bytebuddy:byte-buddy:1.18.16'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation "io.zonky.test:embedded-postgres:${embedded_postgres_version}"
 

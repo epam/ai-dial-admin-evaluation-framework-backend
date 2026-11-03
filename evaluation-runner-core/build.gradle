@@ -89,8 +89,8 @@ dependencies {
 
     // Metrics & Monitoring (OTel)
     implementation 'io.micrometer:context-propagation'
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.32.0')
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:2.32.0-alpha')
+    // CVE-2026-118259: alpha BOM imports both stable BOMs; version shared with root via gradle.properties.
+    implementation platform("io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:${otel_instrumentation_version}-alpha")
     implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
     implementation 'io.opentelemetry.instrumentation:opentelemetry-log4j-appender-2.17'
     runtimeOnly 'io.grpc:grpc-netty-shaded'

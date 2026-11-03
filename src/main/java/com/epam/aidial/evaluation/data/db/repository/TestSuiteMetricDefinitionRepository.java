@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface TestSuiteMetricDefinitionRepository {
@@ -35,6 +36,9 @@ public interface TestSuiteMetricDefinitionRepository {
     void deleteByTestSuiteId(UUID testSuiteId);
 
     long count(UUID testSuiteId);
+
+    /** Names of all metric definitions of the suite (any enabled/valid state); no joins. */
+    Set<String> findNamesByTestSuiteId(UUID testSuiteId);
 
     /**
      * Batch-inserts all given TSMDs using JDBC batching (single round-trip).

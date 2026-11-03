@@ -88,8 +88,25 @@
   ],
   "requestName": null,
   "additionalRequests": [],
-  "valid": true,
-  "validationWarnings": [],
+  "overallScore": {
+    "type": "weighted_mean",
+    "weights": [
+      {
+        "metricName": "Accuracy",
+        "outputField": "score",
+        "weight": 1.0
+      }
+    ]
+  },
+  "valid": false,
+  "validationWarnings": [
+    {
+      "fieldName": "Accuracy",
+      "path": "$.overallScore.weights[0].metricName",
+      "message": "Score references metric definition 'Accuracy' which does not exist in this suite",
+      "code": "UNRESOLVED_REFERENCE"
+    }
+  ],
   "version": 1,
   "createdBy": "user@example.com",
   "createdAt": 1704067200000,

@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.service.domain.SuiteScoreWarningsRefresher;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -43,6 +44,7 @@ public class MetaTestDataHelper {
     private final TestCaseRepository testCaseRepository;
     private final DatasetRepository datasetRepository;
     private final DSLContext metaDsl;
+    private final SuiteScoreWarningsRefresher suiteScoreWarningsRefresher;
 
     /**
      * Creates a fresh {@link Dataset} with an empty schema. Convenience for tests that don't care
@@ -374,6 +376,16 @@ public class MetaTestDataHelper {
                 .completedAt(now)
                 .build();
         return testSuiteRunRepository.save(run);
+    }
+
+    /**
+     * Re-evaluates a suite's score-reference warnings after TSMDs were inserted via raw helper methods
+     * (which, unlike the service/API path, do not refresh them).
+     */
+    @Transactional("metaTransactionManager")
+    public void refreshSuiteScoreWarnings(UUID suiteId) {
+        suiteScoreWarningsRefresher.refresh(
+                testSuiteRepository.findById(suiteId).orElseThrow(), tsmdRepository.findNamesByTestSuiteId(suiteId));
     }
 
     @Transactional("metaTransactionManager")

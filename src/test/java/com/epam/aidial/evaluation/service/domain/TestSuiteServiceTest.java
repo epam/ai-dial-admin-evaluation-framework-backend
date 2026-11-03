@@ -197,11 +197,13 @@ class TestSuiteServiceTest {
         when(endpointSchemaRefResolver.resolve(any())).thenAnswer(inv -> inv.getArgument(0));
         when(testSuiteMapper.toEntity(any(), any()))
                 .thenReturn(TestSuite.builder().build());
-        when(suiteValidationService.validateSuite(any(), any(), any()))
+        when(suiteValidationService.validateSuite(any(TestSuiteRequestDto.class), any(), any()))
                 .thenReturn(ValidationResult.builder()
                         .valid(true)
                         .warnings(List.of())
                         .build());
+        when(suiteValidationService.withScoreReferences(any(), any(), any()))
+                .thenAnswer(inv -> inv.getArgument(0));
 
         service.create(dto, null);
 

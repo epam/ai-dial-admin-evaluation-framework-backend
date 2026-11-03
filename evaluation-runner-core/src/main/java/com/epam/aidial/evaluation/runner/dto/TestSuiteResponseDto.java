@@ -69,6 +69,9 @@ public class TestSuiteResponseDto {
     @Schema(example = "true")
     private boolean valid;
 
+    @Schema(
+            description = "Suite configuration warnings (template, bindings, score metric references); "
+                    + "any entry makes `valid` false.")
     private List<ValidationWarningDto> validationWarnings;
 
     @Schema(example = "1")

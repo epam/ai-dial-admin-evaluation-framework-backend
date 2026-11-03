@@ -164,7 +164,7 @@ public class TestSuiteCloneService {
             */
             final UUID datasetToValidateAgainst =
                     clonePrivateDataset ? sourceDataset.getId() : newSuiteEntity.getDatasetId();
-            applySuiteValidation(newSuiteEntity, datasetToValidateAgainst);
+            applySuiteValidation(newSuiteEntity, datasetToValidateAgainst, sourceId);
 
             final var tsmdRevalidation =
                     decideOnTsmdRevalidation(dto, datasetIdOverride, sourceDatasetId, datasetToValidateAgainst);
@@ -234,9 +234,10 @@ public class TestSuiteCloneService {
      * request #0's overrides plus the inherited (file-ref-rewritten) {@code additionalRequests} — so a
      * clone that would 400 on create/update (cross-request duplicate columns, union cap, reserved
      * names, oversized templates/bindings) also 400s here instead of silently persisting an invalid
-     * suite. Soft validation ({@code SuiteValidationService}) runs afterwards, unchanged.
+     * suite. Soft validation ({@code SuiteValidationService}) runs afterwards; the clone receives exactly the
+     * source suite's metric definition names, so score metric references are checked against those.
      */
-    private void applySuiteValidation(TestSuite entity, UUID schemaDatasetId) {
+    private void applySuiteValidation(TestSuite entity, UUID schemaDatasetId, UUID sourceId) {
         TestSuiteRequestDto dto = testSuiteMapper.toRequestDto(entity);
 
         testSuiteRequestValidator.validateSuiteTypeFields(dto);
@@ -262,7 +263,10 @@ public class TestSuiteCloneService {
 
         List<FieldDefinitionDto> datasetSchema =
                 schemaDatasetId != null ? datasetSchemaProvider.getSchema(schemaDatasetId) : List.of();
-        ValidationResult result = suiteValidationService.validateSuite(dto, null, datasetSchema);
+        ValidationResult result = suiteValidationService.withScoreReferences(
+                suiteValidationService.validateSuite(dto, null, datasetSchema),
+                entity,
+                testSuiteMetricDefinitionService.findNamesByTestSuiteId(sourceId));
 
         entity.setValid(result.isValid());
         entity.setValidationWarnings(warningsSerializer.serializeWarnings(result.getWarnings()));

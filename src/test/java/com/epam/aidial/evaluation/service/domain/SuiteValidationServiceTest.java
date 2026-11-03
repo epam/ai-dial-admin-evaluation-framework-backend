@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
@@ -38,6 +39,7 @@ import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,6 +68,12 @@ class SuiteValidationServiceTest {
     @Mock
     private JsonbMapper jsonbMapper;
 
+    @Mock
+    private ScoreReferenceValidator scoreReferenceValidator;
+
+    @Mock
+    private TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
+
     private TemplateVariableExtractor templateVariableExtractor;
     private BindingValidator bindingValidator;
     private SuiteValidationService service;
@@ -82,9 +90,91 @@ class SuiteValidationServiceTest {
                 new McpArgumentValidator(
                         templateVariableExtractor, new JsonSchemaPropertyExtractor(new ObjectMapper())),
                 new SuiteDefinitionResolver(new SuiteTargetResolver(jsonbMapper), jsonbMapper),
-                new RequestModelValidator());
+                new RequestModelValidator(),
+                scoreReferenceValidator,
+                testSuiteMetricDefinitionService);
         lenient().when(evaluationRunProperties.getExecution()).thenReturn(execution);
         lenient().when(execution.getHeaderBlacklist()).thenReturn(List.of());
+    }
+
+    @Nested
+    @DisplayName("Score reference validation")
+    class ScoreReferenceValidation {
+
+        private static final UUID SUITE_ID = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+        private TestSuite entity(UUID id) {
+            when(jsonbMapper.map(any(String.class)))
+                    .thenReturn(DeploymentReferenceDto.builder().id("dep").build());
+            return TestSuite.builder()
+                    .id(id)
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef("{}")
+                    .build();
+        }
+
+        private ValidationWarningDto scoreWarning() {
+            return ValidationWarningDto.builder()
+                    .path("$.overallScore.weights[0].metricName")
+                    .message("unresolved")
+                    .code(ValidationWarningCode.ADDITIONAL)
+                    .build();
+        }
+
+        @Test
+        @DisplayName("withScoreReferences appends score warnings to the base and makes the result invalid")
+        void shouldAppendScoreWarningsToBase() {
+            final TestSuite suite = TestSuite.builder().id(SUITE_ID).build();
+            final Set<String> names = Set.of("a");
+            when(scoreReferenceValidator.validate(suite, names)).thenReturn(List.of(scoreWarning()));
+            final ValidationResult base =
+                    ValidationResult.builder().valid(true).warnings(List.of()).build();
+
+            ValidationResult result = service.withScoreReferences(base, suite, names);
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings()).containsExactly(scoreWarning());
+        }
+
+        @Test
+        @DisplayName("withScoreReferences keeps a clean base valid when there are no score warnings")
+        void shouldStayValidWhenNoScoreWarnings() {
+            final TestSuite suite = TestSuite.builder().id(SUITE_ID).build();
+            when(scoreReferenceValidator.validate(suite, Set.of())).thenReturn(List.of());
+            final ValidationResult base =
+                    ValidationResult.builder().valid(true).warnings(List.of()).build();
+
+            ValidationResult result = service.withScoreReferences(base, suite, Set.of());
+
+            assertThat(result.isValid()).isTrue();
+            assertThat(result.getWarnings()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("entity overload loads names from the metric definition service by suite id")
+        void shouldLoadNamesBySuiteId() {
+            final TestSuite suite = entity(SUITE_ID);
+            final Set<String> names = Set.of("m1", "m2");
+            when(testSuiteMetricDefinitionService.findNamesByTestSuiteId(SUITE_ID))
+                    .thenReturn(names);
+            when(scoreReferenceValidator.validate(suite, names)).thenReturn(List.of());
+
+            service.validateSuite(suite, List.of());
+
+            verify(scoreReferenceValidator).validate(suite, names);
+        }
+
+        @Test
+        @DisplayName("entity overload uses empty names without a lookup when the suite has no id")
+        void shouldUseEmptyNamesWhenIdNull() {
+            final TestSuite suite = entity(null);
+            when(scoreReferenceValidator.validate(suite, Set.of())).thenReturn(List.of());
+
+            service.validateSuite(suite, List.of());
+
+            verifyNoInteractions(testSuiteMetricDefinitionService);
+            verify(scoreReferenceValidator).validate(suite, Set.of());
+        }
     }
 
     @Nested

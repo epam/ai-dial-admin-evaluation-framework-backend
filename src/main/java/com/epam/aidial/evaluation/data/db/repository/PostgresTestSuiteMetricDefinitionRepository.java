@@ -21,8 +21,10 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -305,6 +307,14 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                 .where(TEST_SUITE_METRIC_DEFINITIONS.TEST_SUITE_ID.eq(testSuiteId.toString()))
                 .fetchOne(0, Long.class);
         return count != null ? count : 0L;
+    }
+
+    @Override
+    public Set<String> findNamesByTestSuiteId(UUID testSuiteId) {
+        return new HashSet<>(dsl.select(TEST_SUITE_METRIC_DEFINITIONS.NAME)
+            .from(TEST_SUITE_METRIC_DEFINITIONS)
+            .where(TEST_SUITE_METRIC_DEFINITIONS.TEST_SUITE_ID.eq(testSuiteId.toString()))
+            .fetch(TEST_SUITE_METRIC_DEFINITIONS.NAME));
     }
 
     @Override

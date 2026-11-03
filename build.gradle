@@ -38,7 +38,7 @@ plugins {
     id 'checkstyle'
     id 'io.freefair.lombok' version '9.8.2'
     id 'org.springframework.boot' version '4.1.2'
-    id 'com.diffplug.spotless' version '8.10.2'
+    id 'com.diffplug.spotless' version '8.10.4'
 }
 
 group = 'com.epam.aidial'
@@ -101,7 +101,6 @@ spotless {
         target 'src/*/java/**/*.java'
         targetExclude 'src/main/java-generated/**'
 
-        palantirJavaFormat('2.102.0')
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()

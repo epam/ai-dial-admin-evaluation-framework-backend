@@ -395,8 +395,8 @@ class CsvSchemaFieldBuilderTest {
         }
 
         @Test
-        @DisplayName("no manifest and no fileColumns hint: a skills/... column stays STRING (no SKILL inference)")
-        void columnIsNeverTypedSkillWithoutManifest() {
+        @DisplayName("no manifest and no fileColumns hint: the supplied inferred STRING type is emitted unchanged")
+        void inferredStringTypeIsPassedThroughWithoutHints() {
             List<ColumnBinding> bindings = List.of(dataBinding("skill"));
             ResolvedSchemaHints hints = resolved(List.of(), Set.of());
 
@@ -404,6 +404,18 @@ class CsvSchemaFieldBuilderTest {
                     bindings, Map.of("skill", SchemaFieldType.STRING), List.of(), Set.of(), hints);
 
             assertThat(result.getFirst().getType()).isEqualTo(SchemaFieldType.STRING);
+        }
+
+        @Test
+        @DisplayName("no manifest and no fileColumns hint: the supplied inferred SKILL type is emitted as SKILL")
+        void inferredSkillTypeIsPassedThroughWithoutHints() {
+            List<ColumnBinding> bindings = List.of(dataBinding("skill"));
+            ResolvedSchemaHints hints = resolved(List.of(), Set.of());
+
+            List<FieldDefinitionDto> result = builder.buildFromBindings(
+                    bindings, Map.of("skill", SchemaFieldType.SKILL), List.of(), Set.of(), hints);
+
+            assertThat(result.getFirst().getType()).isEqualTo(SchemaFieldType.SKILL);
         }
 
         @Test

@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.ColumnBinding;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
+import com.epam.aidial.evaluation.service.domain.csv.CsvColumnTypeInferrer;
 import com.epam.aidial.evaluation.service.domain.csv.CsvFormats;
 import com.epam.aidial.evaluation.service.domain.csv.CsvImportSchemaHints;
 import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
@@ -80,6 +81,7 @@ public class CsvImportService {
     private final CsvTestCaseGrouper csvTestCaseGrouper;
     private final MultiTurnRunAssembler multiTurnRunAssembler;
     private final DurableWarningMerger durableWarningMerger;
+    private final CsvColumnTypeInferrer columnTypeInferrer;
 
     /**
      * Dry-run: parse and validate without persisting. Returns preview with detected columns and sample rows.
@@ -1115,12 +1117,12 @@ public class CsvImportService {
             if (raw == null || raw.isBlank()) {
                 continue;
             }
-            SchemaFieldType cellType = inferCellType(raw.trim());
+            SchemaFieldType cellType = columnTypeInferrer.inferCellType(raw.trim());
             SchemaFieldType current = inferredTypes.get(b.fieldName());
             if (current == null) {
                 inferredTypes.put(b.fieldName(), cellType);
             } else if (current != cellType) {
-                inferredTypes.put(b.fieldName(), widenType(current, cellType));
+                inferredTypes.put(b.fieldName(), CsvColumnTypeInferrer.widen(current, cellType));
             }
         }
     }
@@ -1142,12 +1144,12 @@ public class CsvImportService {
             if (raw == null || raw.isBlank()) {
                 continue;
             }
-            SchemaFieldType cellType = inferCellType(raw.trim());
+            SchemaFieldType cellType = columnTypeInferrer.inferCellType(raw.trim());
             SchemaFieldType current = inferredTypes.get(b.fieldName());
             if (current == null) {
                 inferredTypes.put(b.fieldName(), cellType);
             } else if (current != cellType) {
-                inferredTypes.put(b.fieldName(), widenType(current, cellType));
+                inferredTypes.put(b.fieldName(), CsvColumnTypeInferrer.widen(current, cellType));
             }
         }
     }
@@ -1556,58 +1558,6 @@ public class CsvImportService {
                     .build());
         }
         return ValidationResult.builder().valid(valid).warnings(warnings).build();
-    }
-
-    // -------------------------------------------------------------------------
-    // Type inference
-    // -------------------------------------------------------------------------
-
-    /**
-     * Infers the type of a single cell value, including OBJECT and ARRAY detection via JSON parsing.
-     */
-    private SchemaFieldType inferCellType(String value) {
-        if (value.startsWith("{")) {
-            try {
-                objectMapper.readValue(value, Object.class);
-                return SchemaFieldType.OBJECT;
-            } catch (JacksonException ignored) {
-                // not valid JSON object
-            }
-        }
-        if (value.startsWith("[")) {
-            try {
-                objectMapper.readValue(value, Object.class);
-                return SchemaFieldType.ARRAY;
-            } catch (JacksonException ignored) {
-                // not valid JSON array
-            }
-        }
-        String lower = value.toLowerCase();
-        if ("true".equals(lower) || "false".equals(lower)) {
-            return SchemaFieldType.BOOLEAN;
-        }
-        if (value.matches("^-?\\d+$")) {
-            return SchemaFieldType.INTEGER;
-        }
-        if (value.matches("^-?\\d+\\.?\\d*$")) {
-            return SchemaFieldType.NUMBER;
-        }
-        return SchemaFieldType.STRING;
-    }
-
-    /**
-     * Widens two different types to the broadest compatible type.
-     * INTEGER + NUMBER -> NUMBER. Everything else mismatched -> STRING.
-     */
-    private static SchemaFieldType widenType(SchemaFieldType a, SchemaFieldType b) {
-        if (a == b) {
-            return a;
-        }
-        Set<SchemaFieldType> pair = Set.of(a, b);
-        if (pair.equals(Set.of(SchemaFieldType.INTEGER, SchemaFieldType.NUMBER))) {
-            return SchemaFieldType.NUMBER;
-        }
-        return SchemaFieldType.STRING;
     }
 
     // -------------------------------------------------------------------------

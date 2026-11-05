@@ -18,10 +18,10 @@ Status: **Planned** (dataset-rooted re-scoping).
 | `INTEGER` | `Long` | `123` | Yes |
 | `NUMBER` | `Number` (whole values normalized with `BigDecimal` on API writes) | `123.45`, `1.0` | Yes |
 | `BOOLEAN` | `Boolean` | `true`/`false` | Yes |
-| `OBJECT` | `Map<String, Object>` | `{...}` | No (requires schema) |
-| `ARRAY` | `List<Object>` | `[...]` | No (requires schema) |
+| `OBJECT` | `Map<String, Object>` | `{...}` | Yes (valid JSON object) |
+| `ARRAY` | `List<Object>` | `[...]` | Yes (valid JSON array) |
 | `FILE` | `String` (DIAL file reference path) | `"files/@ef/suites/{suiteId}/filename.ext"` | No (requires schema) |
-| `SKILL` | `String` (DIAL skill reference `skills/{bucket}/{path}`) | `"skills/my-bucket/summariser"` | No (requires schema) |
+| `SKILL` | `String` (DIAL skill reference `skills/{bucket}/{path}`) | `"skills/my-bucket/summariser"` | Yes (every non-blank cell a well-formed skill reference) |
 
 ## API Conventions
 
@@ -431,7 +431,7 @@ Status: **Planned**
 
 #### Scenario: Auto-detect type inference
 - **WHEN** system auto-detects schema from CSV
-- **THEN** system SHALL scan all row values per column and infer type: all non-empty values parse as JSON objects → OBJECT; JSON arrays → ARRAY; literal `true`/`false` (case-insensitive, NOT `1`/`0`) → BOOLEAN; whole numbers (including `1`/`0`) → INTEGER; decimal numbers → NUMBER; otherwise → STRING
+- **THEN** system SHALL scan all row values per column and infer type: all non-empty values parse as JSON objects → OBJECT; JSON arrays → ARRAY; literal `true`/`false` (case-insensitive, NOT `1`/`0`) → BOOLEAN; whole numbers (including `1`/`0`) → INTEGER; decimal numbers → NUMBER; well-formed skill references (`skills/{bucket}/{path}`, per the `dial-skill-ref` format rule) → SKILL; otherwise → STRING. A column whose non-blank cells infer different types SHALL widen: INTEGER + NUMBER → NUMBER; any other mix (including SKILL with any non-SKILL type) → STRING; blank cells are ignored
 
 #### Scenario: Auto-detected schema in preview
 - **WHEN** client calls the CSV import preview endpoint and `testCaseSchema` would be auto-detected or schema would be replaced/merged
@@ -1617,19 +1617,6 @@ Status: **Planned**
 - **WHEN** the dataset schema contains `prompt` and a client imports a CSV with `importMode=MERGE` and a column `Prompt`
 - **THEN** the system SHALL return HTTP 400 `VALIDATION_ERROR` naming the duplicate field, and SHALL NOT persist any row or schema change
 
-## Implementation Notes
-- Controllers: TestCaseController, TestCaseBulkPatchController, TestSuiteController (revalidation endpoints), MetricDeclarationController.
-- Services: TestCaseService (bulkPatch), TestCaseBulkPatchValidator, TestCaseBulkSelectorResolver, CsvExportService, CsvImportService, SchemaValidationService, RevalidationService.
-- DB: test_cases, revalidation_tasks, metric_declarations (V1.2 + V1.7 rename).
-- CSV import preview and import: `service/domain/CsvImportService.java`; preview response DTO `service/domain/dto/csv/CsvImportPreviewDto.java`; import/preview endpoints on `web/controller/TestCaseController.java` (`import`, `import/preview`).
-- Preview OpenAPI examples: `src/main/resources/openapi/examples/api-v1-datasets-datasetId-test-cases-import-preview-POST-response-200-{minimal,full}.json`.
-- CSV multi-turn functional coverage: `CsvImportModeFunctionalTests` (single-turn contract, must stay green unchanged) and `MultiTurnCsvFunctionalTests` (multi-turn preview and round trip).
-- Batch name permutation (two-phase write): the transient collision arises because names are persisted via sequential per-row `UPDATE`s while the unique index `(dataset_id, LOWER(test_case_name))` is non-deferrable and checked after each statement. Fix is a two-phase write inside the existing `@Transactional` boundary: phase 1 parks every affected row's `test_case_name` at a collision-proof temporary value, phase 2 applies the final names. Code: `data.db.repository.PostgresTestCaseRepository.parkTestCaseNames` + two-phase `batchUpdate` (covers batch PUT/PATCH via `TestCaseService.persistBatch`); `service.domain.TestCaseService.bulkPatch` item-operations loop restructured into prepare → park → apply. Final-state uniqueness gate is unchanged: `TestCaseService.validateBatchNameUniqueness` still rejects genuine duplicates before any write.
-- No-per-turn-columns warning — trigger and warning construction: `TestCaseValidationService.validateMultiTurn` (`src/main/java/com/epam/aidial/evaluation/service/domain/TestCaseValidationService.java`), immediately after the max-turns cap check, using the per-turn sub-schema already produced by `TestCaseFieldScopeResolver.splitSchema`. The warning is prepended to the warning list so the `validation.max-warnings-per-case` truncation at the end of the method cannot drop it.
-- Inherited by every validation entry point without further wiring: `TestCaseService` (write paths), `RevalidationService` (dataset revalidation), `CsvImportService` (row validation and post-persist fixup — the latter recomputes only for cases it coerces and rewrites).
-- Runnable exclusion is the existing `is_valid` filter in `RunnableTestCaseSelector`; no change there.
-- Run-time turn count remains `PerTurnBindingDetector` + `TurnLoopExecutor` (`evaluation-runner-core`); this change does not touch execution.
-
 ### Requirement: SKILL type in test case schemas and data
 The `SKILL` value of `SchemaFieldType` SHALL be a supported `testCaseSchema` field type for test suites and datasets (type table: `SKILL` — string, value is a DIAL skill reference `skills/{bucket}/{path}`). Value validation and warnings are defined in `dial-skill-ref` (malformed non-empty value → `TYPE` warning; never an HTTP 400 for a test-case write). The type SHALL be preserved unchanged through create, update, PATCH, batch and bulk operations, CSV import/export, ZIP manifest, suite snapshot and suite/dataset clone.
 
@@ -1645,10 +1632,12 @@ Implementation notes: the type is carried by the JSONB schema, so persistence, c
 - **THEN** the run snapshot SHALL carry the schema field with `type: SKILL` and the unchanged values
 
 ### Requirement: SKILL columns in CSV import and export
-CSV export of test cases whose schema contains `SKILL` fields (and no `FILE` fields) SHALL produce a plain CSV (never a ZIP); each `SKILL` cell SHALL be written verbatim. CSV import into an existing `SKILL` column SHALL keep each cell verbatim as a string (permissive coercion identical to `STRING`; no path rewriting). A `SKILL` type SHALL NOT be inferred from cell content during schema detection; a `skills/...` string in an untyped column remains `STRING` until the schema is retyped.
+CSV export of test cases whose schema contains `SKILL` fields (and no `FILE` fields) SHALL produce a plain CSV (never a ZIP); each `SKILL` cell SHALL be written verbatim. CSV import into an existing `SKILL` column SHALL keep each cell verbatim as a string (permissive coercion identical to `STRING`; no path rewriting).
+
+During CSV schema detection (wherever a column's type is inferred from cell content: OVERRIDE import, APPEND into an empty schema, the MERGE new-column delta, ZIP import without a manifest, ZIP import with a manifest for the CSV columns the manifest does not list, and the corresponding preview `autoDetectedSchema`) a column SHALL be inferred as `SKILL` when it has at least one non-blank cell and every non-blank cell is a well-formed skill reference per the `dial-skill-ref` format rule (`SkillRefResolver.validate`). A column mixing well-formed skill references with any other non-blank value SHALL widen to `STRING`; blank cells SHALL NOT affect the inferred type, and a column that is blank on every row SHALL default to `STRING`, as for every other type. Inference SHALL NOT retype a column whose definition the import keeps from the dataset schema (APPEND into a non-empty schema; existing columns in MERGE); in OVERRIDE every column's type is re-derived from the CSV, as for every other type, so a declared `STRING` column holding only well-formed skill references becomes `SKILL`. A manifest-declared type or the manifest-less `files/…` → `FILE` hint SHALL take precedence over the inferred `SKILL`. Consequently a plain-CSV export of a `SKILL` column with at least one non-blank value, whose non-blank values are all well-formed, SHALL re-import as a `SKILL` column with identical cell values.
 
 Status: **Implemented**
-Implementation notes: `SchemaTypeCoercer` (`case STRING, FILE, SKILL`); `CsvImportService` is unchanged and never infers FILE/SKILL from cell content; `ZipImportColumnTypeResolver` keeps SKILL out of path rewriting. Tests: `SchemaTypeCoercerTest`, `CsvSchemaFieldBuilderTest`, `ZipExportServiceTest`, `SkillFieldFunctionalTests` (CSV export, import, no inference).
+Implementation notes: `SchemaTypeCoercer` (`case STRING, FILE, SKILL`); inference in `service/domain/csv/CsvColumnTypeInferrer` (`inferCellType` SKILL branch via runner-core `SkillRefResolver.validate`, `widen`), called from `CsvImportService.updateInferredTypes` / `updateInferredTypesForNewFields`; precedence in `CsvSchemaFieldBuilder.buildFromBindings` / `buildMergeDelta` (manifest `drivingFields`) and `resolveType` (`fileColumns` → FILE > inferred > STRING); `ZipImportColumnTypeResolver` keeps SKILL out of path rewriting. Tests: `CsvColumnTypeInferrerTest`, `CsvImportServiceSchemaTest` (SKILL inference section), `CsvImportServiceSchemaHintsTest` (SKILL vs hints precedence), `SchemaTypeCoercerTest`, `CsvSchemaFieldBuilderTest`, `ZipExportServiceTest`, `SkillFieldFunctionalTests` (CSV export, import, inference, mixed column, preview, plain-CSV round trip).
 
 #### Scenario: Export with only SKILL fields is CSV
 - **WHEN** a suite has a `SKILL` field and no `FILE` field and the client exports test cases
@@ -1658,9 +1647,37 @@ Implementation notes: `SchemaTypeCoercer` (`case STRING, FILE, SKILL`); `CsvImpo
 - **WHEN** a CSV is imported into a dataset whose schema has a `SKILL` field and a cell is `skills/my-bucket/summariser`
 - **THEN** the stored value SHALL be exactly `skills/my-bucket/summariser`
 
-#### Scenario: No content-based SKILL inference
-- **WHEN** a CSV with a `skills/b/x` cell is imported with schema detection and no hints
+#### Scenario: SKILL inferred from well-formed skill references
+- **WHEN** a CSV whose `skillField` column holds `skills/b/x` and `skills/b/team/y/` (and blank cells) is imported into an empty dataset with schema detection and no hints
+- **THEN** the persisted schema field `skillField` SHALL have type `SKILL`, the stored values SHALL equal the cells verbatim, and no validation warning SHALL be produced for that field
+
+#### Scenario: Mixed skill and non-skill column widens to STRING
+- **WHEN** a CSV column holds `skills/b/x` in one row and `hello` in another and is imported with schema detection
 - **THEN** the inferred column type SHALL be `STRING`
+
+#### Scenario: Malformed skill reference is not inferred as SKILL
+- **WHEN** every non-blank cell of a CSV column is `skills/b` (bucket only), `Skills/b/x` or `files/b/x`, and the CSV is imported with schema detection
+- **THEN** the inferred column type SHALL be `STRING`
+
+#### Scenario: All-blank column is not inferred as SKILL
+- **WHEN** a CSV column is blank on every row and the CSV is imported into an empty dataset with schema detection and no hints
+- **THEN** the inferred column type SHALL be `STRING`
+
+#### Scenario: Plain CSV round trip preserves SKILL
+- **WHEN** a dataset with a `SKILL` column (well-formed values), an `INTEGER` column and no `FILE` column is exported as CSV and that CSV is imported into a new dataset in OVERRIDE mode
+- **THEN** the new dataset's schema SHALL have the `SKILL` column with type `SKILL` and the `INTEGER` column with type `INTEGER`, and the `SKILL` cell values SHALL equal the exported strings
+
+#### Scenario: Declared column is not retyped
+- **WHEN** a CSV whose `note` column holds only `skills/b/x` values is imported in APPEND mode into a dataset whose schema declares `note` as `STRING`
+- **THEN** the field `note` SHALL remain `STRING`
+
+#### Scenario: OVERRIDE re-derives a declared STRING column as SKILL
+- **WHEN** a CSV whose `note` column holds only `skills/b/x` values is imported in OVERRIDE mode into a dataset whose schema declares `note` as `STRING`
+- **THEN** the field `note` SHALL become `SKILL`
+
+#### Scenario: Preview reports inferred SKILL
+- **WHEN** the client calls the import preview endpoint for a CSV whose column holds only well-formed skill references and the schema would be auto-detected
+- **THEN** `autoDetectedSchema` SHALL list that column with type `SKILL`
 
 ### Requirement: SKILL coercion rules
 Permissive coercion (`SchemaTypeCoercer`, CSV import) SHALL coerce any value to `SKILL` as it does to `STRING`. Strict coercion on schema-type change (`SchemaChangeCoercer`) SHALL treat a `SKILL` target like a `FILE` target: only a `String` value is kept (identity); any other value SHALL NOT be auto-coerced and SHALL be reported by revalidation. After a type change to `SKILL`, revalidation SHALL apply the skill format warning.
@@ -1679,3 +1696,16 @@ Implementation notes: `SchemaChangeCoercer` (`case FILE, SKILL -> coerceToRefere
 #### Scenario: Retype to SKILL revalidates format
 - **WHEN** a field is changed from `STRING` to `SKILL` and a test case holds `"not-a-skill"`
 - **THEN** the value SHALL be kept and a `SKILL field` `TYPE` warning SHALL be produced
+
+## Implementation Notes
+- Controllers: TestCaseController, TestCaseBulkPatchController, TestSuiteController (revalidation endpoints), MetricDeclarationController.
+- Services: TestCaseService (bulkPatch), TestCaseBulkPatchValidator, TestCaseBulkSelectorResolver, CsvExportService, CsvImportService, SchemaValidationService, RevalidationService.
+- DB: test_cases, revalidation_tasks, metric_declarations (V1.2 + V1.7 rename).
+- CSV import preview and import: `service/domain/CsvImportService.java`; preview response DTO `service/domain/dto/csv/CsvImportPreviewDto.java`; import/preview endpoints on `web/controller/TestCaseController.java` (`import`, `import/preview`).
+- Preview OpenAPI examples: `src/main/resources/openapi/examples/api-v1-datasets-datasetId-test-cases-import-preview-POST-response-200-{minimal,full}.json`.
+- CSV multi-turn functional coverage: `CsvImportModeFunctionalTests` (single-turn contract, must stay green unchanged) and `MultiTurnCsvFunctionalTests` (multi-turn preview and round trip).
+- Batch name permutation (two-phase write): the transient collision arises because names are persisted via sequential per-row `UPDATE`s while the unique index `(dataset_id, LOWER(test_case_name))` is non-deferrable and checked after each statement. Fix is a two-phase write inside the existing `@Transactional` boundary: phase 1 parks every affected row's `test_case_name` at a collision-proof temporary value, phase 2 applies the final names. Code: `data.db.repository.PostgresTestCaseRepository.parkTestCaseNames` + two-phase `batchUpdate` (covers batch PUT/PATCH via `TestCaseService.persistBatch`); `service.domain.TestCaseService.bulkPatch` item-operations loop restructured into prepare → park → apply. Final-state uniqueness gate is unchanged: `TestCaseService.validateBatchNameUniqueness` still rejects genuine duplicates before any write.
+- No-per-turn-columns warning — trigger and warning construction: `TestCaseValidationService.validateMultiTurn` (`src/main/java/com/epam/aidial/evaluation/service/domain/TestCaseValidationService.java`), immediately after the max-turns cap check, using the per-turn sub-schema already produced by `TestCaseFieldScopeResolver.splitSchema`. The warning is prepended to the warning list so the `validation.max-warnings-per-case` truncation at the end of the method cannot drop it.
+- Inherited by every validation entry point without further wiring: `TestCaseService` (write paths), `RevalidationService` (dataset revalidation), `CsvImportService` (row validation and post-persist fixup — the latter recomputes only for cases it coerces and rewrites).
+- Runnable exclusion is the existing `is_valid` filter in `RunnableTestCaseSelector`; no change there.
+- Run-time turn count remains `PerTurnBindingDetector` + `TurnLoopExecutor` (`evaluation-runner-core`); this change does not touch execution.

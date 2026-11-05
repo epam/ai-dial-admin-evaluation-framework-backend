@@ -52,9 +52,11 @@ public class CsvSchemaFieldBuilder {
      * Builds a field list from CSV column bindings (data-mapped columns only). {@code types} supplies each
      * field's type by name; when {@code null} (validation-time, before inference has run) every field gets
      * {@code type(null)} unless the manifest tier (0) supplies it. When {@code types} is supplied
-     * (persist/fixup/preview-time, after inference), a binding with no entry defaults to {@link
-     * SchemaFieldType#STRING}, or to {@link SchemaFieldType#FILE} when {@code hints.fileColumns()} names it
-     * (non-empty only when no manifest is present, see {@link ResolvedSchemaHints}). {@code
+     * (persist/fixup/preview-time, after inference), a non-manifest binding is typed {@link SchemaFieldType#FILE}
+     * when {@code hints.fileColumns()} names it (non-empty only when no manifest is present, see {@link
+     * ResolvedSchemaHints}), otherwise with its inferred type from {@code types} (any type {@link
+     * CsvColumnTypeInferrer} produces, including {@link SchemaFieldType#SKILL}), defaulting to {@link
+     * SchemaFieldType#STRING} when it has no entry. {@code
      * multiTurnColumns} supplies the undeclared-column scope tier (see class javadoc). A driving manifest
      * field with no matching CSV binding is still appended (design D4): the manifest is the source of truth
      * for fields a blank-everywhere CSV column can no longer express.

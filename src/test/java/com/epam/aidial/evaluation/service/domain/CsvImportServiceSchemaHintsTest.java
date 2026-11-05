@@ -14,12 +14,15 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
+import com.epam.aidial.evaluation.service.domain.csv.CsvColumnTypeInferrer;
 import com.epam.aidial.evaluation.service.domain.csv.CsvImportSchemaHints;
 import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
 import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
@@ -102,7 +105,8 @@ class CsvImportServiceSchemaHintsTest {
                 new CsvSchemaFieldBuilder(),
                 new CsvTestCaseGrouper(),
                 new MultiTurnRunAssembler(new TestCaseFieldScopeResolver()),
-                new DurableWarningMerger(warningsSerializer));
+                new DurableWarningMerger(warningsSerializer),
+                new CsvColumnTypeInferrer(objectMapper, new SkillRefResolver(new BindingTypeResolver())));
         datasetId = UUID.randomUUID();
 
         when(csvImportProperties.getMaxFileSize()).thenReturn(DataSize.ofMegabytes(10));
@@ -372,6 +376,46 @@ class CsvImportServiceSchemaHintsTest {
         assertThat(preview.getAutoDetectedSchema()).isNotNull();
         assertThat(fieldNamed(preview.getAutoDetectedSchema(), "document").getType())
                 .isEqualTo(SchemaFieldType.FILE);
+    }
+
+    // -------------------------------------------------------------------------
+    // SKILL inference vs hints precedence (fix-skill-type-csv-round-trip, design D4)
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("No manifest: a fileColumns column is still FILE while a skill-reference column in the same CSV is"
+            + " inferred SKILL")
+    void fileColumnsHintStaysFileAlongsideInferredSkill() {
+        datasetWithSchema("[]");
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(), Set.of("document"));
+
+        String csv = "testCaseName,document,skill\nRow1,@ef/datasets/x/report.pdf,skills/b/x";
+        importCsv(csv, CsvImportMode.OVERRIDE, hints);
+
+        List<FieldDefinitionDto> persisted = persistedSchema();
+        assertThat(fieldNamed(persisted, "document").getType()).isEqualTo(SchemaFieldType.FILE);
+        assertThat(fieldNamed(persisted, "skill").getType()).isEqualTo(SchemaFieldType.SKILL);
+    }
+
+    @Test
+    @DisplayName("Manifest declaring a skill-reference column as STRING beats the inferred SKILL")
+    void manifestStringBeatsInferredSkill() {
+        datasetWithSchema("[]");
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        FieldDefinitionDto manifestNote = FieldDefinitionDto.builder()
+                .name("note")
+                .type(SchemaFieldType.STRING)
+                .required(false)
+                .build();
+        CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(manifestNote), Set.of());
+
+        String csv = "testCaseName,note\nRow1,skills/b/x";
+        importCsv(csv, CsvImportMode.OVERRIDE, hints);
+
+        assertThat(fieldNamed(persistedSchema(), "note").getType()).isEqualTo(SchemaFieldType.STRING);
     }
 
     // -------------------------------------------------------------------------

@@ -36,6 +36,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutWithVariablesRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -190,18 +191,98 @@ public abstract class SkillFieldFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("CSV schema detection never infers SKILL from a skills/... cell — the column stays STRING")
-    void csvSchemaDetectionDoesNotInferSkillType() {
+    @DisplayName("CSV schema detection infers SKILL for a column of well-formed skill references; the value is stored"
+            + " verbatim and the test case is valid")
+    void csvSchemaDetectionInfersSkillType() {
         final UUID datasetId = newDataset(List.of());
 
         final ResponseEntity<CsvImportResultDto> response =
                 importCsv(datasetId, "testCaseName,prompt,skillField\nTC1,hello," + SKILL_REF, "OVERRIDE");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(typeOf(getDataset(datasetId), SKILL_FIELD)).isEqualTo(SchemaFieldType.SKILL);
+        assertThat(listTestCases(datasetId)).singleElement().satisfies(tc -> {
+            assertThat(tc.getData()).containsEntry(SKILL_FIELD, SKILL_REF);
+            assertThat(tc.isValid()).isTrue();
+        });
+    }
+
+    @Test
+    @DisplayName("CSV schema detection widens a column mixing a skill reference with free text to STRING")
+    void csvSchemaDetectionWidensMixedSkillColumnToString() {
+        final UUID datasetId = newDataset(List.of());
+
+        final ResponseEntity<CsvImportResultDto> response = importCsv(
+                datasetId, "testCaseName,prompt,skillField\nTC1,hello," + SKILL_REF + "\nTC2,hi,not a skill", "OVERRIDE");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(typeOf(getDataset(datasetId), SKILL_FIELD)).isEqualTo(SchemaFieldType.STRING);
-        assertThat(listTestCases(datasetId))
+    }
+
+    @Test
+    @DisplayName("Plain CSV export of SKILL + INTEGER columns re-imported into a new dataset restores both types and"
+            + " the verbatim SKILL values (issue #288)")
+    void plainCsvRoundTripRestoresSkillAndIntegerTypes() {
+        final UUID sourceId = newDataset(List.of(
+                field("prompt", SchemaFieldType.STRING),
+                field("count", SchemaFieldType.INTEGER),
+                field(SKILL_FIELD, SchemaFieldType.SKILL)));
+        createTestCase(sourceId, "TC1", Map.of("prompt", "hi", "count", 7, SKILL_FIELD, SKILL_REF));
+        createTestCase(sourceId, "TC2", Map.of("prompt", "yo", "count", 8, SKILL_FIELD, SKILL_REF + "/"));
+
+        final HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(List.of(MediaType.parseMediaType("text/csv; charset=UTF-8")));
+        final ResponseEntity<byte[]> export = restTemplate.exchange(
+                apiUrl("/datasets/" + sourceId + "/test-cases/export.csv"),
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                byte[].class);
+        assertThat(export.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(export.getHeaders().getContentType()).isNotNull();
+        assertThat(export.getHeaders().getContentType().toString()).contains("text/csv");
+
+        final UUID targetId = newDataset(List.of());
+        final ResponseEntity<CsvImportResultDto> imported =
+                importFile(targetId, export.getBody(), "export.csv", "OVERRIDE");
+
+        assertThat(imported.getStatusCode()).isEqualTo(HttpStatus.OK);
+        final DatasetResponseDto target = getDataset(targetId);
+        assertThat(typeOf(target, SKILL_FIELD)).isEqualTo(SchemaFieldType.SKILL);
+        assertThat(typeOf(target, "count")).isEqualTo(SchemaFieldType.INTEGER);
+        assertThat(listTestCases(targetId))
+                .extracting(tc -> tc.getData().get(SKILL_FIELD))
+                .containsExactlyInAnyOrder(SKILL_REF, SKILL_REF + "/");
+        assertThat(listTestCases(targetId)).allMatch(TestCaseResponseDto::isValid);
+    }
+
+    @Test
+    @DisplayName("Import preview reports SKILL in autoDetectedSchema for a column of well-formed skill references")
+    void importPreviewReportsInferredSkill() {
+        final UUID datasetId = newDataset(List.of());
+        final URI uri = UriComponentsBuilder.fromUriString(
+                        apiUrl("/datasets/" + datasetId + "/test-cases/import/preview"))
+                .queryParam("importMode", "OVERRIDE")
+                .build()
+                .toUri();
+        final MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add(
+                "file",
+                namedResource(
+                        ("testCaseName,prompt,skillField\nTC1,hello," + SKILL_REF).getBytes(StandardCharsets.UTF_8),
+                        "test.csv"));
+        final HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        final ResponseEntity<CsvImportPreviewDto> response =
+                restTemplate.postForEntity(uri, new HttpEntity<>(body, headers), CsvImportPreviewDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getAutoDetectedSchema())
+                .filteredOn(f -> SKILL_FIELD.equals(f.getName()))
                 .singleElement()
-                .satisfies(tc -> assertThat(tc.getData()).containsEntry(SKILL_FIELD, SKILL_REF));
+                .extracting(FieldDefinitionDto::getType)
+                .isEqualTo(SchemaFieldType.SKILL);
     }
 
     // -----------------------------------------------------------------------

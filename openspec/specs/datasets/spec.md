@@ -4,87 +4,49 @@
 
 This spec defines the `Dataset` entity — the centralized container for test case shape (`testCaseSchema`) and test case data. Datasets replace TestSuite as the system of record for these concerns: test suites become consumers of a dataset (many suites may share one dataset), and edits to test case data propagate to every suite that references the dataset.
 
-Status: **Planned**
+Status: **Implemented**
 
 ## Key Terms
 - **Dataset**: An entity owning a `testCaseSchema` (list of `FieldDefinitionDto`) and the collection of `TestCase` rows that conform to that schema. Identity: `id` (UUID), `name` (globally unique on `LOWER(name)`).
 - **testCaseSchema**: A JSONB list of `FieldDefinitionDto` (server-assigned `id`, name, displayName, type ∈ `STRING`/`INTEGER`/`NUMBER`/`BOOLEAN`/`OBJECT`/`ARRAY`/`FILE`/`SKILL`, required, description). Defines the shape every TestCase's `data` map must conform to. Owned by Dataset, sourced by TestSuite via `DatasetSchemaProvider` at validation/snapshot time.
 - **DatasetSchemaProvider**: An injectable `@Component` returning `List<FieldDefinitionDto>` for a given `datasetId`. Used to break the would-be circular dependency between `DatasetService` and `TestSuiteService`.
-- **Dataset-rooted RevalidationTask**: The task run synchronously by a dataset PUT (or import) that mutates `testCaseSchema`. Runs two phases — Phase 1 (test cases, fail-fast) and Phase 2 (dependent suites, per-suite resilient). See `test-cases` spec for Phase 1 semantics and `test-suites` spec for Phase 2 semantics.
+- **Dataset-rooted RevalidationTask**: The task run synchronously by a dataset PUT (or import) that mutates `testCaseSchema`. Runs two phases — Phase 1 (test cases, fail-fast) and Phase 2 (dependent suites, per-suite resilient). See [test-case-revalidation](../test-case-revalidation/spec.md) for Phase 1 semantics and `test-suites` spec for Phase 2 semantics.
 
 ## Requirements
 
 ### Requirement: Dataset CRUD endpoints
-The system SHALL provide CRUD endpoints for the `Dataset` entity under `/api/v1/datasets`. Dataset is the system of record for `testCaseSchema` and owns the collection of test cases under it. Every dataset carries a `visibility` enum (`PUBLIC` | `PRIVATE`) that is required on create, ignored on update via `PUT`, and changed only via the dedicated `PATCH /api/v1/datasets/{id}/visibility` endpoint.
-Status: **Planned**
 
-#### Scenario: List datasets (paginated)
-- **WHEN** client calls `GET /api/v1/datasets`
-- **THEN** system SHALL return a paginated list of `DatasetResponseDto` items hard-filtered to `visibility = 'PUBLIC'`; default page=0, size=100, max size 1000; default sort `createdAt,desc`; supports `filter`/`sort`/`includeTotalCount` per entity-filtering spec; PRIVATE datasets SHALL NOT appear regardless of client-supplied filters
+Status: **Implemented**
 
-#### Scenario: Sort datasets by version
-- **WHEN** client calls `GET /api/v1/datasets?sort=version,desc`
-- **THEN** system SHALL return datasets ordered by `version` descending; the `version` field is registered in `SortWhitelists` for datasets
+The system SHALL provide CRUD endpoints for the `Dataset` entity under `/api/v1/datasets`. Dataset is the system of record for `testCaseSchema` and owns the collection of test cases under it. Every dataset carries a `visibility` enum (`PUBLIC` | `PRIVATE`) that is required on create, ignored on update via `PUT`, and changed via `PATCH /api/v1/datasets/{id}/visibility` or promoted to PUBLIC via `POST /api/v1/datasets/{id}/publish`.
 
-#### Scenario: Filter datasets by name substring
-- **WHEN** client calls `GET /api/v1/datasets?filter=name:co:customer`
-- **THEN** system SHALL return only datasets whose `name` contains the substring `customer` (case-sensitivity follows the underlying `CO` operator semantics defined in the entity-filtering spec)
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: Filter datasets by updatedAt range
-- **WHEN** client calls `GET /api/v1/datasets?filter=updatedAt:gte:1700000000000&filter=updatedAt:lte:1800000000000`
-- **THEN** system SHALL return only datasets whose `updatedAt` lies within the inclusive epoch-ms range
-
-#### Scenario: Filter datasets by createdBy
-- **WHEN** client calls `GET /api/v1/datasets?filter=createdBy:eq:alice@example.com`
-- **THEN** system SHALL return only datasets whose `createdBy` equals the supplied value
-
-#### Scenario: Get dataset by id
-- **WHEN** client calls `GET /api/v1/datasets/{id}` with a valid id (PUBLIC or PRIVATE)
-- **THEN** system SHALL return `DatasetResponseDto` with an `ETag` header carrying the entity's `version`; visibility SHALL NOT block retrieval
-
-#### Scenario: Dataset not found
-- **WHEN** client calls `GET /api/v1/datasets/{id}` for an unknown id
-- **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
-
-#### Scenario: Create PUBLIC dataset
-- **WHEN** client calls `POST /api/v1/datasets` with a valid `DatasetRequestDto` carrying `visibility: "PUBLIC"` and no `bindToSuiteId`
-- **THEN** system SHALL create the dataset; assign a fresh UUID; set `version = 1`; set `visibility = 'PUBLIC'`; set `createdBy` from JWT subject (or `"anonymous"` in no-security mode); set `createdAt`/`updatedAt` from the injected `Clock`; return HTTP 201 with `DatasetResponseDto` and `ETag` header
-
-#### Scenario: Create PRIVATE dataset with atomic suite binding
-- **WHEN** client calls `POST /api/v1/datasets` with `visibility: "PRIVATE"` and a valid `bindToSuiteId` referencing an existing suite
-- **THEN** system SHALL — in a single transaction — create the dataset (`visibility = 'PRIVATE'`, `version = 1`) and update the target suite's `dataset_id` to the new dataset's id; return HTTP 201 with `DatasetResponseDto` and `ETag` header (see "Atomic create-and-bind for PRIVATE datasets" requirement for the full set of error scenarios)
-
-#### Scenario: Update dataset (metadata only)
-- **WHEN** client calls `PUT /api/v1/datasets/{id}` with `If-Match: <version>` header and a body where `testCaseSchema` is unchanged compared to the stored value
-- **THEN** system SHALL update the dataset (ignoring any `visibility` field in the body), bump `version`, return HTTP 200 with the new `DatasetResponseDto` and updated `ETag`; the persisted `visibility` SHALL remain unchanged
-
-#### Scenario: Update dataset (schema change)
-- **WHEN** client calls `PUT /api/v1/datasets/{id}` with `If-Match: <version>` and a body where `testCaseSchema` differs from the stored value
-- **THEN** system SHALL update the dataset (ignoring any `visibility` field in the body), bump `version`, prune any data fields removed from the schema from every TestCase in the dataset, rename the data keys of renamed fields (see "Dataset schema field rename preserves data"), run the `RevalidationTask` rooted at this dataset synchronously (see "Dataset-rooted RevalidationTask trigger"), and return HTTP 202 with `RevalidationTaskDto` (status `PENDING` as created); the persisted `visibility` SHALL remain unchanged
-
-#### Scenario: Optimistic concurrency conflict
-- **WHEN** client calls `PUT /api/v1/datasets/{id}` with an `If-Match` value that does not match the current `version`
-- **THEN** system SHALL respond with HTTP 409 and error code `VERSION_CONFLICT`
-
-#### Scenario: Missing If-Match header
-- **WHEN** client calls `PUT /api/v1/datasets/{id}` without an `If-Match` header
-- **THEN** system SHALL respond with HTTP 428 (or 400 per project convention) and error code `VALIDATION_ERROR`
-
-#### Scenario: Delete PUBLIC dataset with no dependents
-- **WHEN** client calls `DELETE /api/v1/datasets/{id}` on a `PUBLIC` dataset and no `TestSuite` references this dataset
-- **THEN** system SHALL delete the dataset and (via `ON DELETE CASCADE`) all its test cases; return HTTP 204
-
-#### Scenario: Delete PUBLIC dataset rejected by RESTRICT
-- **WHEN** client calls `DELETE /api/v1/datasets/{id}` on a `PUBLIC` dataset and one or more `TestSuite` rows reference this dataset
-- **THEN** system SHALL respond with HTTP 409 and error code `UNIQUE_CONSTRAINT_VIOLATION` (or a dedicated `DATASET_IN_USE` error code if added in implementation); response body SHALL list the dependent suite IDs and names
-
-#### Scenario: Delete PRIVATE dataset atomically unbinds and removes
-- **WHEN** client calls `DELETE /api/v1/datasets/{id}` on a `PRIVATE` dataset (which by invariant has exactly one bound suite at deletion time, or zero if the suite was deleted earlier in the same transaction)
-- **THEN** system SHALL atomically set the bound suite's `dataset_id := NULL` and delete the dataset row (test cases cascade); return HTTP 204 (see "PRIVATE dataset delete atomically unbinds and removes" requirement for atomicity and error scenarios)
+| Case | When | Expected |
+|---|---|---|
+| List datasets (paginated) | `GET /api/v1/datasets` | SHALL return a paginated list of `DatasetResponseDto` items hard-filtered to `visibility = 'PUBLIC'`; default page=0, size=100, max size 1000; default sort `createdAt,desc`; supports `filter`/`sort`/`includeTotalCount` per entity-filtering spec; PRIVATE datasets SHALL NOT appear regardless of client-supplied filters |
+| Sort datasets by version | `GET /api/v1/datasets?sort=version,desc` | SHALL return datasets ordered by `version` descending; the `version` field is registered in `SortWhitelists` for datasets |
+| Filter datasets by name substring | `GET /api/v1/datasets?filter=name:co:customer` | SHALL return only datasets whose `name` contains the substring `customer` (case-sensitivity follows the underlying `CO` operator semantics defined in the entity-filtering spec) |
+| Filter datasets by updatedAt range | `GET /api/v1/datasets?filter=updatedAt:ge:1700000000000&filter=updatedAt:le:1800000000000` | SHALL return only datasets whose `updatedAt` lies within the inclusive epoch-ms range |
+| Filter datasets by createdBy | `GET /api/v1/datasets?filter=createdBy:eq:alice@example.com` | SHALL return only datasets whose `createdBy` equals the supplied value |
+| Get dataset by id | `GET /api/v1/datasets/{id}` with a valid id (PUBLIC or PRIVATE) | SHALL return `DatasetResponseDto` with an `ETag` header carrying the entity's `version`; visibility SHALL NOT block retrieval |
+| Dataset not found | `GET /api/v1/datasets/{id}` for an unknown id | SHALL respond with HTTP 404 and error code `NOT_FOUND` |
+| Create PUBLIC dataset | `POST /api/v1/datasets` with a valid `DatasetRequestDto` carrying `visibility: "PUBLIC"` and no `bindToSuiteId` | SHALL create the dataset; assign a fresh UUID; set `version = 0`; set `visibility = 'PUBLIC'`; set `createdBy` using `AuthorResolver` (configured JWT claim, optionally resolved display name with claim fallback, authenticated non-JWT principal name, or `"anonymous"` when no identity is available); set `createdAt`/`updatedAt` to the transaction timestamp from the injected `Clock`; return HTTP 201 with `DatasetResponseDto` and `ETag` header |
+| Create PRIVATE dataset with atomic suite binding | `POST /api/v1/datasets` with `visibility: "PRIVATE"` and a valid `bindToSuiteId` referencing an existing suite | SHALL — in a single transaction — create the dataset (`visibility = 'PRIVATE'`, `version = 0`) and update the target suite's `dataset_id` to the new dataset's id; return HTTP 201 with `DatasetResponseDto` and `ETag` header (see "Atomic create-and-bind for PRIVATE datasets" requirement for the full set of error scenarios) |
+| Update dataset (metadata only) | `PUT /api/v1/datasets/{id}` with `If-Match: <version>` header and a body where `testCaseSchema` is unchanged compared to the stored value | SHALL update the dataset (ignoring any `visibility` field in the body), bump `version`, return HTTP 200 with the new `DatasetResponseDto` and updated `ETag`; the persisted `visibility` SHALL remain unchanged |
+| Update dataset (schema change) | `PUT /api/v1/datasets/{id}` with `If-Match: <version>` and a body where `testCaseSchema` differs from the stored value | SHALL update the dataset (ignoring any `visibility` field in the body), bump `version`, prune any data fields removed from the schema from every TestCase in the dataset, rename the data keys of renamed fields (see "Dataset schema field rename preserves data"), run the `RevalidationTask` rooted at this dataset synchronously (see "Dataset-rooted RevalidationTask trigger"), and return HTTP 202 with `RevalidationTaskDto` (status `PENDING` as created); the persisted `visibility` SHALL remain unchanged |
+| Optimistic concurrency conflict | `PUT /api/v1/datasets/{id}` with an `If-Match` value that does not match the current `version` | SHALL respond with HTTP 409 and error code `VERSION_CONFLICT` |
+| Missing If-Match header | `PUT /api/v1/datasets/{id}` without an `If-Match` header | SHALL respond with HTTP 400 and error code `VALIDATION_ERROR` |
+| Delete PUBLIC dataset with no dependents | `DELETE /api/v1/datasets/{id}` on a `PUBLIC` dataset and no `TestSuite` references this dataset | SHALL delete the dataset and (via `ON DELETE CASCADE`) all its test cases; return HTTP 204 |
+| Delete PUBLIC dataset rejected by RESTRICT | `DELETE /api/v1/datasets/{id}` on a `PUBLIC` dataset and one or more `TestSuite` rows reference this dataset | SHALL respond with HTTP 409 and error code `INVALID_OPERATION`; the error message SHALL identify the dataset, dependent suite count and suite names, without promising a structured list of suite IDs |
+| Delete PRIVATE dataset atomically unbinds and removes | `DELETE /api/v1/datasets/{id}` on a `PRIVATE` dataset (which by invariant has exactly one bound suite at deletion time, or zero if the suite was deleted earlier in the same transaction) | SHALL atomically set the bound suite's `dataset_id := NULL` and delete the dataset row (test cases cascade); return HTTP 204 (see "PRIVATE dataset delete atomically unbinds and removes" requirement for atomicity and error scenarios) |
+| Concurrent dataset edit returns 409 | two clients hold the same dataset version and both submit PUT with that version as `If-Match` | the first wins (HTTP 200/202); the second SHALL respond with HTTP 409 `VERSION_CONFLICT` and SHALL commit no changes |
 
 ### Requirement: Dataset visibility field
 Every `Dataset` SHALL carry a `visibility` enum field with exactly two values: `PUBLIC` and `PRIVATE`. The field SHALL be stored in `datasets.visibility` as `VARCHAR(16) NOT NULL` with a `CHECK (visibility IN ('PUBLIC','PRIVATE'))` constraint, and SHALL be surfaced on every `DatasetResponseDto`.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: DatasetResponseDto includes visibility
 - **WHEN** client receives a `DatasetResponseDto`
@@ -104,7 +66,7 @@ Status: **Planned**
 
 ### Requirement: List datasets hard-filters by visibility
 `GET /api/v1/datasets` SHALL hard-filter results server-side to `visibility = 'PUBLIC'`. PRIVATE datasets SHALL NOT appear in any list response regardless of client-supplied filter parameters. The `visibility` field SHALL NOT be registered in `FilterWhitelists` for datasets; filters that name `visibility` SHALL be rejected. Direct retrieval via `GET /api/v1/datasets/{id}` SHALL NOT enforce visibility — any authenticated caller may fetch a PRIVATE dataset by id.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: List excludes PRIVATE datasets
 - **WHEN** client calls `GET /api/v1/datasets`
@@ -120,7 +82,7 @@ Status: **Planned**
 
 ### Requirement: Atomic create-and-bind for PRIVATE datasets
 `POST /api/v1/datasets` SHALL accept an optional `bindToSuiteId` field. The field SHALL be **required** when `visibility = "PRIVATE"` (missing → HTTP 400 `PRIVATE_DATASET_REQUIRES_SUITE_BINDING`) and **forbidden** when `visibility = "PUBLIC"` (present → HTTP 400 `PUBLIC_DATASET_FORBIDS_SUITE_BINDING`). When supplied, the server SHALL — within a single meta transaction — insert the new dataset row AND update the named suite's `dataset_id` to the new dataset's id. The transaction SHALL fail atomically (no orphan dataset, no partial state) if the target suite does not exist, is already bound to a different PRIVATE dataset, or any other guard fires.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: PRIVATE create without bindToSuiteId rejected
 - **WHEN** client calls `POST /api/v1/datasets` with `visibility: "PRIVATE"` and no `bindToSuiteId`
@@ -136,15 +98,15 @@ Status: **Planned**
 
 #### Scenario: PRIVATE create-and-bind to unknown suite fails atomically
 - **WHEN** client calls `POST /api/v1/datasets` with `visibility: "PRIVATE"` and `bindToSuiteId` referencing a non-existent suite id
-- **THEN** system SHALL respond with HTTP 404 (or HTTP 400 per FK pre-check convention); no dataset row SHALL be persisted
+- **THEN** system SHALL respond with HTTP 404; no dataset row SHALL be persisted
 
 #### Scenario: PRIVATE create-and-bind to suite already bound to a PRIVATE dataset fails
 - **WHEN** client calls `POST /api/v1/datasets` with `visibility: "PRIVATE"` and `bindToSuiteId` referencing a suite already bound to another PRIVATE dataset
 - **THEN** system SHALL respond with HTTP 409 and error code `PRIVATE_DATASET_REBIND_FORBIDDEN`; no dataset row SHALL be persisted
 
 ### Requirement: Dataset visibility transition endpoint
-The system SHALL provide `PATCH /api/v1/datasets/{id}/visibility` to transition a dataset between `PUBLIC` and `PRIVATE`. The endpoint accepts a body `{ "visibility": "PUBLIC" | "PRIVATE" }`. The service SHALL `SELECT ... FOR UPDATE` the datasets row and count its suite bindings under the same lock before applying the transition. `PRIVATE → PUBLIC` SHALL always succeed. `PUBLIC → PRIVATE` SHALL succeed only when the dataset has **exactly one** bound suite; otherwise HTTP 409 `PRIVATE_TRANSITION_INVALID_BINDING_COUNT`. The same visibility (no-op) SHALL return HTTP 200 with the current dataset (idempotent). `PUT /api/v1/datasets/{id}` SHALL NOT perform visibility transitions; the dedicated PATCH endpoint is the only way to change `visibility`.
-Status: **Planned**
+The system SHALL provide `PATCH /api/v1/datasets/{id}/visibility` to transition a dataset between `PUBLIC` and `PRIVATE`. The endpoint accepts a body `{ "visibility": "PUBLIC" | "PRIVATE" }`. The service SHALL `SELECT ... FOR UPDATE` the datasets row and count its suite bindings under the same lock before applying the transition. `PRIVATE → PUBLIC` SHALL always succeed. `PUBLIC → PRIVATE` SHALL succeed only when the dataset has **exactly one** bound suite; otherwise HTTP 409 `PRIVATE_TRANSITION_INVALID_BINDING_COUNT`. The same visibility (no-op) SHALL return HTTP 200 with the current dataset (idempotent). `PUT /api/v1/datasets/{id}` SHALL NOT perform visibility transitions; visibility changes use the dedicated PATCH endpoint or the publish endpoint (which promotes to PUBLIC).
+Status: **Implemented**
 
 #### Scenario: PRIVATE to PUBLIC transition succeeds
 - **WHEN** client calls `PATCH /api/v1/datasets/{id}/visibility` with body `{"visibility":"PUBLIC"}` on a dataset currently `PRIVATE` (with any binding count)
@@ -176,7 +138,7 @@ Status: **Planned**
 
 ### Requirement: Concurrent PRIVATE-binding prevention
 A PostgreSQL `BEFORE INSERT OR UPDATE OF dataset_id` constraint trigger on `test_suites` SHALL guarantee that no two suites can be concurrently bound to the same PRIVATE dataset. The trigger SHALL lock the referenced `datasets` row (`SELECT ... FOR UPDATE`), inspect `visibility`, count current bindings, and reject any second binding to a PRIVATE dataset by raising `ERRCODE='P0001'` with MESSAGE TEXT `'PRIVATE_DATASET_ALREADY_BOUND'`. The trigger SHALL early-return when `NEW.dataset_id IS NULL` so that unbind paths (rebind-to-null, PRIVATE-delete cascade) are not blocked. Before reaching the trigger, suite create (`POST /api/v1/test-suites`) and suite update (`PUT /api/v1/test-suites/{id}`) SHALL apply an app-level pre-check with the same predicate and reject with HTTP 409 and error code `PRIVATE_DATASET_ALREADY_BOUND`. The global exception handler SHALL inspect `SQLException.getSQLState()` anywhere in the cause chain — including inside a non-Spring `org.jooq.exception.DataAccessException`, which Spring cannot translate for SQL state `P0001` — and map `'P0001'` to HTTP 409 with error code `PRIVATE_DATASET_ALREADY_BOUND` and a fixed user-facing message that SHALL NOT include the database message or the failing SQL statement.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Binding to a PRIVATE dataset already bound elsewhere
 - **WHEN** client calls `POST /api/v1/test-suites` or `PUT /api/v1/test-suites/{id}` with a `datasetId` referencing a PRIVATE dataset already bound to another suite
@@ -196,7 +158,7 @@ Status: **Planned**
 
 ### Requirement: PRIVATE dataset delete atomically unbinds and deletes
 `DELETE /api/v1/datasets/{id}` on a `PRIVATE` dataset SHALL — within a single meta transaction — set `test_suites.dataset_id := NULL` for the bound suite and then delete the dataset row. Test cases under the dataset SHALL be cascade-deleted via the existing FK. After the operation completes, the previously-bound suite SHALL remain alive in an unbound state (see `test-suites` spec).
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: PRIVATE delete unbinds suite and removes dataset
 - **WHEN** client calls `DELETE /api/v1/datasets/{id}` for a PRIVATE dataset bound to suite `S`
@@ -211,31 +173,31 @@ Status: **Planned**
 - **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
 
 ### Requirement: Force delete dataset unbinds all referencing suites
-`DELETE /api/v1/datasets/{id}` SHALL accept an optional `force` boolean query parameter (default `false`). When `force=true`, the system SHALL — within a single meta transaction — set `test_suites.dataset_id := NULL` for **every** suite referencing the dataset (regardless of count or dataset `visibility`), delete the dataset row, and cascade-delete the dataset's test cases via the existing FK; it SHALL return HTTP 204. The previously-bound suites SHALL remain alive in an unbound state. When `force` is omitted or `false`, the existing delete behavior SHALL be preserved unchanged: a `PUBLIC` dataset still referenced by one or more suites SHALL return HTTP 409 (RESTRICT), and a `PRIVATE` dataset SHALL unbind its single suite and delete as today.
 
-#### Scenario: Force delete with one referencing suite
-- **WHEN** client calls `DELETE /api/v1/datasets/{id}?force=true` on a dataset referenced by exactly one suite `S`
-- **THEN** system SHALL respond with HTTP 204; the dataset row SHALL be removed; the dataset's test cases SHALL be removed (cascade); suite `S` SHALL still exist with `datasetId = null`
+Status: **Implemented**
 
-#### Scenario: Force delete with two referencing suites
-- **WHEN** client calls `DELETE /api/v1/datasets/{id}?force=true` on a `PUBLIC` dataset referenced by two suites `S1` and `S2`
-- **THEN** system SHALL respond with HTTP 204; the dataset row SHALL be removed; both `S1` and `S2` SHALL still exist with `datasetId = null`
+Successful dataset deletion SHALL cascade to its test cases and revalidation tasks. `DELETE /api/v1/datasets/{id}` SHALL accept an optional `force` boolean query parameter (default `false`). When `force=true`, the system SHALL — within a single meta transaction — set `test_suites.dataset_id := NULL` for **every** suite referencing the dataset (regardless of count or dataset `visibility`), delete the dataset row, and cascade-delete the dataset's test cases via the existing FK; it SHALL return HTTP 204. The previously-bound suites SHALL remain alive in an unbound state. When `force` is omitted or `false`, the existing delete behavior SHALL be preserved unchanged: a `PUBLIC` dataset still referenced by one or more suites SHALL return HTTP 409 (RESTRICT), and a `PRIVATE` dataset SHALL unbind its single suite and delete as today.
 
-#### Scenario: Default delete (force omitted) preserves RESTRICT
-- **WHEN** client calls `DELETE /api/v1/datasets/{id}` (no `force`, or `force=false`) on a `PUBLIC` dataset referenced by one or more suites
-- **THEN** system SHALL respond with HTTP 409 and list the dependent suite names, exactly as in the existing RESTRICT behavior; no suite SHALL be unbound and the dataset SHALL NOT be deleted
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: Force delete is atomic
-- **WHEN** any step of the `force=true` delete path fails (unbind of any suite, test-case cascade, or the dataset delete itself)
-- **THEN** the entire transaction SHALL roll back; the dataset, its test cases, and every suite's `dataset_id` SHALL all remain unchanged
-
-#### Scenario: Force delete of unknown dataset
-- **WHEN** client calls `DELETE /api/v1/datasets/{id}?force=true` for an unknown id
-- **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
+| Case | When | Expected |
+|---|---|---|
+| Force delete with one referencing suite | `DELETE /api/v1/datasets/{id}?force=true` on a dataset referenced by exactly one suite `S` | SHALL respond with HTTP 204; the dataset row SHALL be removed; the dataset's test cases SHALL be removed (cascade); suite `S` SHALL still exist with `datasetId = null` |
+| Force delete with two referencing suites | `DELETE /api/v1/datasets/{id}?force=true` on a `PUBLIC` dataset referenced by two suites `S1` and `S2` | SHALL respond with HTTP 204; the dataset row SHALL be removed; both `S1` and `S2` SHALL still exist with `datasetId = null` |
+| Default delete (force omitted) preserves RESTRICT | `DELETE /api/v1/datasets/{id}` (no `force`, or `force=false`) on a `PUBLIC` dataset referenced by one or more suites | SHALL respond with HTTP 409 and list the dependent suite names, exactly as in the existing RESTRICT behavior; no suite SHALL be unbound and the dataset SHALL NOT be deleted |
+| Force delete is atomic | any step of the `force=true` delete path fails (unbind of any suite, test-case cascade, or the dataset delete itself) | the entire transaction SHALL roll back; the dataset, its test cases, and every suite's `dataset_id` SHALL all remain unchanged |
+| Force delete of unknown dataset | `DELETE /api/v1/datasets/{id}?force=true` for an unknown id | SHALL respond with HTTP 404 and error code `NOT_FOUND` |
+| Cascade deletes test cases | client successfully deletes a dataset (no suites reference it) | all test cases under the dataset SHALL be deleted as part of the same transaction |
+| Ordinary PUBLIC dataset deletion is restricted when suites depend | client attempts to delete a PUBLIC dataset that has at least one referencing suite without `force=true` | SHALL respond with HTTP 409; the dataset and its test cases SHALL remain intact |
+| PRIVATE dataset deletion preserves its suite in an unbound state | `DELETE /api/v1/datasets/{id}` for a PRIVATE dataset | SHALL return HTTP 204, unbind its suite, and delete the dataset, its test cases, and its revalidation tasks; the suite SHALL remain present with `datasetId=null` |
+| Force deletion unbinds every referencing suite | `DELETE /api/v1/datasets/{id}?force=true` for a dataset referenced by multiple suites | SHALL return HTTP 204 and delete the dataset and its children after unbinding every referencing suite; all of those suites SHALL remain present with `datasetId=null` |
+| Dataset deletion and unbinding roll back together | a meta deletion step fails after unbinding suites during PRIVATE or force dataset deletion | the transaction SHALL roll back, preserving the dataset, its children, and every suite's dataset binding |
 
 ### Requirement: Dataset name uniqueness
 The system SHALL enforce that `name` is globally unique on `LOWER(name)` across all datasets (case-insensitive).
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Duplicate name on create
 - **WHEN** client calls `POST /api/v1/datasets` with a `name` that already exists in another dataset (case-insensitive match)
@@ -250,8 +212,8 @@ Status: **Planned**
 - **THEN** system SHALL respond with HTTP 409
 
 ### Requirement: Internal dataset cloning for suite clone
-The system SHALL support creating a PRIVATE dataset as an independent clone of an existing dataset as an internal side effect of cloning a test suite (no public dataset-clone endpoint). The cloned dataset SHALL have `visibility = PRIVATE`, a unique name derived from the source dataset name, and SHALL copy the source dataset's `testCaseSchema`, `valid`, and `validationWarnings` verbatim along with all of its test cases. The clone-name derivation SHALL respect the existing dataset name uniqueness rule (`uq_datasets_name`, case-insensitive).
-Status: **Planned**
+The system SHALL support creating a PRIVATE dataset as an independent clone of an existing dataset as an internal side effect of cloning a test suite (the separate public dataset-clone endpoint is specified in `dataset-clone`). The cloned dataset SHALL have `visibility = PRIVATE`, a unique name derived from the source dataset name, and SHALL copy the source dataset's `testCaseSchema`, `valid`, and `validationWarnings` verbatim along with all of its test cases. The clone-name derivation SHALL respect the existing dataset name uniqueness rule (`uq_datasets_name`, case-insensitive).
+Status: **Implemented**
 
 #### Scenario: Cloned dataset is independent and PRIVATE
 - **WHEN** a dataset is cloned during a suite clone
@@ -263,60 +225,48 @@ Status: **Planned**
 - **THEN** system SHALL derive an alternative unique name rather than violating the uniqueness constraint, falling back to the existing `UNIQUE_CONSTRAINT_VIOLATION` (HTTP 409) only if a unique name cannot be established
 
 ### Requirement: Dataset request/response DTOs
+
+Status: **Implemented**
+
 The system SHALL expose `DatasetRequestDto` and `DatasetResponseDto` with the listed fields and validation rules. `DatasetRequestDto` is used for both create and update; the `visibility` field is required on create and ignored on update (handled in `DatasetService`).
-Status: **Planned**
 
-#### Scenario: DatasetRequestDto field validation
-- **WHEN** client sends a `DatasetRequestDto`
-- **THEN** the system SHALL validate: `name` (`@NotBlank @Size(max = 255)`), `description` (`@Size(max = 2000)`, nullable), `testCaseSchema` (list of `FieldDefinitionDto`, default `[]`, each entry conforming to the field-definition validation rules defined in this spec), `visibility` (`@NotNull` on create — one of `PUBLIC`/`PRIVATE`; ignored on update), `bindToSuiteId` (optional UUID — required when `visibility = PRIVATE`, forbidden when `visibility = PUBLIC`; see "Atomic create-and-bind for PRIVATE datasets" requirement)
+Dataset PUT SHALL accept a non-null `createdBy` replacement; create attribution follows [security](../security/spec.md).
 
-#### Scenario: Dataset description exceeds max length
-- **WHEN** client calls `POST /api/v1/datasets` or `PUT /api/v1/datasets/{id}` with a `description` longer than 2000 characters
-- **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`; the dataset SHALL NOT be persisted or updated
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: DatasetResponseDto fields
-- **WHEN** client receives a `DatasetResponseDto`
-- **THEN** the payload SHALL include `id` (UUID), `name`, `description`, `visibility` (one of `PUBLIC`/`PRIVATE`), `testCaseSchema` (list of `FieldDefinitionDto`), `isValid` (boolean), `validationWarnings` (list of structured warnings), `version` (Long), `createdBy`, `createdAt` (epoch ms), `updatedAt` (epoch ms)
+| Case | When | Expected |
+|---|---|---|
+| DatasetRequestDto field validation | client sends a `DatasetRequestDto` | SHALL validate: `name` (`@NotBlank @Size(max = 263)`), `description` (`@Size(max = 2000)`, nullable), `createdBy` (`@Size(max = 255)`, optional — on update reassigns the maintainer), `testCaseSchema` (list of `FieldDefinitionDto`, default `[]`, each entry conforming to the field-definition validation rules defined in this spec), `visibility` (required on create — service-level check, HTTP 400 when absent — one of `PUBLIC`/`PRIVATE`; ignored on update), `bindToSuiteId` (optional UUID — required when `visibility = PRIVATE`, forbidden when `visibility = PUBLIC`; see "Atomic create-and-bind for PRIVATE datasets" requirement) |
+| Dataset description exceeds max length | `POST /api/v1/datasets` or `PUT /api/v1/datasets/{id}` with a `description` longer than 2000 characters | SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`; the dataset SHALL NOT be persisted or updated |
+| DatasetResponseDto fields | client receives a `DatasetResponseDto` | the payload SHALL include `id` (UUID), `name`, `description`, `visibility` (one of `PUBLIC`/`PRIVATE`), `testCaseSchema` (list of `FieldDefinitionDto`), `valid` (boolean), `validationWarnings` (list of structured warnings), `version` (Long), `createdBy`, `createdAt` (epoch ms), `updatedAt` (epoch ms) |
 
 ### Requirement: Dataset testCaseSchema structure and validation
+
+Status: **Implemented**
+
 The system SHALL validate the `testCaseSchema` on every dataset create/update: schema is a list of `FieldDefinitionDto` entries where each entry's `name` is non-blank, unique within the schema (case-insensitive), at most 255 characters, and matches the identifier pattern that prohibits the `:` character; `type` is one of `STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY`, `FILE`, `SKILL`; `displayName` is at most 255 characters; `description` is at most 2000 characters; `required` is a boolean; `perTurn` is a boolean (default `false`) that marks the field's **scope** — `true` = per-turn (the field's value may vary between turns of a multi-turn case and lives in each `multiTurnData[i]` map), `false`/absent = shared (test-case-level, constant across turns, lives in the `data` map). Scope is a schema-level declaration and applies uniformly to every test case in the dataset. A missing `perTurn` SHALL be treated as `false`, so schemas authored before this field are unchanged. `id` is optional on input and governed by the "Dataset schema field identity" requirement.
-Status: **Planned**
 
-#### Scenario: Empty schema accepted
-- **WHEN** client creates a dataset with `testCaseSchema: []`
-- **THEN** the request SHALL succeed and the dataset stores an empty schema
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: Duplicate field name (case-insensitive)
-- **WHEN** client sends a `testCaseSchema` with two fields named `"prompt"` and `"Prompt"`
-- **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
-
-#### Scenario: Field name contains colon
-- **WHEN** client sends a field with `name: "foo:bar"`
-- **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR` because `:` is reserved as the filter operator separator
-
-#### Scenario: Unknown field type
-- **WHEN** client sends a field with `type: "TIMESTAMP"`
-- **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
-
-#### Scenario: SKILL field type accepted
-- **WHEN** client sends a field with `type: "SKILL"`
-- **THEN** the request SHALL succeed and the dataset SHALL store and return the field with `type: "SKILL"`
-
-#### Scenario: Field exceeds max length
-- **WHEN** client sends a field with `name` longer than 255 characters or `description` longer than 2000 characters
-- **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
-
-#### Scenario: perTurn defaults to shared when absent
-- **WHEN** client sends a field with no `perTurn` attribute
-- **THEN** the field SHALL be persisted and treated as shared (`perTurn=false`), and existing pre-change schemas SHALL behave identically to before
-
-#### Scenario: perTurn marks a field per-turn
-- **WHEN** client sends a field with `perTurn: true`
-- **THEN** the request SHALL succeed and that field's values SHALL be expected in each turn's `multiTurnData[i]` map (not in the shared `data` map) for multi-turn cases in this dataset
+| Case | When | Expected |
+|---|---|---|
+| Empty schema accepted | client creates a dataset with `testCaseSchema: []` | the request SHALL succeed and the dataset stores an empty schema |
+| Duplicate field name (case-insensitive) | client sends a `testCaseSchema` with two fields named `"prompt"` and `"Prompt"` | SHALL respond with HTTP 400 and error code `VALIDATION_ERROR` |
+| Field name contains colon | client sends a field with `name: "foo:bar"` | SHALL respond with HTTP 400 and error code `VALIDATION_ERROR` because `:` is reserved as the filter operator separator |
+| Unknown field type | client sends a field with `type: "TIMESTAMP"` | SHALL respond with HTTP 400 and error code `VALIDATION_ERROR` |
+| SKILL field type accepted | client sends a field with `type: "SKILL"` | the request SHALL succeed and the dataset SHALL store and return the field with `type: "SKILL"` |
+| Field exceeds max length | client sends a field with `name` longer than 255 characters or `description` longer than 2000 characters | SHALL respond with HTTP 400 and error code `VALIDATION_ERROR` |
+| perTurn defaults to shared when absent | client sends a field with no `perTurn` attribute | the field SHALL be persisted and treated as shared (`perTurn=false`), and existing pre-change schemas SHALL behave identically to before |
+| perTurn marks a field per-turn | client sends a field with `perTurn: true` | the request SHALL succeed and that field's values SHALL be expected in each turn's `multiTurnData[i]` map (not in the shared `data` map) for multi-turn cases in this dataset |
+| FILE type in testCaseSchema | client creates a dataset with `testCaseSchema` containing a field with `type: FILE` | SHALL accept the schema; the field's non-blank string value in test cases SHALL use a short DIAL reference (e.g., `@ef/datasets/{datasetId}/filename.ext` or `public/path/to/file.ext`) |
 
 ### Requirement: Schema-driven data cleanup on dataset schema change
 When a dataset PUT removes one or more fields from `testCaseSchema`, the system SHALL strip those keys from the `data` map and from every `multiTurnData` element of every TestCase under the dataset before completing the update. Removal is determined per "Dataset schema field identity"; a renamed field is not removed. This cleanup runs synchronously within the dataset update transaction so that no TestCase carries orphan fields by the time the dataset PUT returns.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Schema field removal prunes orphan data
 - **WHEN** client updates a dataset removing field `legacyColumn` from `testCaseSchema`
@@ -332,11 +282,11 @@ Status: **Planned**
 
 #### Scenario: Schema field type change leaves data untouched at cleanup phase
 - **WHEN** client updates a dataset changing field `score` from `INTEGER` to `STRING`
-- **THEN** the cleanup phase SHALL NOT modify TestCase data; Phase 1 of the spawned RevalidationTask invokes `SchemaChangeCoercer` to coerce existing values per the rules defined in the `test-cases` spec
+- **THEN** the cleanup phase SHALL NOT modify TestCase data; Phase 1 of the spawned RevalidationTask invokes `SchemaChangeCoercer` to coerce existing values per the rules defined in [test-case-revalidation](../test-case-revalidation/spec.md)
 
 ### Requirement: Dataset schema cache invalidation
 The system SHALL invalidate any cached schema-derived validator entry keyed by `datasetId` whenever a dataset PUT mutates `testCaseSchema` or a dataset is deleted. `SchemaValidationService` (re-keyed by `datasetId` per design §D10) SHALL ensure that the next validation operation against the dataset uses the post-PUT schema, with no possibility of a stale cached validator producing results based on the pre-PUT schema.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Cache uses updated schema after dataset PUT
 - **WHEN** a client issues `PUT /api/v1/datasets/{id}` that changes `testCaseSchema`, and immediately afterward a suite that references the dataset is re-validated (synchronously via `SuiteValidationService` on a suite PUT, or via the dataset-rooted RevalidationTask Phase 2)
@@ -351,56 +301,55 @@ Status: **Planned**
 - **THEN** the `SchemaValidationService` cache SHALL NOT be evicted; the suite path is no longer the schema owner; if the suite is rebound to a different dataset, the lookup is a cache miss for the new key (populated on first use) and the prior key remains populated for other suites that still reference it
 
 ### Requirement: Dataset-rooted RevalidationTask trigger
+
+Status: **Implemented**
+
 The system SHALL run a `RevalidationTask` exactly when a dataset PUT mutates `testCaseSchema` (any difference in the stored field list — e.g. name, type, required flag, displayName, description, `perTurn`, a newly assigned field `id`, or ordering). Dataset PUTs that change only `name` or `description` SHALL NOT run a task. The task SHALL run synchronously within the dataset update — both phases (test-case coercion/validation and refresh of every referencing suite's validity) complete before the PUT returns. The dataset PUT response is HTTP 202 with `RevalidationTaskDto` when a task is run, HTTP 200 with `DatasetResponseDto` otherwise.
-Status: **Planned**
 
-#### Scenario: Metadata-only edit returns 200
-- **WHEN** client updates a dataset changing `description` only
-- **THEN** system SHALL respond with HTTP 200 and return `DatasetResponseDto` with bumped `version` and updated `ETag`; no `RevalidationTask` is spawned
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: Schema edit returns 202 with task
-- **WHEN** client updates a dataset adding a new field to `testCaseSchema`
-- **THEN** system SHALL respond with HTTP 202 and return `RevalidationTaskDto` with `status: PENDING`; the task is rooted at the dataset (FK `dataset_id`)
-
-#### Scenario: Revalidation results visible when the PUT returns
-- **WHEN** a client's schema-changing PUT on a dataset bound to a suite returns
-- **THEN** the persisted task row SHALL already be in a terminal status and the bound suite's `isValid` / `validationWarnings` SHALL already reflect the new schema
-
-#### Scenario: Concurrent dataset PUT while task is RUNNING
-- **WHEN** two schema-changing PUTs for the same dataset arrive concurrently, each carrying the dataset's then-current version
-- **THEN** exactly one SHALL succeed with its own task; the other SHALL be rejected with HTTP 409 `VERSION_CONFLICT` and SHALL change nothing
-
-#### Scenario: RevalidationTaskDto JSON wire shape
-- **WHEN** a client receives a `RevalidationTaskDto` (from POST/PUT /datasets/{id} returning 202, or from GET /datasets/{id}/revalidation-tasks*)
-- **THEN** the JSON SHALL include `datasetId` (UUID) and SHALL NOT include `testSuiteId`; the prior `testSuiteId` wire field is removed without alias to make the breaking rename explicit
-
-#### Scenario: PUT /datasets/{id} schema-edit returns 202 with datasetId-rooted task
-- **WHEN** client calls `PUT /api/v1/datasets/{id}` with a body whose `testCaseSchema` differs from the stored value
-- **THEN** system SHALL respond with HTTP 202; the response body SHALL be a `RevalidationTaskDto` JSON containing `"datasetId": "<id>"` matching the path parameter and SHALL NOT contain a `testSuiteId` field at all (not even as `null`); the `task.status` value SHALL be `"PENDING"`
-
-#### Scenario: POST /datasets/{id}/test-cases CSV import returns 202 with datasetId-rooted task
-- **WHEN** client calls `POST /api/v1/datasets/{id}/test-cases/import` (or `.../import.csv`) with an importMode that changes the dataset's schema
-- **THEN** a dataset-rooted task (`dataset_id` = the path id, no `testSuiteId`) SHALL be recorded and listed by `GET /api/v1/datasets/{id}/revalidation-tasks`; the import response itself carries import counts only (see the `test-cases` requirement "Import persists the schema through the dataset update rules")
+| Case | When | Expected |
+|---|---|---|
+| Metadata-only edit returns 200 | client updates a dataset changing `description` only | SHALL respond with HTTP 200 and return `DatasetResponseDto` with bumped `version` and updated `ETag`; no `RevalidationTask` is spawned |
+| Schema edit returns 202 with task | client updates a dataset adding a new field to `testCaseSchema` | SHALL respond with HTTP 202 and return `RevalidationTaskDto` with `status: PENDING`, `totalCases` set to the dataset's case count, and zero processed/valid/invalid/coerced counters; the descriptor is the initially-created value, while the persisted task has completed synchronously and is rooted at the dataset (FK `dataset_id`) |
+| Revalidation results visible when the PUT returns | a client's schema-changing PUT on a dataset bound to a suite returns | the persisted task row SHALL already be in a terminal status and the bound suite's `valid` / `validationWarnings` SHALL already reflect the new schema |
+| Concurrent dataset PUT while task is RUNNING | two schema-changing PUTs for the same dataset arrive concurrently, each carrying the dataset's then-current version | exactly one SHALL succeed with its own task; the other SHALL be rejected with HTTP 409 `VERSION_CONFLICT` and SHALL change nothing |
+| RevalidationTaskDto JSON wire shape | a client receives a `RevalidationTaskDto` (from schema-changing PUT /datasets/{id} returning 202, or from GET /datasets/{id}/revalidation-tasks*) | the JSON SHALL include `datasetId` (UUID), identifying the owning dataset |
+| PUT /datasets/{id} schema-edit returns 202 with datasetId-rooted task | `PUT /api/v1/datasets/{id}` with a body whose `testCaseSchema` differs from the stored value | SHALL respond with HTTP 202; the response body SHALL be a `RevalidationTaskDto` JSON containing `"datasetId": "<id>"` matching the path parameter and SHALL NOT contain a `testSuiteId` field at all (not even as `null`); the `task.status` value SHALL be `"PENDING"` |
+| CSV import returns 200 counts while recording a dataset-rooted task | `POST /api/v1/datasets/{id}/test-cases/import` with an importMode that changes the dataset's schema | a dataset-rooted task (`dataset_id` = the path id) SHALL complete synchronously and be listed by `GET /api/v1/datasets/{id}/revalidation-tasks`; the import SHALL return HTTP 200 with import counts and warnings, not a task descriptor (see [CSV schema persistence](../test-case-csv-transfer/spec.md#requirement-import-persists-the-schema-through-the-dataset-update-rules)) |
+| Schema update runs synchronous dataset revalidation | a dataset PUT changes `testCaseSchema` | SHALL run dataset-rooted revalidation synchronously in the update transaction and return HTTP 202 with `RevalidationTaskDto`; both test-case revalidation and referencing-suite configuration refresh SHALL finish before the PUT returns; the returned task creation descriptor SHALL report `status: PENDING`, while a subsequent task GET SHALL report the persisted terminal status |
 
 ### Requirement: List and detail revalidation tasks under datasets
+
+Status: **Implemented**
+
 The system SHALL expose subresources under datasets to list and inspect revalidation tasks rooted at this dataset.
-Status: **Planned**
 
-#### Scenario: List revalidation tasks for a dataset
-- **WHEN** client calls `GET /api/v1/datasets/{id}/revalidation-tasks?page=0&size=20`
-- **THEN** system SHALL return a paginated list of `RevalidationTaskDto` items rooted at this dataset, sorted by `startedAt,desc`
+Task responses SHALL include `coercedCellCount` (Long, default 0). The `revalidation_tasks.coerced_cell_count` column SHALL be non-null with default 0; accumulation and guard-miss exclusions are owned by [test-case-revalidation](../test-case-revalidation/spec.md).
 
-#### Scenario: Get revalidation task by id
-- **WHEN** client calls `GET /api/v1/datasets/{id}/revalidation-tasks/{taskId}`
-- **THEN** system SHALL return the `RevalidationTaskDto` if `taskId` belongs to the specified `datasetId`; otherwise HTTP 404
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-### Requirement: Dataset soft validation (`isValid` + `validationWarnings`)
-The system SHALL maintain `isValid` and `validationWarnings` on every Dataset. The flags reflect the dataset's schema-level soft validation: structural validity is hard-validated synchronously at PUT time (returning HTTP 400 on structural errors); the soft flags surface non-blocking concerns such as fields that no longer have any data populated, or schema versions that are flagged for follow-up. `isValid` SHALL default to `true` and `validationWarnings` to `[]` for newly-created datasets.
-Status: **Planned**
+| Case | When | Expected |
+|---|---|---|
+| List revalidation tasks for a dataset | `GET /api/v1/datasets/{id}/revalidation-tasks?page=0&size=20` | SHALL return a paginated list of `RevalidationTaskDto` items rooted at this dataset, sorted by `startedAt,desc` |
+| Get revalidation task by id | `GET /api/v1/datasets/{id}/revalidation-tasks/{taskId}` | SHALL return the `RevalidationTaskDto` if `taskId` belongs to the specified `datasetId`; otherwise HTTP 404 |
+| Track re-validation task status | `GET /api/v1/datasets/{id}/revalidation-tasks/{taskId}` | SHALL return task status (PENDING, RUNNING, COMPLETED, FAILED, TIMED_OUT) and progress (`processedCases`, `validCount`, `invalidCount`, `coercedCellCount`); `coercedCellCount` SHALL be `0` when no cells were successfully coerced |
+| Get revalidation task includes coercedCellCount | `GET /api/v1/datasets/{id}/revalidation-tasks/{taskId}` | the response body SHALL include `"coercedCellCount": <number>` (default 0 when no coercion occurred) |
+| List revalidation tasks includes coercedCellCount | `GET /api/v1/datasets/{id}/revalidation-tasks` | every entry in `content[]` SHALL include `coercedCellCount` |
+| Schema-changing PUT returns the task creation descriptor | a dataset PUT changes its schema and returns HTTP 202 | the returned RevalidationTaskDto SHALL report `status: PENDING` and `coercedCellCount: 0` from the task creation descriptor; a subsequent GET of that task SHALL report its persisted terminal status and accumulated `coercedCellCount` |
+| Task with no successful coercions reports zero | a client reads a revalidation task for which no cells were successfully coerced | the API SHALL report `coercedCellCount: 0` |
+
+### Requirement: Dataset validity flags (`valid` + `validationWarnings`)
+The system SHALL persist dataset validity and validation warnings, exposing them as `valid` and `validationWarnings` in `DatasetResponseDto`. Newly-created datasets SHALL have `valid = true` and `validationWarnings = []`; ordinary dataset updates SHALL preserve these flags, and cloning SHALL copy them. Structural schema errors SHALL be rejected synchronously with HTTP 400. Dataset updates and dataset-rooted revalidation SHALL NOT derive dataset warnings from empty fields or follow-up concerns; revalidation recomputes test-case and dependent-suite validity, not dataset validity.
+Status: **Implemented**
 
 #### Scenario: Newly-created dataset is valid with no warnings
 - **WHEN** client creates a dataset with a structurally-valid schema
-- **THEN** `isValid` SHALL be `true` and `validationWarnings` SHALL be `[]`
+- **THEN** `valid` SHALL be `true` and `validationWarnings` SHALL be `[]`
 
 #### Scenario: Structural schema error returns 400, not soft-invalid
 - **WHEN** client submits a dataset PUT with a schema containing a duplicate field name
@@ -408,7 +357,7 @@ Status: **Planned**
 
 ### Requirement: OpenAPI documentation for dataset endpoints
 The dataset CRUD and revalidation-task endpoints SHALL have OpenAPI annotations including operation summary, request/response schemas, and example JSON files under `src/main/resources/openapi/examples/`. The dataset-scoped query-param descriptions for `filter`/`sort`/`page`/`size` SHALL be auto-generated by `OpenApiQueryParamCustomizer` from new entries in `FilterWhitelists`/`SortWhitelists`.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Swagger UI shows dataset endpoints
 - **WHEN** user opens Swagger UI
@@ -456,7 +405,7 @@ Status: **Implemented**
 
 ### Requirement: List test suites depending on a dataset
 The system SHALL provide `GET /api/v1/datasets/{datasetId}/test-suites` that returns the test suites bound to the dataset — every suite whose `dataset_id` equals the path id. The response SHALL be a plain JSON array of `DatasetDependentSuiteDto` items, each carrying exactly `id` (UUID), `name` (String), and `description` (String, nullable). The endpoint SHALL NOT be paginated, filterable, or sortable. Visibility SHALL NOT affect this endpoint — it lists dependents for both PUBLIC and PRIVATE datasets.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Dataset with bound suites returns their summaries
 - **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-suites` for an existing dataset that has one or more bound test suites
@@ -476,7 +425,7 @@ Status: **Planned**
 
 ### Requirement: DatasetDependentSuiteDto wire shape
 The system SHALL expose `DatasetDependentSuiteDto` as the response element type for `GET /api/v1/datasets/{datasetId}/test-suites`. The DTO SHALL contain exactly three fields — `id` (UUID), `name` (String), `description` (String, nullable) — and SHALL NOT expose the full `TestSuiteResponseDto` field set.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: DatasetDependentSuiteDto fields
 - **WHEN** client receives a `DatasetDependentSuiteDto`
@@ -488,7 +437,7 @@ Status: **Planned**
 
 ### Requirement: OpenAPI documentation for the dataset dependent-suites endpoint
 `GET /api/v1/datasets/{datasetId}/test-suites` SHALL carry OpenAPI annotations including an operation summary, the `DatasetDependentSuiteDto` array response schema, a response example, and documented 200 and 404 responses, under the existing "Datasets" tag.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Swagger UI shows the dependent-suites endpoint
 - **WHEN** user opens Swagger UI
@@ -503,7 +452,7 @@ Every field of a persisted dataset `testCaseSchema` SHALL carry a server-assigne
 Field names MUST be unique within a request (case-insensitive), with or without ids. A current field is **removed** when no request entry resolves to it, and **renamed** when its `id` resolves to an entry with a different `name`.
 
 The `id` SHALL be returned on every `testCaseSchema` entry of `DatasetResponseDto`. Run snapshots SHALL carry the field `id` as captured; snapshots written before this requirement carry none and SHALL remain readable.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Create assigns ids
 - **WHEN** a client creates a dataset with `testCaseSchema: [{name: "prompt", type: "STRING"}]`
@@ -547,7 +496,7 @@ Status: **Planned**
 
 ### Requirement: Dataset schema field rename preserves data
 On dataset update, a request field whose `id` equals a current-schema field's `id` but whose `name` differs SHALL be treated as a **rename** of that field. Before the update completes, the system SHALL move every value stored under the old name to the new name, in the shared `data` map and in every element of `multiTurnData`, for every test case of the dataset. All renames of one request SHALL be applied as one simultaneous mapping, so swaps (`a→b`, `b→a`) and chains (`a→b`, `b→c`) preserve every value. A rename SHALL NOT relocate a value between `data` and `multiTurnData`, even when the same request flips the field's `perTurn`; misplacement is reported by revalidation, as for any `perTurn` change. A rename that also changes the field's `type` SHALL move the values and leave coercion to revalidation.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Rename keeps the column's values
 - **WHEN** the schema is `[{id: A, name: "column1"}, {id: B, name: "column2"}]`, a test case has `data: {column1: "x", column2: "y"}`, and a client updates the schema to `[{id: A, name: "column1"}, {id: B, name: "column3"}]`
@@ -577,7 +526,7 @@ Status: **Planned**
 A dataset update containing at least one rename (see "Dataset schema field rename preserves data") or removing at least one schema field SHALL be allowed only when the dataset is `PRIVATE`, or is `PUBLIC` with no suite bound to it. A rename or removal on a `PUBLIC` dataset with one or more committed bound suites SHALL be rejected, because either change can silently invalidate suites owned by other users. Additions, field re-typing and metadata edits are unaffected by this requirement.
 
 **Current limitation:** suite create/rebind validation occurs before its save acquires the dataset-row lock. If that validation reads the old schema and the save commits after a concurrent rename, the rename transaction may not observe the uncommitted binding. The rename can therefore succeed and the suite can subsequently persist validity computed from the old schema. This interleaving is not currently serialized or repaired by the rename transaction.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Rename on PRIVATE dataset succeeds
 - **WHEN** a client renames a field of a `PRIVATE` dataset bound to its suite
@@ -605,13 +554,12 @@ Status: **Planned**
 
 ## Implementation notes
 
-- New table: `datasets` (`src/main/resources/db/migration/meta/POSTGRES/V1.<next>__IntroduceDataset.sql`); unique index `uq_datasets_name` on `LOWER(name)`.
-- New domain model: `data.db.model.Dataset`. New mapper: `data.db.mapper.DatasetRecordMapper`.
-- New repository: `data.db.repository.DatasetRepository` + `PostgresDatasetRepository` (jOOQ DSL).
-- New service: `service.domain.DatasetService`. New helper: `service.domain.DatasetSchemaProvider`.
-- New mapper: `service.domain.mapper.DatasetMapper`.
-- New controller: `web.controller.DatasetController`.
-- New DTOs: `service.domain.dto.{DatasetRequestDto, DatasetResponseDto, DatasetReferenceDto}`.
-- New filter/sort whitelists: registered with `FilterWhitelists` and `SortWhitelists`; new entry in `OpenApiQueryParamCustomizer` for the list endpoint.
-- Revalidation-task subresources reuse the existing `RevalidationTaskRepository` (rebound from `test_suite_id` to `dataset_id`) and `RevalidationService`.
-- Dependent-suites endpoint: new `@GetMapping("/{id}/test-suites")` on `web.controller.DatasetController`; new `DatasetService.getDependentSuites(UUID)` (dataset existence check via `getById`, then delegates to `TestSuiteService.getDependentSuiteSummaries`); new `TestSuiteRepository.findSuiteSummariesReferencingDataset(UUID)` with selective column projection (`id`, `name`, `description` only) to avoid TOAST decompression; new pure-carrier `data.db.model.TestSuiteSummary` record; new DTO `service.domain.dto.DatasetDependentSuiteDto`.
+- [DatasetController.java](../../../src/main/java/com/epam/aidial/evaluation/web/controller/DatasetController.java): CRUD, visibility/publish, dependent suites, mandatory PUT If-Match, ETags and 200/202 response selection.
+- [DatasetService.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/DatasetService.java): visibility/binding guards, schema-change orchestration, concurrency and deletion semantics.
+- [PostgresDatasetRepository.java](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/PostgresDatasetRepository.java): initial version 0, optimistic writes and PUBLIC-only listing.
+- [DatasetMapper.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/mapper/DatasetMapper.java) and [DatasetResponseDto.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/dto/DatasetResponseDto.java): initialized/preserved validity flags and the `valid` response field.
+- [DatasetSchemaFieldIdResolver.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/DatasetSchemaFieldIdResolver.java) and [DatasetCloneService.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/DatasetCloneService.java): field identity and independent row/test-case clones.
+- [RevalidationService.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/RevalidationService.java): synchronous test-case and per-suite revalidation.
+- [CsvImportService.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/CsvImportService.java): schema persistence through dataset update after CSV row persistence and fixup; import returns counts, not the task descriptor.
+- [AuthorResolver.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/AuthorResolver.java): configured-claim, display-name fallback and non-JWT attribution.
+- Dataset filtering/sorting documentation is registered in `FilterWhitelists`, `SortWhitelists` and `OpenApiQueryParamCustomizer`; functional coverage lives in `DatasetCrudFunctionalTests`, `DatasetVisibilityFunctionalTests`, `DatasetSchemaFieldRenameFunctionalTests`, `DatasetSchemaFieldIdImportFunctionalTests` and `RevalidationTaskFunctionalTests`.

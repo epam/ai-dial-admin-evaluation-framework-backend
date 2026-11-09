@@ -11,8 +11,8 @@ Status: **Implemented**
 
 ## Requirements
 
-### Requirement: Correlation ID on all HTTP requests
-The service SHALL assign a correlation ID to each HTTP request and include it in logs and responses. With Micrometer Tracing active, Spring MVC auto-creates an OTel span per incoming request, so `Span.current().getSpanContext().getTraceId()` SHALL return a valid 32-char hex OTel trace ID. The `CorrelationIdInterceptor` SHALL use this trace ID as the correlation ID when no valid `X-Correlation-Id` is provided by the client.
+### Requirement: Correlation ID on intercepted MVC requests
+The `CorrelationIdInterceptor` SHALL assign a correlation ID to MVC requests that reach its `preHandle`, put it into MDC as `_correlation_id`, and echo it in the response. It SHALL use a valid current OTel trace ID when no valid `X-Correlation-Id` is provided, otherwise generate a random fallback. This interceptor does not guarantee correlation headers on requests rejected before MVC interception or clear MDC in `afterCompletion`.
 Status: **Implemented**
 
 #### Scenario: Client-provided correlation id
@@ -41,6 +41,11 @@ Status: **Implemented**
 - **WHEN** running with `dev` profile
 - **THEN** request/response body logging SHALL be enabled
 
+#### Scenario: Logging filter scope and log level
+- **WHEN** request/response logging is enabled
+- **THEN** the filter SHALL skip `/actuator`, `/swagger`, and `/v3/api-docs` path prefixes and emit request/response lines only at DEBUG-enabled logger levels
+- **AND** logged body text SHALL be truncated after 10,000 characters; this is a logging truncation, not a response-size or caching-memory limit
+
 ### Requirement: Dynamic log level configuration
 The service SHALL support dynamic log level configuration refreshed from a JSON file.
 Status: **Implemented**
@@ -62,7 +67,7 @@ Status: **Implemented**
 - **THEN** the OTel context active at submission time SHALL be propagated to the worker thread (virtual or platform, per `spring.threads.virtual.enabled`) via `Context.taskWrapping()` — the run's executor is created wrapped, once, by the shared executor factory when the run is registered, and every phase dispatches onto that same executor
 
 ### Requirement: OTel Log4J appender initialization
-The `opentelemetry-spring-boot-starter` automatically installs the `OpenTelemetryAppender` with the Spring-managed `OpenTelemetry` bean at startup. No manual `ApplicationListener` is needed.
+The application SHALL rely on `opentelemetry-spring-boot-starter` to install the `OpenTelemetryAppender` with the Spring-managed `OpenTelemetry` bean at startup, without a custom initializer.
 Status: **Implemented**
 
 #### Scenario: Appender installed automatically by starter
@@ -70,11 +75,11 @@ Status: **Implemented**
 - **THEN** the starter SHALL call `OpenTelemetryAppender.install(openTelemetry)` automatically via its built-in `ApplicationListener`, without any custom initializer component
 
 #### Scenario: Log export pipeline active when OTel enabled
-- **WHEN** `OTEL_SDK_DISABLED=false` (OTel enabled)
-- **THEN** log entries emitted by Log4j SHALL be forwarded to the OTel SDK log pipeline and exported via OTLP to the configured collector endpoint
+- **WHEN** `OTEL_SDK_DISABLED=false`, the log exporter is `otlp`, and a log entry is routed to `OpenTelemetryAppender`
+- **THEN** the entry SHALL be forwarded to the SDK's OTLP log pipeline against the configured collector endpoint
 
 ### Requirement: W3C traceparent propagation on outgoing DIAL Core calls
-The service SHALL inject the W3C `traceparent` (and `tracestate` if present) header on all outgoing HTTP calls to DIAL Core, allowing DIAL Core to continue the distributed trace.
+The configured DIAL Core REST clients SHALL use a tracing interceptor to inject the active OpenTelemetry propagator's headers, including W3C `traceparent` and `tracestate` when available. This REST-client contract does not assert SDK-independent tracing of every possible transport.
 Status: **Implemented**
 
 #### Scenario: traceparent injected on eval worker DIAL Core call
@@ -110,28 +115,24 @@ Status: **Implemented**
 - **WHEN** `OTEL_SDK_DISABLED=true` (no-op OTel instance)
 - **THEN** the tracing interceptor SHALL be a no-op — no `traceparent` header injected, no errors
 
-#### Scenario: Metric provider ignores traceparent gracefully
-- **WHEN** the metric provider service does not support W3C Trace Context
-- **THEN** the `traceparent` header is harmlessly ignored by the provider per standard HTTP semantics (no error, no side effect)
-
 ### Requirement: All three OTel signals exported via OTLP
-The service SHALL export traces, logs, and metrics via OTLP to a single configurable collector endpoint. Prometheus scrape remains available alongside OTLP metrics push.
+With the SDK enabled and the respective `otel.traces.exporter`, `otel.logs.exporter`, and `otel.metrics.exporter` set to `otlp` (their defaults), the service SHALL configure all three export pipelines against the common collector endpoint. Individual exporter settings and sampling may disable or limit signals. Collector ingestion is external and not guaranteed by the backend. Prometheus scrape remains separately configurable.
 Status: **Implemented**
 
 #### Scenario: Traces exported via OTLP
-- **WHEN** `OTEL_SDK_DISABLED=false` and an OTel span is active
-- **THEN** completed spans SHALL be exported via OTLP to `OTEL_EXPORTER_OTLP_ENDPOINT`
+- **WHEN** `OTEL_SDK_DISABLED=false`, the trace exporter is `otlp`, and a sampled span completes
+- **THEN** the trace pipeline SHALL attempt OTLP export to `OTEL_EXPORTER_OTLP_ENDPOINT`
 
 #### Scenario: Logs exported via OTLP
-- **WHEN** `OTEL_SDK_DISABLED=false`
-- **THEN** log entries from `log4j2.xml` `OpenTelemetryAppender` SHALL be exported via OTLP to `OTEL_EXPORTER_OTLP_ENDPOINT`
+- **WHEN** `OTEL_SDK_DISABLED=false` and the log exporter is `otlp`
+- **THEN** log entries routed to the `OpenTelemetryAppender` by `log4j2.xml` SHALL enter the OTLP log pipeline; loggers with `additivity=false` and only a console appender (including Spring Security and Flyway) SHALL NOT be claimed as OTLP-exported
 
 #### Scenario: Metrics exported via OTLP
-- **WHEN** `OTEL_SDK_DISABLED=false`
+- **WHEN** `OTEL_SDK_DISABLED=false` and the metrics exporter is `otlp`
 - **THEN** Micrometer metrics SHALL be bridged into the OTel SDK pipeline and exported via OTLP to `OTEL_EXPORTER_OTLP_ENDPOINT`
 
 #### Scenario: Prometheus scrape unaffected
-- **WHEN** `OTEL_SDK_DISABLED=true` or `false`
+- **WHEN** `OTEL_SDK_DISABLED=true` or `false` and the default actuator exposure includes `prometheus`
 - **THEN** `/actuator/prometheus` SHALL remain available on the management port for Prometheus scrape regardless of OTel state
 
 ### Requirement: OTel disabled by default
@@ -144,8 +145,8 @@ Status: **Implemented**
 - **AND** the application SHALL start and function normally
 
 #### Scenario: OTel enabled at deploy time
-- **WHEN** `OTEL_SDK_DISABLED=false` and `OTEL_EXPORTER_OTLP_ENDPOINT` is set
-- **THEN** all three signals SHALL be exported to the configured collector
+- **WHEN** `OTEL_SDK_DISABLED=false` with default exporter selections
+- **THEN** all three OTLP pipelines SHALL be enabled against the configured collector (default `http://localhost:4318`)
 
 ### Requirement: OTLP transport protocol selection
 The service SHALL support both gRPC and HTTP/protobuf OTLP transport protocols, selectable via environment variable.
@@ -172,30 +173,30 @@ Status: **Implemented**
 - **THEN** `trace_id` and `span_id` fields SHALL render as empty strings in the log line
 
 ### Requirement: traceparent in error responses
-All API error responses SHALL include the W3C `traceparent` value of the current OTel span, enabling clients and support teams to correlate an error to a backend trace without log access.
+Responses constructed as `ErrorView` SHALL include the W3C `traceparent` value when the current span context is valid, and omit it otherwise. This covers the global REST exception handler, API-key error responses, and the `MaxRequestBodyFilter` 413 response, not arbitrary transport/security/library error payloads.
 Status: **Implemented**
 
 #### Scenario: Error response includes traceparent when tracing active
-- **WHEN** the service returns any HTTP error response (4xx or 5xx)
+- **WHEN** the service constructs an `ErrorView` response
 - **AND** `OTEL_SDK_DISABLED=false` and an active span exists
 - **THEN** the error JSON body SHALL include `"traceparent": "00-<traceId>-<spanId>-<flags>"`
 
 #### Scenario: traceparent absent when tracing disabled
-- **WHEN** the service returns any HTTP error response
+- **WHEN** the service constructs an `ErrorView` response
 - **AND** `OTEL_SDK_DISABLED=true` (no-op span)
 - **THEN** the `traceparent` field SHALL be absent from the error JSON body (serialized as null, omitted via `@JsonInclude(NON_NULL)`)
 
 ### Requirement: Management endpoint on dedicated port
-The Spring Actuator management endpoints SHALL be served on a dedicated port (9464), separate from the application port (8080).
+The Spring Actuator management endpoints SHALL use `management.server.port` (9464 by default), separate from `server.port` (8080 by default). Operators may override these ports and actuator exposure.
 Status: **Implemented**
 
 #### Scenario: Prometheus available on management port
-- **WHEN** the application is running
+- **WHEN** the application is running with default ports and actuator exposure
 - **THEN** `/actuator/prometheus` SHALL be accessible on port 9464
 - **AND** SHALL NOT be accessible on port 8080
 
 #### Scenario: Application API unaffected
-- **WHEN** the application is running
+- **WHEN** the application is running with default ports
 - **THEN** all `/api/v1/*` endpoints SHALL remain on port 8080
 
 ### Requirement: AOP method trace logging opt-in
@@ -208,7 +209,8 @@ Status: **Implemented**
 
 #### Scenario: AOP tracing enabled
 - **WHEN** `CUSTOMIZABLE_TRACE_INTERCEPTOR_ENABLED=true`
-- **THEN** all classes annotated with `@LogExecution` SHALL emit entry, exit, and exception log lines with method name, arguments, return value, and elapsed time
+- **THEN** Spring-proxied method calls matching `app.trace-log-advisor.expression` SHALL be eligible for the interceptor's configured TRACE messages
+- **AND** with the default expression and templates, annotated components SHALL log method entry arguments, exit return value/timing, and exception method/timing when their dynamic logger enables TRACE; self-invocations and unproxied calls are not intercepted
 
 ### Requirement: eval.run.id and eval.suite.id span attributes on eval.testcase.execute
 The `eval.testcase.execute` span created by `EvaluationWorker` SHALL include `eval.run.id` (the test suite run UUID) and `eval.suite.id` (the test suite UUID) as span attributes. These attributes enable run-scoped and suite-scoped trace search in Grafana Tempo via TraceQL (e.g., `{.eval.run.id="<uuid>"}`).
@@ -221,8 +223,8 @@ Status: **Implemented**
 - **AND** existing attributes `testcase.id` and `run.index` SHALL remain unchanged
 
 #### Scenario: Attributes enable TraceQL run-scoped search
-- **WHEN** `OTEL_SDK_DISABLED=false` and a test suite run executes N test cases
-- **THEN** a Grafana Tempo TraceQL query `{.eval.run.id="<run-uuid>"}` SHALL return all N test-case traces for that run
+- **WHEN** an execution span is sampled, exported, and ingested by Tempo
+- **THEN** its `eval.run.id` attribute SHALL support run-scoped filtering, without guaranteeing a trace count or external collector ingestion
 
 ### Requirement: eval.suite.id span attribute on try-it-out.invoke
 The `try-it-out.invoke` span created by `TryItOutService` SHALL include `eval.suite.id` (the test suite UUID) as a span attribute. This enables suite-scoped filtering of try-it-out traces in Grafana Tempo.
@@ -258,8 +260,8 @@ Status: **Implemented**
 - **AND** existing attributes (`tsmd.name`, `tsmd.provider.id`, `eval.run.id`, `result.id`) SHALL remain unchanged
 
 #### Scenario: Attributes enable per-test-case TraceQL aggregation
-- **WHEN** `OTEL_SDK_DISABLED=false` and a test suite run executes N test cases with M TSMDs each
-- **THEN** a Grafana Tempo TraceQL query `{.eval.run.id="<run-uuid>" && .testcase.id="<tc-uuid>"}` SHALL return the eval span and all M metric spans for that test case
+- **WHEN** an execution/metric span is sampled, exported, and ingested by Tempo
+- **THEN** its run/test-case attributes SHALL support per-case filtering; conditional/skipped metrics, retries, and sampling do not imply a fixed span count
 
 ### Requirement: eval.suite.id span attribute on metric.tsmd.evaluate
 The `metric.tsmd.evaluate` span SHALL include `eval.suite.id` (the test suite UUID) as a span attribute, enabling suite-scoped trace filtering for metric evaluations.
@@ -287,14 +289,14 @@ Status: **Implemented**
 The service SHALL populate the OTel `Baggage` of the active OTel context on every run-scoped outbound execution path that already opens an OTel span carrying those attributes — the evaluation worker's DIAL Core call and the metric-evaluation worker's metric provider call — with a phase-specific set of entries:
 
 - **Both paths** SHALL carry `eval.run.id`, `eval.suite.id`, `testcase.id` (all UUID strings), `run.index` (the zero-based run index) and `eval.phase` (the value `execution` on the evaluation-worker path, `metric-evaluation` on the metric-evaluation-worker path). The `eval.phase` member lets downstream telemetry distinguish a test-case execution call from a judge-model evaluation call, which otherwise carry identical run/suite/testcase context.
-- **The metric-evaluation path** SHALL additionally carry `result.id` (the `TestCaseRunResult` UUID, so downstream telemetry can key back to the exact result row) and `metric.declaration.name` (so judge-model spend can be attributed to a specific metric). These two members SHALL NOT be present on the evaluation-worker path, because on that path the result is produced by the call itself and does not yet exist.
+- **The metric-evaluation path** SHALL additionally add `result.id` (the `TestCaseRunResult` UUID) and `metric.declaration.name`. The execution helper SHALL NOT add these metric-specific members; inherited baggage is preserved rather than removed.
 
 Because the default OTel propagator set includes the W3C baggage propagator, the existing tracing `RestClient` interceptor SHALL then serialize these entries into a `baggage` header on the outgoing HTTP request, allowing DIAL Core and downstream services to attribute each analytics/log event to the originating eval run, suite, test case, phase and (on the metric path) result and metric.
 Status: **Implemented**
 
-Baggage SHALL carry only these non-sensitive identifiers (UUIDs, a zero-based index, a low-cardinality phase token and a metric name). Tokens, credentials, PII, or free-form/content-bearing data (e.g. `testcase.name`) SHALL NOT be placed into baggage, since baggage is broadcast verbatim to every downstream service including the upstream model provider.
+The EF helper SHALL add only these identifiers (UUIDs, a zero-based index, a phase token and a metric name), skipping null IDs/index/name. It SHALL NOT add tokens, credentials, `testcase.name`, or test-case content. `Baggage.current().toBuilder()` preserves existing caller/context entries, so this is not a sanitization or exclusive-header-member guarantee.
 
-Baggage entries SHALL be scoped to the current execution: set when the per-execution OTel scope is opened and removed when it closes, so no baggage entry leaks onto a pooled or virtual thread after the execution completes.
+Baggage entries SHALL be scoped through one context combining the span and built baggage. Closing that scope SHALL restore the prior thread context, including any baggage that existed before this execution.
 
 This requirement is additive: it does not alter the existing span attributes or the W3C `traceparent` propagation, which remain unchanged.
 
@@ -302,7 +304,7 @@ This requirement is additive: it does not alter the existing span attributes or 
 - **WHEN** the evaluation worker executes a test case with OTel enabled and opens the `eval.testcase.execute` span scope
 - **THEN** the current OTel Baggage SHALL contain `eval.run.id` = the run id, `eval.suite.id` = the suite id, `testcase.id` = the test case id, `run.index` = the run index and `eval.phase` = `execution`
 - **AND** the outgoing DIAL Core request SHALL include a `baggage` header whose members include `eval.run.id=<runId>`, `eval.suite.id=<suiteId>`, `testcase.id=<testCaseId>`, `run.index=<runIndex>` and `eval.phase=execution`
-- **AND** the header SHALL NOT include `result.id` or `metric.declaration.name`
+- **AND** the execution helper SHALL NOT add `result.id` or `metric.declaration.name`
 
 #### Scenario: Baggage set on metric provider call when tracing active
 - **WHEN** the metric-evaluation worker evaluates a metric with OTel enabled and opens the `metric.tsmd.evaluate` span scope
@@ -316,12 +318,12 @@ This requirement is additive: it does not alter the existing span attributes or 
 
 #### Scenario: Baggage does not leak across the async boundary
 - **WHEN** a test-case execution completes and its OTel scope closes on a pooled/virtual worker thread
-- **THEN** the `eval.run.id`/`eval.suite.id`/`testcase.id`/`run.index`/`eval.phase` baggage entries (and, on the metric path, `result.id`/`metric.declaration.name`) SHALL no longer be present on that thread's OTel context for subsequent unrelated work
+- **THEN** that thread's prior OTel context SHALL be restored rather than retaining this execution's newly added baggage entries
 
 #### Scenario: Baggage carries only non-sensitive identifiers
 - **WHEN** the `baggage` header is constructed for an outgoing run-scoped call
-- **THEN** its members SHALL be limited to `eval.run.id`, `eval.suite.id`, `testcase.id`, `run.index`, `eval.phase` and — on the metric-evaluation path only — `result.id` and `metric.declaration.name`
-- **AND** SHALL NOT include the caller's authorization token, api-key, `testcase.name`, or any test-case content
+- **THEN** EF-added members SHALL be limited to `eval.run.id`, `eval.suite.id`, `testcase.id`, `run.index`, `eval.phase` and — on the metric-evaluation path only — `result.id` and `metric.declaration.name`
+- **AND** the helper SHALL NOT add the caller's authorization token, api-key, `testcase.name`, or test-case content, but SHALL preserve inherited baggage
 
 ## Implementation Notes
 - Docs: `docs/configuration.md` (Logging Configuration section)
@@ -333,5 +335,5 @@ This requirement is additive: it does not alter the existing span attributes or 
 - AOP trace interceptor config: `com.epam.aidial.evaluation.configuration.logging.LogConfiguration`
 - Tracing interceptor factory: `DialCoreClientConfiguration.tracingInterceptor(OpenTelemetry)` (public static, reused by metric provider config)
 - Metric provider tracing: `MetricProviderRestClientConfiguration` — injects `OpenTelemetry`, attaches tracing interceptor via `buildRestClient()`
-- OTel Baggage helper: `com.epam.aidial.evaluation.utils.EvalBaggage` — two intent-named methods opened as a try-with-resources `Scope` alongside `span.makeCurrent()`: `withExecutionContext(UUID, UUID, UUID, Integer)` sets `eval.run.id`/`eval.suite.id`/`testcase.id`/`run.index`/`eval.phase=execution` in `EvaluationWorker#execute`; `withMetricContext(UUID, UUID, UUID, Integer, UUID, String)` sets the same members plus `eval.phase=metric-evaluation`/`result.id`/`metric.declaration.name` in `MetricEvaluationWorker#evaluate`
-- Shared OTel key constants: `com.epam.aidial.evaluation.constants.TracingConstants` (`EVAL_RUN_ID`, `EVAL_SUITE_ID`, `TESTCASE_ID`, `RUN_INDEX`, `EVAL_PHASE`, `TESTCASE_NAME`, `RESULT_ID`, `TSMD_NAME`, `TSMD_PROVIDER_ID`, `METRIC_DECLARATION_NAME`) plus the `eval.phase` value constants `PHASE_EXECUTION`/`PHASE_METRIC_EVALUATION` — single source of truth for span attributes and baggage keys
+- [EvalBaggage](../../../evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/util/EvalBaggage.java) — returns built `Baggage`, not a `Scope`; workers open `Context.current().with(span).with(baggage).makeCurrent()` once.
+- [TracingConstants](../../../evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/util/TracingConstants.java) — shared span names, attributes, baggage keys and phase values.

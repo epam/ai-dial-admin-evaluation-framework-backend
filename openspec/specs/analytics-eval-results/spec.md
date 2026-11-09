@@ -1,16 +1,16 @@
 # Analytics Eval Results
 
 ## Purpose
-This spec defines test case run result storage and retrieval in the analytics datasource. Batch write API for the evaluation job (all-or-nothing, JDBC batch insert), keyset-paginated read API with generic filter framework (reuses existing `filter=field:operator:value` syntax, extended with JSONB path filtering on `testCaseData`). Flat denormalized data model with `run_index` for multi-run suites. Append-only (immutable results).
+This spec defines append-only test case run result storage and retrieval in the analytics datasource: transactional typed-jOOQ batch writes, cursor-based reads, and allowlisted filters including JSONB paths. Results identify each repetition, request, and turn.
 
 Status: **Implemented**
 
 ## Key Terms
 - **TestCaseRunResult**: A single test case execution outcome within a test suite run. Immutable after creation.
-- **Keyset pagination**: Cursor-based pagination using `(created_at_ms, id)` as the position marker. No OFFSET/LIMIT.
+- **Keyset pagination**: Cursor-based pagination using `(created_at_ms, id)` as the position marker, with `LIMIT size + 1` and no OFFSET.
 - **ExecutionInfo**: Grouped execution context (status, timing, traceId) -- flat in DB, nested in API DTO.
 - **Batch write**: The only write pattern -- accepts an array of results per request. All-or-nothing semantics.
-- **JSONB path filtering**: Filtering on top-level keys within `testCaseData` JSONB column using dot-notation (e.g., `testCaseData.prompt:contains:hello`).
+- **JSONB path filtering**: Filtering on top-level keys within `testCaseData` JSONB column using dot-notation (e.g., `testCaseData.prompt:co:hello`).
 
 ## Requirements
 
@@ -19,43 +19,31 @@ The analytics database SHALL contain a `test_case_run_results` table storing fla
 Status: **Implemented**
 
 #### Scenario: Table structure
-- **WHEN** the analytics Flyway migration is applied
-- **THEN** the `test_case_run_results` table SHALL have columns: `id` (VARCHAR(36)), `test_suite_run_id` (VARCHAR(36), NOT NULL), `test_suite_id` (VARCHAR(36), NOT NULL), `test_case_id` (VARCHAR(36), NOT NULL), `test_case_name` (VARCHAR(255), NOT NULL), `run_index` (INTEGER, NOT NULL), `test_case_data` (JSONB, NOT NULL), `request_body` (JSONB, nullable), `response_body` (JSONB, nullable), `response_status_code` (INTEGER, nullable), `execution_status` (VARCHAR(20), NOT NULL), `exec_started_at_ms` (BIGINT, NOT NULL), `exec_completed_at_ms` (BIGINT, NOT NULL), `exec_duration_ms` (BIGINT, NOT NULL), `trace_id` (VARCHAR(128), nullable), `extracted_columns` (JSONB, default `{}`), `extraction_warnings` (JSONB, default `[]`), `retry_count` (INTEGER, NOT NULL, DEFAULT 0), `log_details` (JSONB, nullable), `turn_index` (INTEGER, NOT NULL, DEFAULT 0), `total_turns` (INTEGER, NOT NULL, DEFAULT 1), `request_index` (INTEGER, NOT NULL, DEFAULT 0), `total_requests` (INTEGER, NOT NULL, DEFAULT 1), `created_at_ms` (BIGINT, NOT NULL). Primary key: `(created_at_ms, id)`.
+- **WHEN** the installed analytics schema is inspected
+- **THEN** the `test_case_run_results` table SHALL have columns: `id` (VARCHAR(36)), `test_suite_run_id` (VARCHAR(36), NOT NULL), `test_suite_id` (VARCHAR(36), NOT NULL), `test_case_id` (VARCHAR(36), NOT NULL), `test_case_name` (VARCHAR(255), NOT NULL), `run_index` (INTEGER, NOT NULL), `test_case_data` (JSONB, NOT NULL), `request_body` (JSONB, nullable), `response_body` (JSONB, nullable), `response_status_code` (INTEGER, nullable), `execution_status` (VARCHAR(20), NOT NULL), `exec_started_at_ms` (BIGINT, NOT NULL), `exec_completed_at_ms` (BIGINT, NOT NULL), `exec_duration_ms` (BIGINT, NOT NULL), `trace_id` (VARCHAR(128), nullable), `extracted_columns` (JSONB, NOT NULL, DEFAULT `{}`), `extraction_warnings` (JSONB, NOT NULL, DEFAULT `[]`), `retry_count` (INTEGER, NOT NULL, DEFAULT 0), `log_details` (JSONB, nullable), `turn_index` (INTEGER, NOT NULL, DEFAULT 0), `total_turns` (INTEGER, NOT NULL, DEFAULT 1), `request_index` (INTEGER, NOT NULL, DEFAULT 0), `total_requests` (INTEGER, NOT NULL, DEFAULT 1), `created_at_ms` (BIGINT, NOT NULL). Primary key: `(created_at_ms, id)`.
 
-#### Scenario: Retry tracking columns added
-- **WHEN** the Flyway migration `V1.4__DropTimingAddRetryColumns.sql` is applied
-- **THEN** `retry_count` (INTEGER, NOT NULL, DEFAULT 0) and `log_details` (JSONB, nullable) columns SHALL be added to `test_case_run_results`
-
-#### Scenario: Streaming timing columns removed
-- **WHEN** the Flyway migration `V1.4__DropTimingAddRetryColumns.sql` is applied
-- **THEN** `time_to_first_token_ms` and `time_to_last_token_ms` columns SHALL be dropped from `test_case_run_results`
-
-#### Scenario: Turn columns added
-- **WHEN** the Flyway migration `V1.13__AddTurnColumnsToTestCaseRunResults.sql` is applied
-- **THEN** `turn_index` (INTEGER, NOT NULL, DEFAULT 0) and `total_turns` (INTEGER, NOT NULL, DEFAULT 1) columns SHALL be added to `test_case_run_results`, and existing rows backfill to those defaults
-
-#### Scenario: Request columns added
-- **WHEN** the Flyway migration `V1.17__AddRequestColumnsToTestCaseRunResults.sql` is applied
-- **THEN** `request_index` (INTEGER, NOT NULL, DEFAULT 0) and `total_requests` (INTEGER, NOT NULL, DEFAULT 1) columns SHALL be added to `test_case_run_results`, and existing rows backfill to those defaults
+#### Scenario: Retry metadata and request-turn identity
+- **WHEN** execution results are persisted
+- **THEN** rows SHALL support retry metadata and request/turn identity with the types and defaults listed above; there SHALL be no `time_to_first_token_ms` or `time_to_last_token_ms` columns
 
 #### Scenario: Indexes
-- **WHEN** the migration is applied
-- **THEN** existing indexes SHALL be preserved: `(test_suite_id, test_suite_run_id, test_case_name)`, `(id)`. No index on retry columns (per-result metadata, not query filters). No new index is added for the request columns (they are row-identity components, not a query-filter path).
+- **WHEN** the installed database schema is inspected
+- **THEN** indexes SHALL exist on `(test_suite_id, test_suite_run_id, test_case_name)` and `(id)`; there SHALL be no separate retry/request-column index
 
 #### Scenario: UNIQUE constraint for idempotent writes
-- **WHEN** the migration is applied
-- **THEN** the UNIQUE constraint `uq_results_run_case_index` SHALL be `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)` — extended with `turn_index` and then `request_index` (positioned immediately after `run_index`, dropping and recreating the prior constraint each time) so each (request, turn) pair is uniquely keyed and `ON CONFLICT` holds per chain call
+- **WHEN** the installed database schema is inspected
+- **THEN** the UNIQUE constraint `uq_results_run_case_index` SHALL be `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)`, so each (request, turn) pair is uniquely keyed and `ON CONFLICT` holds per chain call
 
 #### Scenario: No foreign keys
-- **WHEN** the migration is applied
+- **WHEN** the installed database schema is inspected
 - **THEN** no foreign key constraints SHALL exist (soft references to meta DB only)
 
 #### Scenario: No updated_at column
-- **WHEN** the migration is applied
+- **WHEN** the installed database schema is inspected
 - **THEN** the table SHALL NOT have an `updated_at_ms` column (results are immutable/append-only)
 
 ### Requirement: Per-turn result rows with turn columns
-`test_case_run_results` SHALL persist one row per executed turn. New columns `turn_index INTEGER NOT NULL DEFAULT 0` and `total_turns INTEGER NOT NULL DEFAULT 1` identify the turn and its test case's turn count. Turns of one test-case run share the same `test_case_id` (no separate grouping key); indices are contiguous `0..N-1`. Each turn row carries that turn's own `test_case_data`, the full accumulated `request_body`, that turn's raw `response_body`, its scalar `extracted_columns`, and the shared `trace_id`. Response DTOs expose `turnIndex` and `totalTurns`; batch-write item DTOs accept them as optional (defaulting `0/1`) so single-turn external callers stay compatible. No `multi_turn_id` or `last_turn_index` column is added.
+`test_case_run_results` SHALL persist one row per executed turn. `turn_index INTEGER NOT NULL DEFAULT 0` and `total_turns INTEGER NOT NULL DEFAULT 1` SHALL identify the turn and planned turn count. Turns of one test-case repetition SHALL share `test_case_id` and `trace_id`; executed turn indices SHALL be contiguous from 0, while early termination MAY leave planned later turns absent. Each row SHALL carry its own `test_case_data`, accumulated `request_body`, raw `response_body`, and scalar `extracted_columns`. Response DTOs SHALL expose `turnIndex` and `totalTurns`; batch-write items SHALL accept them optionally with `0`/`1` defaults.
 Status: **Implemented**
 
 #### Scenario: Turn rows share test_case_id and trace_id
@@ -64,7 +52,7 @@ Status: **Implemented**
 
 #### Scenario: Single-turn defaults preserved
 - **WHEN** a single-turn result is written
-- **THEN** it has `turn_index=0` and `total_turns=1`, and existing rows backfill to those defaults
+- **THEN** it SHALL have `turn_index=0` and `total_turns=1`
 
 #### Scenario: Two turns do not collide on the natural key
 - **WHEN** two turns of the same case/run are written
@@ -75,7 +63,7 @@ Status: **Implemented**
 - **THEN** it defaults to `turn_index=0, total_turns=1`
 
 ### Requirement: Per-request result rows with request columns
-`test_case_run_results` SHALL persist one row per HTTP call of a suite's request chain. The columns `request_index INTEGER NOT NULL DEFAULT 0` and `total_requests INTEGER NOT NULL DEFAULT 1` SHALL identify the row's position in the chain and the chain's length. Rows of one test-case repetition share the same `test_case_id`, `run_index` and `trace_id`; the request dimension is orthogonal to the turn dimension, so a row's identity within a repetition is the pair `(request_index, turn_index)`, with `request_index` contiguous `0..total_requests-1` and `turn_index` contiguous within each request. The values SHALL be stamped only when the chain length is greater than 1, so rows written for a single-request suite are byte-identical to rows written before these columns existed. No `chain_id` or `last_request_index` column SHALL be added. Response DTOs SHALL expose `requestIndex` and `totalRequests`; batch-write item DTOs SHALL accept them as optional, defaulting to `0`/`1`, so existing external callers stay compatible.
+`test_case_run_results` SHALL persist one row per executed HTTP call of a suite's request chain. The columns `request_index INTEGER NOT NULL DEFAULT 0` and `total_requests INTEGER NOT NULL DEFAULT 1` SHALL identify the row's position and planned chain length. Rows of one test-case repetition SHALL share `test_case_id`, `run_index`, and `trace_id`; the request and turn dimensions SHALL identify each executed call by `(request_index, turn_index)`. Executed indices SHALL be contiguous within each dimension; early termination MAY leave later planned calls absent. Single-request suites SHALL carry `0`/`1`. Response DTOs SHALL expose `requestIndex` and `totalRequests`; batch-write DTOs SHALL accept them optionally with `0`/`1` defaults.
 
 The `ON CONFLICT` target used by the batch writer SHALL match the extended unique constraint exactly, so re-writing a batch remains a no-op.
 Status: **Implemented**
@@ -118,7 +106,7 @@ Status: **Implemented**
 
 #### Scenario: Request body size limit exceeded
 - **WHEN** request body exceeds `analytics.results.batch.max-request-size-bytes` (default 10MB)
-- **THEN** system SHALL return HTTP 413 before deserialization, enforced by `MaxRequestBodyFilter`
+- **THEN** a declared oversized `Content-Length` SHALL return HTTP 413 `PAYLOAD_TOO_LARGE` before deserialization; a request without content length SHALL be limited while its body is read
 
 #### Scenario: Validation of required fields
 - **WHEN** required fields are missing (`testSuiteId`, `testSuiteRunId`, `testCaseId`, `testCaseName`, `testCaseData`, `runIndex`, `executionInfo.status`, `executionInfo.startedAt`, `executionInfo.completedAt`)
@@ -149,11 +137,11 @@ Status: **Implemented**
 - **THEN** system SHALL return HTTP 201 (duplicates silently skipped)
 
 #### Scenario: Intra-batch duplicates
-- **WHEN** a batch contains duplicate `(testCaseId, runIndex)` items
+- **WHEN** a batch contains duplicate `(testCaseId, runIndex, requestIndex, turnIndex)` items for the same run
 - **THEN** the first is inserted, subsequent silently skipped via `ON CONFLICT DO NOTHING`
 
 #### Scenario: Batch write accepts retry tracking fields
-- **WHEN** a batch write includes `retryCount` and `logDetails` per result item
+- **WHEN** a batch write includes `executionInfo.retryCount` and `executionInfo.logDetails` per result item
 - **THEN** the values SHALL be persisted to the `retry_count` and `log_details` columns
 
 #### Scenario: Batch write accepts requestBody
@@ -205,31 +193,55 @@ Status: **Implemented**
 - **THEN** system filters using `test_case_data->>:jsonbKeyParam` with parameterized key. Only top-level keys supported.
 
 ### Requirement: Get single test case run result by ID
-`GET /api/v1/analytics/test-case-results/{id}` -- returns single result or 404.
+`GET /api/v1/analytics/test-case-results/{id}` SHALL return a single readable result or HTTP 404 `NOT_FOUND`.
 Status: **Implemented**
+
+#### Scenario: Lookup by result ID
+- **WHEN** a client requests a result ID
+- **THEN** the system SHALL return HTTP 200 for a readable row and HTTP 404 for an unknown or tombstoned row
 
 ### Requirement: Count results
-`GET /api/v1/analytics/test-case-results/count` -- returns count matching filters. Requires `suiteId` filter.
+`GET /api/v1/analytics/test-case-results/count` SHALL return `{"count": N}` for readable rows matching the allowlisted filters and SHALL require a `suiteId` filter.
 Status: **Implemented**
+
+#### Scenario: Count requires suite scope
+- **WHEN** a client requests the count with a valid `suiteId` filter
+- **THEN** the system SHALL return the matching readable-row count; omitting that filter SHALL return HTTP 400 `VALIDATION_ERROR`
 
 ### Requirement: Configuration properties for analytics results
-`analytics.results.batch.max-items` (default 10000) and `analytics.results.batch.max-request-size-bytes` (default 10485760).
+The system SHALL bind `analytics.results.batch.max-items` (default 10000) and `analytics.results.batch.max-request-size-bytes` (default 10485760) from configuration.
 Status: **Implemented**
+
+#### Scenario: Configured limits
+- **WHEN** a deployment configures the analytics-result batch limits
+- **THEN** batch item validation and HTTP body limiting SHALL use those configured values
 
 ### Requirement: ExecutionStatus enum
-Values: `SUCCESS`, `FAILED`, `TIMEOUT`, `ERROR`.
+The execution status model SHALL support `SUCCESS`, `FAILED`, `TIMEOUT`, and `ERROR`.
 Status: **Implemented**
+
+#### Scenario: Status accepted by batch write
+- **WHEN** a batch item supplies a valid execution status
+- **THEN** it SHALL persist that status; an unknown enum value SHALL fail HTTP request binding with HTTP 400
 
 ### Requirement: Filter framework extension for JSONB path filtering
-`FilterFieldType.JSONB_STRING` type, `WhereBuilder` extended for JSONB path access with parameterized keys, `FilterWhitelists.ANALYTICS_RESULTS` whitelist. TTFT/TTLT filter entries removed; `retryCount` filter entry added.
+`WhereBuilder` SHALL build typed-jOOQ predicates for `FilterWhitelists.ANALYTICS_RESULTS`, supporting one-level `JSONB_STRING` paths with bound keys and the scalar `retryCount` filter. Streaming timing fields SHALL NOT be filterable.
 Status: **Implemented**
+
+#### Scenario: Allowlisted JSONB path
+- **WHEN** a result query filters `testCaseData.prompt:co:hello`
+- **THEN** the JSONB key SHALL be bound as a value and the text comparison SHALL be case-insensitive; a deeper path SHALL be rejected
 
 ### Requirement: Request body size limit via MaxRequestBodyFilter
-Two-phase enforcement: eager `Content-Length` check (JSON 413 response) + lazy stream wrapping for chunked encoding. Registered after Spring Security filter chain.
+The HTTP body limiter SHALL reject an excessive `Content-Length` eagerly with HTTP 413 `PAYLOAD_TOO_LARGE`, and SHALL wrap requests without a content length to detect excess bytes while reading. The filters SHALL be registered after the Spring Security filter chain.
 Status: **Implemented**
 
+#### Scenario: Body limit enforcement timing
+- **WHEN** a request declares an excessive content length
+- **THEN** it SHALL be rejected before deserialization; without a content length, enforcement SHALL occur while the body stream is consumed
+
 ### Requirement: Cross-reference to eval summaries
-The `test_case_run_results` table remains the raw execution log (request/response bodies, retry logs, trace IDs). The `test_case_eval_summaries` table (defined in `metrics-storage` spec) serves as the metric-enriched analytical surface, containing denormalized test case context plus metric scores. The two tables are linked by `test_case_run_result_id` (soft FK). No changes to existing `test_case_run_results` schema or API endpoints.
+The `test_case_run_results` table SHALL remain the raw execution log (request/response bodies, retry logs, trace IDs). The `test_case_eval_summaries` table (defined in `metrics-storage`) SHALL serve as the metric-enriched analytical surface, linked by `test_case_run_result_id` without a database foreign key.
 Status: **Implemented**
 
 #### Scenario: Existing endpoints unchanged
@@ -250,19 +262,7 @@ Status: **Implemented**
 
 #### Scenario: An active run's result rows are unaffected
 - **WHEN** a repository read targets a run with no analytics tombstone
-- **THEN** all of that run's matching rows SHALL be returned exactly as before this change
-
-## Implementation Notes
-- Controller: `AnalyticsResultController` -- `@LogExecution`, `@Validated`
-- Service: `AnalyticsResultService` -- reads run from meta for validation/timestamp, writes to analytics
-- Repository: `PostgresTestCaseRunResultRepository` -- `@Qualifier("analyticsJdbcTemplate")`, `batchUpdate()` with `ON CONFLICT DO NOTHING`, `PostgresJsonbSqlParameter` for JSONB writes
-- Model: `TestCaseRunResult` -- JSONB fields as `String` (raw JSON)
-- Cursor: `Cursor` record (data layer) + `CursorCodec` (service layer, URL-safe Base64)
-- Mapper: `TestCaseRunResultMapper` (MapStruct) -- computes `execDurationMs` server-side
-- Filter whitelist: `FilterWhitelists.ANALYTICS_RESULTS` with 11 fields including `testCaseData` (JSONB_STRING), `retryCount` (LONG)
-- Error handling: `PAYLOAD_TOO_LARGE` error code, `InvalidFilterException` handler in `DefaultExceptionHandler`
-- Migration: `V1.1__CreateTestCaseRunResultsTable.sql` in `db/migration/analytics/POSTGRES/`
-- Retry/timing migration: `V1.4__DropTimingAddRetryColumns.sql` in `db/migration/analytics/POSTGRES/`
+- **THEN** its matching rows SHALL remain readable
 
 ### Requirement: Retry tracking fields in TestCaseRunResult model
 The `TestCaseRunResult` data model and associated DTOs SHALL include retry tracking fields for recording retry attempt counts and structured retry logs.
@@ -270,11 +270,11 @@ Status: **Implemented**
 
 #### Scenario: Model fields
 - **WHEN** a `TestCaseRunResult` is constructed
-- **THEN** it SHALL support `retryCount` (Integer, NOT NULL, default 0) and `logDetails` (String, nullable — raw JSON) fields
+- **THEN** it SHALL support `retryCount` (Integer) and `logDetails` (String, nullable — raw JSON) fields; the batch DTO mapper SHALL default an omitted retry count to 0
 
 #### Scenario: DTO fields in read API response
 - **WHEN** a client reads test case run results via `GET /api/v1/analytics/test-case-results`
-- **THEN** each result in the response SHALL include `retryCount` (Integer) and `logDetails` (Object, nullable — structured retry log deserialized from JSONB; follows existing pattern for `testCaseData`/`extractedColumns`)
+- **THEN** each result SHALL expose `executionInfo.retryCount` and optional `executionInfo.logDetails` (structured retry log), rather than top-level retry fields
 
 #### Scenario: Filtering by retryCount
 - **WHEN** client queries with `filter=retryCount:ge:1`
@@ -283,3 +283,11 @@ Status: **Implemented**
 #### Scenario: Filter whitelist fields
 - **WHEN** the analytics results filter whitelist is configured
 - **THEN** `FilterWhitelists.ANALYTICS_RESULTS` SHALL include 11 fields: `suiteId` (UUID), `runId` (UUID), `testCaseId` (UUID), `testCaseName` (STRING), `executionStatus` (STRING), `runIndex` (LONG), `createdAt` (LONG), `execDurationMs` (LONG), `responseStatusCode` (LONG), `retryCount` (LONG), `testCaseData` (JSONB_STRING). Note: `retryCount` uses `FilterFieldType.LONG` (no INTEGER type in the filter framework; LONG works for DB INTEGER columns via implicit SQL cast).
+
+## Implementation Notes
+- [Controller](../../../src/main/java/com/epam/aidial/evaluation/web/controller/AnalyticsResultController.java): batch/list/detail/count routes, sort rejection, and pagination resolution.
+- [Service](../../../src/main/java/com/epam/aidial/evaluation/service/domain/analytics/AnalyticsResultService.java): meta-run validation/timestamp lookup, batch checks, required suite-filter presence and orphan-safe timestamp pruning.
+- [Repository](../../../src/main/java/com/epam/aidial/evaluation/data/db/analytics/repository/PostgresTestCaseRunResultRepository.java): `analyticsDsl`, typed-jOOQ transactional batch inserts with conflict skipping, keyset reads, tombstone exclusion.
+- [Mapper](../../../src/main/java/com/epam/aidial/evaluation/service/domain/mapper/TestCaseRunResultMapper.java): nested execution information, duration computation, and field defaults.
+- [Body limiter](../../../src/main/java/com/epam/aidial/evaluation/web/filter/MaxRequestBodyFilter.java) and [registration](../../../src/main/java/com/epam/aidial/evaluation/web/filter/MaxRequestBodyFilterConfiguration.java): eager and streaming size checks.
+- [Filter whitelist](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/FilterWhitelists.java) and [predicate builder](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/WhereBuilder.java) define allowed result fields/operators and JSONB paths.

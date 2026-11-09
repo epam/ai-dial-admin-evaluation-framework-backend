@@ -9,28 +9,28 @@ Status: **Implemented**
 ## Requirements
 
 ### Requirement: Try it out with test case data
-The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/try-it-out` to resolve the effective request template using the test case's data and effective bindings, send the resolved request to the DIAL Core deployment referenced by the test suite, and return the deployment's response along with the resolved request details. When the test case is multi-turn, the system SHALL execute every turn of the sequence and return the result of the last executed turn, plus a per-turn `history` when more than one turn actually ran.
+The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/try-it-out` to resolve the effective request template using the test case's data and effective bindings, send the resolved request to the DIAL Core deployment referenced by the test suite, and return the deployment's response along with the resolved request details. When the test case is multi-turn, the system SHALL execute every turn of the sequence and return the result of the last executed turn, plus invocation `history` whenever the plan has more than one invocation, even when failure stops it after the first.
 
 Status: **Implemented**
 
 #### Scenario: Successful try-it-out with test case
 - **WHEN** authenticated user sends POST to `/api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/try-it-out`
 - **AND** the test suite has a valid `deploymentRef`, `requestTemplate`, and `endpointRef`
-- **AND** the test case exists and belongs to the test suite
-- **THEN** the system SHALL load the suite (for `deploymentRef`/`endpointRef` precondition validation via `SuiteDefinitionResolver.fromEntity`), then delegate turn planning and resolution to `ResolvedRequestService`, which handles test-case loading, effective template/bindings determination, turn planning, and resolution within its own `@Transactional(readOnly=true)` scope. Note: on the single-turn collapse path (no `multiTurnData`, or `multiTurnData` present but no per-turn binding) this results in the suite being loaded 3 times and the test case being loaded 2 times — once via `loadSuite`, once via `planTurns` (suite + test case), and once more via the separate `resolveRequest` call (suite + test case) that `tryWithTestCase` makes when the plan collapses to a single turn. On the true multi-turn path (N>1 turns), the suite is loaded only 2 times and the test case only 1 time — via `loadSuite` and `planTurns` alone, since `resolveRequest` is not called in that case. This is an accepted trade-off for clear pre-validation errors without modifying `ResolvedRequestService`.
+- **AND** the test case exists in the dataset referenced by the test suite
+- **THEN** the system SHALL load and validate the suite, then use `ResolvedRequestService.planChain` to load the case from the suite's referenced dataset and plan each request's turns. On a single-invocation plan it SHALL use `resolveRequest`; otherwise it SHALL resolve in `runChain` using the request's suite-level template and bindings
 - **AND** send the resolved request(s) to the DIAL Core deployment (after the transaction completes and the DB connection is released)
 - **AND** return HTTP 200 with `TryItOutResponseDto` containing the resolved request, the deployment's response (status code + body), and execution duration in milliseconds
 
-#### Scenario: Test case with template/bindings overrides
-- **WHEN** the test case has `requestTemplateOverride` and/or `inputBindingsOverride`
-- **THEN** the system SHALL use the overrides instead of suite-level template/bindings for resolution
+#### Scenario: Suite-owned templates and bindings
+- **WHEN** the test case is resolved for try-it-out
+- **THEN** resolution SHALL use the template and bindings of the suite's corresponding request; current dataset test cases have no template/binding override fields
 
 #### Scenario: Test suite not found
 - **WHEN** user sends try-it-out request with non-existent `testSuiteId`
 - **THEN** the system SHALL return HTTP 404 with error code `NOT_FOUND`
 
 #### Scenario: Test case not found
-- **WHEN** user sends try-it-out request with non-existent `testCaseId` or a test case that does not belong to the test suite
+- **WHEN** user sends try-it-out request with non-existent `testCaseId` or a test case that does not belong to the suite's referenced dataset
 - **THEN** the system SHALL return HTTP 404 with error code `NOT_FOUND`
 
 #### Scenario: Multi-turn test case executes every turn
@@ -39,19 +39,19 @@ Status: **Implemented**
 - **AND** each turn's effective data SHALL be the merge of the test case's shared `data` with that turn's entry (per-turn wins on key collision)
 - **AND** each turn after the first SHALL be resolved using `frameBindings` derived from the response columns extracted from the previous turn's response (via the suite's `responseColumns` definitions), enabling `$history`-style JSONata expressions in the request template to accumulate across turns exactly as they do in a real suite run
 - **AND** the first turn SHALL be resolved with empty `frameBindings`
-- **AND** the response SHALL be a `TryItOutResponseDto` containing the last executed turn's `resolvedRequest`/`response`/`durationMs`/`traceId` at the top level, plus a `history` array with one entry per executed turn (see "Multi-turn response includes per-turn history")
+- **AND** the response SHALL be a `TryItOutResponseDto` containing the last executed invocation's `resolvedRequest`/`response`/`durationMs`/`traceId` at the top level, plus a `history` array with one entry per executed invocation when the plan has more than one invocation (see "Multi-invocation plan includes executed history")
 
 #### Scenario: Multi-turn data present but no per-turn binding collapses to a single turn
 - **WHEN** the test case has non-null `multiTurnData` with more than one entry, but no effective input binding references any `perTurn=true` schema field
 - **THEN** the system SHALL treat the case as a single turn using only the shared `data` (identical to the `PerTurnBindingDetector` collapse behavior used by real runs)
-- **AND** the response SHALL be identical in shape to a single-turn test case's response (no `history`)
+- **AND** for a single-request suite the response SHALL omit `history`; a multi-request suite SHALL still retain invocation history
 
 #### Scenario: Turn failure stops the sequence
-- **WHEN** executing a multi-turn test case and a turn's invocation resolves to a non-2xx DIAL Core status, fails request-body JSONata evaluation (`RequestBodyEvaluationException`), or fails resolved request-model validation (`RequestBodyValidationException`)
+- **WHEN** executing a multi-turn test case and a turn's invocation resolves to a non-2xx DIAL Core status, has a non-success SSE parse result, fails request-body JSONata evaluation (`RequestBodyEvaluationException`), or fails resolved request-model validation (`RequestBodyValidationException`)
 - **THEN** the system SHALL stop executing further turns (fail-fast)
 - **AND** the failed turn's resolved request and error response SHALL be returned as the `resolvedRequest`/`response`, and as the last entry of `history`
 - **NOTE**: a transport-level failure during a turn's invocation (timeout, connection refused, unreachable deployment) is NOT caught by this mechanism — it propagates uncaught exactly as in the single-turn path, producing the pre-existing plain 502/504 error response.
-- **NOTE**: `ValidationException` (null resolved URL) or `TryItOutValidationException` (unresolved REQUIRED template variables) thrown by `validateResolutionResult` for turns after the first remain uncaught. `runChain` catches only `RequestBodyEvaluationException` and the new `RequestBodyValidationException`; other validation failures propagate exactly like transport-level failures.
+- **NOTE**: `ValidationException` (null resolved URL) or `TryItOutValidationException` (unresolved REQUIRED variables) thrown by `validateResolutionResult` for turns after the first remain uncaught. `runChain` catches only `RequestBodyEvaluationException` and `RequestBodyValidationException`; other validation failures propagate exactly like transport-level failures. A `REQUEST_BODY_EVALUATION_ERROR` warning never reaches `validateResolutionResult` in the chain: `runChain` resolves via `RequestResolver.resolveForRun`, which throws `RequestBodyEvaluationException` instead of downgrading to a warning, so a body evaluation failure is always caught there. The `TryItOutValidationException` for that warning fires only on single-invocation paths that use the preview resolver.
 
 #### Scenario: MCP suite rejects multi-turn test case
 - **WHEN** the test suite has `suiteType = MCP_TOOL` and the test case has non-null `multiTurnData`
@@ -94,7 +94,7 @@ Status: **Implemented**
 - **THEN** the system SHALL skip that entry when building bindings (a blank key cannot match any `${{var}}` placeholder)
 
 #### Scenario: Non-integer request index
-- **WHEN** user sends try-it-out request whose `variables` has a key that is not an integer (e.g., the legacy flat shape `{ "variables": { "prompt": "Hello" } }`)
+- **WHEN** user sends try-it-out request whose `variables` has a key that is not an integer (e.g., a flat shape `{ "variables": { "prompt": "Hello" } }`)
 - **THEN** the system SHALL return HTTP 400 with error code `VALIDATION_ERROR` without invoking the deployment
 - **AND** the rejection SHALL happen while reading the request body, before the suite is looked up (so it takes precedence over a 404 for a non-existent suite)
 
@@ -172,7 +172,7 @@ Status: **Implemented**
 
 > **Note:** This scenario applies to all suite types: DEPLOYMENT and ROUTE suites check URL template variables, MCP_TOOL suites check argument template variables.
 
-#### Scenario: JSON request body fails JSONata evaluation (DEPLOYMENT suite only)
+#### Scenario: JSON request body fails JSONata evaluation (DEPLOYMENT suite)
 - **WHEN** the resolved request produces a warning with `REQUEST_BODY_EVALUATION_ERROR` code (the JSON body's JSONata evaluation failed and the resolved body content was downgraded to `null`)
 - **THEN** the system SHALL return HTTP 400 with error code `VALIDATION_ERROR`, the same way as an unresolvable `REQUIRED` warning
 - **AND** the deployment SHALL NOT be invoked
@@ -187,16 +187,18 @@ Status: **Implemented**
 ---
 
 ### Requirement: Try it out with MCP tool call (test case)
+Status: **Implemented**
+
 
 The system SHALL support try-it-out for MCP_TOOL suites via `POST /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/try-it-out`. For MCP suites, the system SHALL resolve tool arguments from the argument template using effective bindings and test case data, execute the MCP tool call via `McpToolInvoker`, and return the MCP response.
 
 #### Scenario: Successful MCP try-it-out with test case
 - **WHEN** authenticated user sends POST to `/api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/try-it-out`
 - **AND** the test suite has `suiteType = MCP_TOOL` with valid `mcpDeploymentRef`, `toolRef`, and `argumentTemplate`
-- **THEN** the system SHALL determine effective bindings: test case `inputBindingsOverride` (if non-null) takes priority over suite-level `inputBindings` (same override semantics as HTTP suites)
-- **AND** resolve tool arguments via `McpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData)`
+- **THEN** the system SHALL use the suite-level MCP input bindings
+- **AND** resolve tool arguments via `McpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData, datasetSchema)`
 - **AND** determine the MCP transport from `mcpDeploymentRef.transport` (defaulting to `STREAMABLE_HTTP` when null)
-- **AND** execute `McpToolInvoker.callTool(mcpDeploymentRef.id, toolRef.name, resolvedArguments, token, transport)`
+- **AND** execute `McpToolInvoker.callTool(mcpDeploymentRef.id, toolRef.name, resolvedArguments, credential, transport)`
 - **AND** serialize the `CallToolResult` via `McpResponseSerializer`
 - **AND** return HTTP 200 with `TryItOutResponseDto` containing the resolved arguments, the serialized MCP response, and execution duration
 
@@ -239,6 +241,8 @@ Status: **Implemented**
 ---
 
 ### Requirement: MCP try-it-out response structure
+Status: **Implemented**
+
 
 The `TryItOutResponseDto` SHALL accommodate MCP responses alongside HTTP responses.
 
@@ -255,7 +259,9 @@ The `TryItOutResponseDto` SHALL accommodate MCP responses alongside HTTP respons
 ---
 
 ### Requirement: TryItOutResponseDto structure
-The response SHALL be an envelope containing the resolved request, the DIAL Core response, timing information, and the OTel trace ID of the invocation. The top-level fields always reflect the **last executed turn** — identical in shape to a single-turn response. For a genuine multi-turn sequence (more than one turn actually executed), the envelope additionally carries a `history` field: an ordered list of one entry per executed turn (0..N-1, including the last), each entry having the same `resolvedRequest`/`response`/`durationMs`/`traceId`/`grafanaTraceUrl` shape as the envelope itself. `history` is omitted (`null`, not serialized) for a real single-turn test case and for a multi-turn test case that collapses to a single turn (no per-turn binding bound) — both never enter the turn loop.
+Status: **Implemented**
+
+The response SHALL be an envelope containing the resolved request, the DIAL Core response, timing information, and the OTel trace ID of the invocation. The top-level fields always reflect the **last executed turn** — identical in shape to a single-turn response. For a plan with more than one invocation (multiple turns, multiple requests, or both), the envelope additionally carries a `history` field: an ordered list of one entry per executed invocation (request-major, then turn-major), including the last; early failure retains only the executed prefix, each entry having the same `resolvedRequest`/`response`/`durationMs`/`traceId`/`grafanaTraceUrl` shape as the envelope itself. `history` is omitted (`null`, not serialized) for a single-request suite whose test case plans one turn (including a multi-turn case collapsed by absence of a per-turn binding). A multi-request suite uses history even when each request plans only one turn.
 
 `TryItOutCoreResponseDto` SHALL include:
 - `statusCode` (int) — HTTP status code from DIAL Core
@@ -272,7 +278,7 @@ The response SHALL be an envelope containing the resolved request, the DIAL Core
 - **THEN** `TryItOutResponseDto` SHALL include:
   - `resolvedRequest` (`ResolvedRequestDto`) — the resolved URL, query params, headers, and body
   - `response` (`TryItOutCoreResponseDto`) — `statusCode` (int), `body` (Object, nullable — parsed JSON or raw string), `streaming` = `null` (omitted), `events` = `null` (omitted)
-  - `durationMs` (Long) — wall-clock time for the DIAL Core invocation in milliseconds
+  - `durationMs` (Long) — elapsed time through `invokeWithStreaming` return; SSE parsing occurs afterward and is excluded
   - `traceId` (String, nullable) — the 32-char hex OTel trace ID; null when tracing disabled
 
 #### Scenario: Response structure (SSE)
@@ -284,7 +290,7 @@ The response SHALL be an envelope containing the resolved request, the DIAL Core
 - **THEN** the try-it-out endpoint SHALL still return HTTP 200
 - **AND** the `response.statusCode` SHALL contain the actual upstream status code
 - **AND** the `response.body` SHALL contain the upstream response body
-- **AND** `traceId` SHALL still be populated
+- **AND** `traceId` SHALL be populated when the invocation span is valid
 
 #### Scenario: Response body is valid JSON (non-SSE)
 - **WHEN** DIAL Core returns a non-SSE response body that is valid JSON
@@ -296,21 +302,21 @@ The response SHALL be an envelope containing the resolved request, the DIAL Core
 
 #### Scenario: Resolved request with multipart body
 - **WHEN** the test suite uses a `multipart/form-data` request template
-- **THEN** `resolvedRequest.body` SHALL be a `ResolvedMultipartBodyDto` showing the resolved form parts (text values and file blob UUIDs)
+- **THEN** `resolvedRequest.body` SHALL be a `ResolvedMultipartBodyDto` showing resolved text parts and DIAL file references
 
 #### Scenario: Resolved request with URL-encoded body
 - **WHEN** the test suite uses a `application/x-www-form-urlencoded` request template
 - **THEN** `resolvedRequest.body` SHALL be a `ResolvedUrlEncodedBodyDto` showing the resolved `List<KeyValueTemplateDto>` entries
 
-#### Scenario: Multi-turn response includes per-turn history
-- **WHEN** a try-it-out invocation resolves to more than one turn (a genuine multi-turn sequence, N>1)
-- **THEN** `TryItOutResponseDto.history` SHALL be present, containing exactly N entries, one per executed turn, ordered 0..N-1
+#### Scenario: Multi-invocation plan includes executed history
+- **WHEN** a try-it-out plan contains more than one invocation (multiple turns or multiple requests)
+- **THEN** `TryItOutResponseDto.history` SHALL be present, containing one entry per executed invocation in execution order, including a failing first invocation when the remaining planned calls are skipped
 - **AND** each entry SHALL carry that turn's own `resolvedRequest`/`response`/`durationMs`/`traceId`/`grafanaTraceUrl`
 - **AND** the last entry in `history` SHALL be identical to the envelope's own top-level `resolvedRequest`/`response`/`durationMs`/`traceId`/`grafanaTraceUrl`
 - **AND** if the sequence stopped early due to a failing turn (fail-fast), `history` SHALL contain only the turns that actually ran, with the last entry being the failing turn
 
-#### Scenario: Single-turn response omits history
-- **WHEN** a try-it-out invocation is a real single-turn test case, or a multi-turn test case whose plan collapses to a single turn (no per-turn binding bound)
+#### Scenario: Single-request single-turn response omits history
+- **WHEN** a single-request suite plans exactly one turn, including a multi-turn test case collapsed by absence of a per-turn binding
 - **THEN** `TryItOutResponseDto.history` SHALL be absent (`null`, omitted from JSON) — the response shape is unchanged from a plain single-turn response
 
 ---
@@ -335,13 +341,13 @@ Status: **Implemented**
 ---
 
 ### Requirement: Try-it-out SSE timeout enforcement
-When processing SSE responses, try-it-out SHALL enforce an **idle (inactivity) timeout** plus an **absolute max-total cap** to prevent indefinite blocking on stalled or endlessly-heartbeating streams. The idle timeout SHALL be the existing `dial.components.core.try-out.read-timeout-ms` configuration, passed to `SseEventParser.parse(...)` as `idleTimeoutMs` (reset on every received line). The absolute cap SHALL be the dedicated `sse-event-processing.max-total-duration-ms` configuration, passed as `maxTotalDurationMs`. Try-it-out SHALL NOT compute an absolute `clock.millis() + readTimeoutMs` deadline itself.
+When processing SSE responses, try-it-out SHALL enforce an **idle (inactivity) timeout** plus an **absolute max-total cap** to bound progress at completed line-read boundaries. The idle timeout SHALL be the existing `dial.components.core.try-out.read-timeout-ms` configuration, passed to `SseEventParser.parse(...)` as `idleTimeoutMs` (reset on every received line). The absolute cap SHALL be the dedicated `sse-event-processing.max-total-duration-ms` configuration, passed as `maxTotalDurationMs`. Try-it-out SHALL NOT compute an absolute `clock.millis() + readTimeoutMs` deadline itself.
 
 Status: **Implemented**
 
 #### Scenario: SSE stream idle longer than read timeout
 - **WHEN** an SSE stream sends no line for longer than `dial.components.core.try-out.read-timeout-ms`
-- **THEN** system SHALL stop reading, return partial events accumulated so far, and include `streaming=true` in response
+- **THEN** on the next completed line read the parser SHALL return partial dispatched events with `streaming=true` and `streamingStatus=TIMEOUT`
 
 #### Scenario: Active SSE stream is not killed by total elapsed time
 - **WHEN** an SSE stream keeps sending lines (data or keep-alive heartbeats) with gaps shorter than the read timeout, for total elapsed time exceeding the read timeout but within `sse-event-processing.max-total-duration-ms`
@@ -360,7 +366,7 @@ Status: **Implemented**
 
 #### Scenario: SSE stream exceeds size limit
 - **WHEN** accumulated SSE event data exceeds `max-response-size-bytes`
-- **THEN** system SHALL stop reading and return partial events accumulated so far
+- **THEN** system SHALL return events dispatched before the overflowing event, with `streamingStatus=ERROR` and `truncationWarning`
 
 ---
 
@@ -371,7 +377,7 @@ Status: **Implemented**
 
 #### Scenario: SSE stream read error
 - **WHEN** an `IOException` occurs while parsing the SSE stream (e.g., connection reset mid-stream)
-- **THEN** system SHALL return partial events accumulated before the error with `streaming=true` and `body` as the `{"events": [...]}` envelope of the partial events
+- **THEN** system SHALL return partial events accumulated before the error with `streaming=true` and `streamingStatus=ERROR` and `body` as the `{"events": [...]}` envelope of the partial events
 
 #### Scenario: Empty SSE stream
 - **WHEN** DIAL Core returns `Content-Type: text/event-stream` but the stream body is empty (immediate EOF)
@@ -379,11 +385,13 @@ Status: **Implemented**
 
 #### Scenario: SSE timeout returns partial response
 - **WHEN** an SSE stream stalls past the idle timeout, or stays active beyond the absolute max-total cap, during try-it-out
-- **THEN** system SHALL return partial events accumulated so far with `streaming=true`, and `body` as the envelope of partial events
+- **THEN** system SHALL return partial events accumulated so far with `streaming=true`, `streamingStatus=TIMEOUT`, and `body` as the envelope of partial events. Parser deadlines are checked after `readLine`, not by a separately timed future; transport behavior governs a stalled read
 
 ---
 
 ### Requirement: Try-it-out invocation uses pluggable serializer
+Status: **Implemented**
+
 The try-it-out service SHALL use `RequestBodySerializerRegistry` to serialize the resolved body before invoking the DIAL Core deployment, instead of relying on the invoker's hardcoded JSON serialization.
 
 #### Scenario: JSON body invocation (current behavior preserved)
@@ -392,7 +400,7 @@ The try-it-out service SHALL use `RequestBodySerializerRegistry` to serialize th
 
 #### Scenario: Multipart body invocation
 - **WHEN** the resolved body is `ResolvedMultipartBodyDto`
-- **THEN** the system SHALL build a multipart request (reading file bytes from BlobStorage for file parts), and invoke DIAL Core with `Content-Type: multipart/form-data`
+- **THEN** the system SHALL build a multipart request (downloading referenced DIAL files for file parts), and invoke DIAL Core with `Content-Type: multipart/form-data`
 
 #### Scenario: URL-encoded body invocation
 - **WHEN** the resolved body is `ResolvedUrlEncodedBodyDto`
@@ -438,7 +446,7 @@ Status: **Implemented**
 ### Requirement: URL construction for DIAL Core invocation
 The system SHALL construct the full DIAL Core URL by combining the base URL, a deployment prefix (DEPLOYMENT suites only), and the resolved URL template. `DialCoreUrlBuilder` SHALL maintain a `Set<String>` of known OpenAI-standard paths to determine the routing prefix.
 
-Known standard paths (V1): `/chat/completions`, `/embeddings`
+Known deployment-prefixed paths: `/chat/completions`, `/embeddings`. Model-selecting paths pass through without a deployment prefix and their body model selects the deployment: any resolved URL that starts with `/openai/v1/responses` (case-insensitive prefix match), and `/anthropic/v1/messages` on exact (case-sensitive) match only.
 
 Status: **Implemented**
 
@@ -451,7 +459,7 @@ Status: **Implemented**
 - **THEN** the full URL SHALL be `{coreBaseUrl}/openai/deployments/{deploymentRef.id}/embeddings`
 
 #### Scenario: Custom application route
-- **WHEN** the resolved URL from the template does NOT match any known OpenAI-standard path (e.g., `/my-custom-endpoint`)
+- **WHEN** the resolved URL from the template does NOT match a deployment-prefixed or canonical fixed path (e.g., `/my-custom-endpoint`)
 - **THEN** the full URL SHALL be `{coreBaseUrl}/v1/deployments/{deploymentRef.id}/route{resolvedUrl}`
 
 #### Scenario: HTTP method from endpoint reference
@@ -471,6 +479,8 @@ Status: **Implemented**
 ---
 
 ### Requirement: Error handling for infrastructure failures
+Status: **Implemented**
+
 The system SHALL map DIAL Core connectivity and timeout failures to appropriate HTTP error responses.
 
 #### Scenario: DIAL Core unreachable
@@ -484,11 +494,13 @@ The system SHALL map DIAL Core connectivity and timeout failures to appropriate 
 ---
 
 ### Requirement: Try-it-out timeout configuration
+Status: **Implemented**
+
 The system SHALL support a separate read timeout for try-it-out invocations, configurable via `dial.components.core.try-out.read-timeout-ms`.
 
 #### Scenario: Default timeout
 - **WHEN** no explicit try-it-out timeout is configured
-- **THEN** the system SHALL use a default of 120000 milliseconds (120 seconds)
+- **THEN** the system SHALL use a default of 3600000 milliseconds (one hour)
 
 #### Scenario: Custom timeout
 - **WHEN** `dial.components.core.try-out.read-timeout-ms` is set to a custom value
@@ -497,11 +509,13 @@ The system SHALL support a separate read timeout for try-it-out invocations, con
 ---
 
 ### Requirement: Request headers for DIAL Core invocation
-The system SHALL include resolved template headers and the user's authorization token when invoking the DIAL Core deployment.
+Status: **Implemented**
+
+The system SHALL include resolved template headers and the caller's credential when invoking the DIAL Core deployment.
 
 #### Scenario: Authorization token forwarded
 - **WHEN** system invokes DIAL Core deployment
-- **THEN** the user's JWT token from the incoming request SHALL be forwarded as `Authorization: Bearer` header
+- **THEN** the caller credential SHALL be forwarded using its kind: `Authorization: Bearer <jwt>` or `Api-Key: <key>`
 
 #### Scenario: Template headers included
 - **WHEN** the resolved request has custom headers from the template (e.g., `X-Custom: value`)
@@ -514,6 +528,8 @@ The system SHALL include resolved template headers and the user's authorization 
 ---
 
 ### Requirement: OpenAPI documentation
+Status: **Implemented**
+
 The system SHALL expose OpenAPI annotations on both try-it-out endpoints with descriptions, request/response schemas, and error responses.
 
 #### Scenario: Swagger UI shows endpoints
@@ -599,18 +615,6 @@ Status: **Implemented**
 - **THEN** Try-It-Out SHALL invoke DIAL Core at `/openai/v1/responses`
 - **AND** the system SHALL NOT return a `REQUEST_BODY_VALIDATION_ERROR`
 
-## Implementation Notes
-
-
-- `TryItOutService` owns type-aware ROUTE preconditions and invocation; `DialCoreUrlBuilder` builds the root-relative URL. URL-builder rejection is mapped to HTTP 400 `VALIDATION_ERROR`, while run execution records `REQUEST_RESOLUTION_ERROR` per case.
-- Modified: `TryItOutService` — branch by `suiteType`: HTTP flow (existing) or MCP flow (new)
-- MCP test-case flow: loads suite-level `inputBindings`, determines effective bindings (test case `inputBindingsOverride` > suite bindings) → `McpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData)` → `McpToolInvoker.callTool(id, tool, args, token, transport)` → `McpResponseSerializer.serialize()` → build `TryItOutResponseDto`
-- MCP variables flow: `TryItOutVariableBindings.toBindingsByRequest(variables, 1).get(0)` → `McpRequestResolver.resolveWithVariables(argumentTemplate, bindings, variables[0] or {})` → same invocation chain
-- HTTP variables flow: `TryItOutVariableBindings.toBindingsByRequest(variables, 1 + additionalRequests.size())` validates indices (after suite preconditions, before any invocation) and returns request index → constant bindings; the single-request path resolves with entry `0`, the chain path passes the map to `runChain`, which looks bindings up by `RequestExecutionSpec.requestIndex()` (absent → empty list)
-- MCP transport propagation: `TryItOutService` reads `mcpDeploymentRef.transport`, defaults to `McpTransport.STREAMABLE_HTTP` when null, passes to `McpToolInvoker`
-- Reuse `TryItOutResponseDto` structure — `resolvedRequest.body` contains arguments as JSON, `response.body` contains serialized MCP response
-- Resolved request-model validation: `TryItOutService.invokeTurn` calls `RequestModelValidator.validateForExecution` before building the URL — deliberately not inside `validateResolutionResult`, which the single-invocation path shares. `invokeAndBuildResponse` converts the resulting `RequestBodyValidationException` into the established HTTP 400 via `toTryItOutValidationException`, which appends a `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR` warning to the returned `resolvedRequest`; `runChain` catches it separately from `RequestBodyEvaluationException` and builds the status-code-zero `buildModelValidationFailureResult` envelope that retains the resolved request in both the top-level response and `history`, stopping the chain.
-
 ### Requirement: Try-it-out resolves skill placeholders to canonical references
 Test-case try-out, variables try-out and the resolved-request preview SHALL resolve full-value skill placeholders exactly as a run does (see `request-template`, "Runtime skill reference resolution for full-value placeholders"): the resolved request shown/sent SHALL contain the canonical `skills/{bucket}/{path}` value. In variables mode, a user-supplied value for a variable whose `effectiveType` is `SKILL` SHALL be treated as that variable's constant and canonicalised. No DIAL Core skill route and no file download SHALL be invoked as part of resolving a skill value; only the deployment/tool invocation itself is performed.
 
@@ -622,9 +626,16 @@ Implementation notes: resolution shares `ResourceRefPlaceholderResolver`; variab
 - **THEN** the resolved request SHALL contain `"skills": [{"url": "skills/b/x"}]`
 
 #### Scenario: Variables try-out for a SKILL variable
-- **WHEN** the client calls variables try-out with `{"s": "skills/b/x"}` for a `${{s|skill}}` template
+- **WHEN** the client calls variables try-out with `{"variables":{"0":{"s":"skills/b/x"}}}` for a `${{s|skill}}` template
 - **THEN** the resolved request SHALL contain `"skills/b/x"` and the variables listing SHALL report `effectiveType: SKILL`
 
 #### Scenario: No skill download
 - **WHEN** a try-out resolves a skill value
 - **THEN** no file download/upload and no skill-route call SHALL occur
+
+## Implementation Notes
+
+- Invocation/chain/streaming/extraction: `src/main/java/com/epam/aidial/evaluation/service/domain/TryItOutService.java`.
+- Planning: `src/main/java/com/epam/aidial/evaluation/service/domain/ResolvedRequestService.java`; indexed constant bindings: `TryItOutVariableBindings.java`.
+- Shared resolution, serialization, URL construction and model validation live in runner-core `runner.service`; SSE parsing/assembly in `runner.job`.
+- Tests: `TryItOutServiceTest`, `TryItOutVariableBindingsTest`; functional `TryItOutFunctionalTests`, `McpTryItOutFunctionalTests`, `SkillFieldFunctionalTests`.

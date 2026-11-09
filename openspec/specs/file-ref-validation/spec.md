@@ -20,6 +20,7 @@ The validator SHALL apply the following rules to the **short format** file refer
 4. Each path segment matches `[a-zA-Z0-9\-_. ()]`
 5. No path segment equals `..`
 6. No leading or trailing slash
+7. For the configured EF alias, the first segment after the prefix is `suites` or `datasets`
 
 The validator SHALL expose ownership checks for two scopes:
 
@@ -49,9 +50,13 @@ For test-case `data` validation, callers SHALL invoke dataset ownership. For sui
 - **WHEN** validation is called with `"public/datasets/eval-data.csv"`
 - **THEN** it SHALL return no validation errors regardless of ownership scope
 
-#### Scenario: Missing files/ prefix is the correct format
-- **WHEN** a file reference does not start with `files/`
-- **THEN** `FileRefValidator` SHALL accept it
+#### Scenario: Valid short reference has no files/ prefix
+- **WHEN** `validateFormat` is called with `public/datasets/eval-data.csv`, satisfying all short-reference format rules
+- **THEN** it SHALL accept the reference without a `files/` prefix
+
+#### Scenario: files/ prefix is rejected
+- **WHEN** `validateFormat` is called with `files/public/datasets/eval-data.csv`
+- **THEN** it SHALL reject the disallowed `files` prefix
 
 #### Scenario: Disallowed prefix rejected
 - **WHEN** validation is called with `"user-bucket/path/file.csv"`
@@ -187,77 +192,57 @@ The system SHALL validate `InputBindingDto.constantValue` as a file reference wh
 
 ### Requirement: File ref validation at test case save time delegates to FileRefValidator
 
-Status: Implemented
+Status: **Implemented**
 
-`TestCaseValidationService` SHALL delegate file reference format and ownership validation to `FileRefValidator`. For test-case `data` fields, the service SHALL invoke `validateDatasetOwnership(ref, datasetId)` — where `datasetId` is the test case's owning dataset id. Suite-shaped refs in `data` are tolerated (ownership pass-through) to preserve legacy values; dataset-shaped refs must match the owning dataset.
+`TestCaseValidationService` SHALL delegate file reference format and ownership validation to `FileRefValidator`. These checks SHALL apply to shared data and each per-turn map, producing invalidating TYPE warnings for format/ownership violations rather than HTTP 400. Save-time validation SHALL NOT check file existence; access failures are handled during execution. For test-case `data` fields, the service SHALL invoke `validateDatasetOwnership(ref, datasetId)` — where `datasetId` is the test case's owning dataset id. Suite-shaped refs in `data` pass through without suite ownership checking; dataset-shaped refs must match the owning dataset.
 
 A **blank string** (`""` or whitespace-only) in a FILE-typed schema field SHALL be treated as "not provided" — equivalent to `null` — and SHALL NOT be passed to `FileRefValidator`. The required-field check governs whether absence is valid; the file-ref format check governs whether a non-blank value is a valid reference.
 
-For **required** FILE-typed schema fields, the required-field check SHALL catch both `null` values and blank strings (`""` or whitespace-only), and SHALL produce a "field is missing" warning in both cases.
+For **required** FILE-typed schema fields, the required-field check SHALL catch both `null` values and blank strings (`""` or whitespace-only), and SHALL produce `Required field '<name>' is missing from data` with code `REQUIRED` in both cases.
 
-#### Scenario: Valid dataset-shaped ref in FILE schema field accepted
-- **WHEN** a test case has a FILE-typed schema field with value `@ef/datasets/{datasetId}/data.csv` and the test case belongs to that dataset
-- **THEN** no validation warning SHALL be produced for that field
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: Legacy suite-shaped ref in FILE schema field accepted
-- **WHEN** a test case has a FILE-typed schema field with value `@ef/suites/{anySuiteId}/data.csv`
-- **THEN** no validation warning SHALL be produced for that field (ownership pass-through on legacy shape)
-
-#### Scenario: Dataset-shaped ref pointing at another dataset warns
-- **WHEN** a test case has a FILE-typed schema field with value `@ef/datasets/{otherDatasetId}/data.csv` and the test case belongs to a different dataset
-- **THEN** a validation warning SHALL be produced
-
-#### Scenario: Old-format file ref in FILE schema field warns
-- **WHEN** a test case has a FILE-typed schema field with value `files/@ef/datasets/{datasetId}/data.csv` (old format)
-- **THEN** a validation warning SHALL be produced (the `files/` prefix is not part of the allowed format)
-
-#### Scenario: Optional FILE field with null value — no warning
-- **WHEN** a test case has an optional FILE-typed schema field and the data map does not contain that field (null / absent)
-- **THEN** no validation warning SHALL be produced
-
-#### Scenario: Optional FILE field with blank string value — no warning
-- **WHEN** a test case has an optional FILE-typed schema field and the data map contains `""` (empty string) for that field
-- **THEN** no validation warning SHALL be produced (blank string is treated as "not provided")
-
-#### Scenario: Optional FILE field with whitespace-only string value — no warning
-- **WHEN** a test case has an optional FILE-typed schema field and the data map contains `"   "` (whitespace-only string) for that field
-- **THEN** no validation warning SHALL be produced (`String.isBlank()` treats whitespace-only as not provided)
-
-#### Scenario: Required FILE field with null value — warning produced
-- **WHEN** a test case has a required FILE-typed schema field and the data map does not contain that field
-- **THEN** a "field is missing from data" validation warning SHALL be produced with code `REQUIRED`
-
-#### Scenario: Required FILE field with blank string value — warning produced
-- **WHEN** a test case has a required FILE-typed schema field and the data map contains `""` (empty string) for that field
-- **THEN** a "field is missing from data" validation warning SHALL be produced with code `REQUIRED` (blank string is treated as absent)
-
-#### Scenario: Required FILE field with whitespace-only string value — warning produced
-- **WHEN** a test case has a required FILE-typed schema field and the data map contains `"   "` (whitespace-only string) for that field
-- **THEN** a "field is missing from data" validation warning SHALL be produced with code `REQUIRED` (`String.isBlank()` treats whitespace-only as absent)
-
-#### Scenario: Required FILE field with valid dataset-shaped ref — no warning
-- **WHEN** a test case has a required FILE-typed schema field with value `@ef/datasets/{datasetId}/file.csv`
-- **THEN** no validation warning SHALL be produced
+| Case | When | Expected |
+|---|---|---|
+| Valid dataset-shaped ref in FILE schema field accepted | a test case has a FILE-typed schema field with value `@ef/datasets/{datasetId}/data.csv` and the test case belongs to that dataset | no validation warning SHALL be produced for that field |
+| Legacy suite-shaped ref in FILE schema field accepted | a test case has a FILE-typed schema field with value `@ef/suites/{anySuiteId}/data.csv` | no validation warning SHALL be produced for that field (ownership pass-through on legacy shape) |
+| Dataset-shaped ref pointing at another dataset warns | a test case has a FILE-typed schema field with value `@ef/datasets/{otherDatasetId}/data.csv` and the test case belongs to a different dataset | a validation warning SHALL be produced |
+| Old-format file ref in FILE schema field warns | a test case has a FILE-typed schema field with value `files/@ef/datasets/{datasetId}/data.csv` (old format) | a validation warning SHALL be produced (the `files/` prefix is not part of the allowed format) |
+| Optional FILE field with null value — no warning | a test case has an optional FILE-typed schema field and the data map does not contain that field (null / absent) | no validation warning SHALL be produced |
+| Optional FILE field with blank string value — no warning | a test case has an optional FILE-typed schema field and the data map contains `""` (empty string) for that field | no validation warning SHALL be produced (blank string is treated as "not provided") |
+| Optional FILE field with whitespace-only string value — no warning | a test case has an optional FILE-typed schema field and the data map contains `" "` (whitespace-only string) for that field | no validation warning SHALL be produced (`String.isBlank()` treats whitespace-only as not provided) |
+| Required FILE field with null value — warning produced | a test case has a required FILE-typed schema field and the data map does not contain that field | a `Required field '<name>' is missing from data` validation warning SHALL be produced with code `REQUIRED` |
+| Required FILE field with blank string value — warning produced | a test case has a required FILE-typed schema field and the data map contains `""` (empty string) for that field | a `Required field '<name>' is missing from data` validation warning SHALL be produced with code `REQUIRED` (blank string is treated as absent) |
+| Required FILE field with whitespace-only string value — warning produced | a test case has a required FILE-typed schema field and the data map contains `" "` (whitespace-only string) for that field | a `Required field '<name>' is missing from data` validation warning SHALL be produced with code `REQUIRED` (`String.isBlank()` treats whitespace-only as absent) |
+| Required FILE field with valid dataset-shaped ref — no warning | a test case has a required FILE-typed schema field with value `@ef/datasets/{datasetId}/file.csv` | no validation warning SHALL be produced |
+| FILE field validation | a test case has a field declared as `FILE` in `testCaseSchema`; the data value is a non-null string | validation SHALL check short-reference format, allowed prefix, and applicable dataset ownership; a violation SHALL produce a TYPE warning and set `valid=false` |
+| FILE field with another dataset's EF reference | a test case belongs to dataset `dataset-A`; the FILE field value is `@ef/datasets/dataset-B/data.csv` | validation SHALL produce a TYPE warning indicating that the file reference points to a different dataset's files |
+| Suite-shaped FILE reference is accepted in test-case data | a FILE field contains a well-formed `@ef/suites/{suiteId}/data.csv` reference | test-case validation SHALL accept the reference without checking whether a referencing suite owns it |
+| FILE field rejects a files-prefixed client reference | a FILE field contains `files/@ef/datasets/{datasetId}/data.csv` | validation SHALL produce a TYPE warning because client references use the short format without a `files/` prefix |
+| FILE field with null value | a test case has a `FILE` field with null value and the field is not required | validation SHALL pass without warning (no file attached) |
+| Required FILE field with null value | a test case has a `FILE` field with null value and the field is required | validation SHALL produce a warning: "Required field '<name>' is missing from data" |
 
 ### Requirement: Blank-string FILE detection in data-vs-binding check
 
 Status: Implemented
 
-When a template variable is bound to a FILE-typed data field, the data-vs-binding check in `TestCaseValidationService` SHALL treat a blank string (`""` or whitespace-only) in that data field as absent — equivalent to `null` — for the purposes of required-variable enforcement. The check SHALL remain type-specific: blank strings in non-FILE (e.g., STRING) data fields SHALL continue to be treated as present values and SHALL NOT trigger a required warning.
+When a template variable is bound to a FILE-typed data field, the data-vs-binding check in `TestCaseValidationService` SHALL treat a blank string (`""` or whitespace-only) in that data field as absent — equivalent to `null` — for the purposes of required-variable enforcement. The check SHALL apply to FILE and SKILL reference types; blank strings in STRING data fields SHALL continue to be treated as present values and SHALL NOT trigger a required warning.
 
-Implementation: build a `Map<String, SchemaFieldType>` from the schema before the data-vs-binding loop; extend the null condition for FILE-typed fields to `value == null || (fieldType == FILE && value instanceof String s && s.isBlank())`.
+This data-vs-binding check applies when the validator receives an effective template and bindings. Dataset-scoped CRUD, import and revalidation call it without suite bindings, so stored test-case validity does not depend on a consuming suite's required template variables. `TestCaseValidationService.isBlankReference` handles the FILE/SKILL blank-value rule.
 
 #### Scenario: Required binding + FILE field + blank string — warning produced
 - **WHEN** a template variable with no default is bound to a FILE-typed data field whose value in the test case data map is `""` (empty string)
-- **THEN** a "Required field is empty in data" validation warning SHALL be produced with code `REQUIRED`
+- **THEN** a `Required field '<name>' is empty in data` validation warning SHALL be produced with code `REQUIRED`
 
 #### Scenario: Required binding + FILE field + whitespace-only string — warning produced
 - **WHEN** a template variable with no default is bound to a FILE-typed data field whose value in the test case data map is `"   "` (whitespace-only)
-- **THEN** a "Required field is empty in data" validation warning SHALL be produced with code `REQUIRED`
+- **THEN** a `Required field '<name>' is empty in data` validation warning SHALL be produced with code `REQUIRED`
 
 #### Scenario: Required binding + FILE field + null — warning produced (regression guard)
 - **WHEN** a template variable with no default is bound to a FILE-typed data field that is absent from the test case data map
-- **THEN** a "Required field is empty in data" validation warning SHALL be produced with code `REQUIRED`
+- **THEN** a `Required field '<name>' is empty in data` validation warning SHALL be produced with code `REQUIRED`
 
 #### Scenario: Required binding + STRING field + blank string — no warning
 - **WHEN** a template variable with no default is bound to a STRING-typed data field whose value is `""`
@@ -266,17 +251,6 @@ Implementation: build a `Map<String, SchemaFieldType>` from the schema before th
 #### Scenario: Optional binding (has default) + FILE field + blank string — no warning
 - **WHEN** a template variable with a default value is bound to a FILE-typed data field whose value in the test case data map is `""`
 - **THEN** no required warning SHALL be produced (the template default covers the missing value)
-
-## Implementation Notes
-
-
-- `BindingValidator` remains the shared typed-constant validator; ROUTE suites use the same HTTP request-template path as DEPLOYMENT suites.
-- `FileRefValidator` — `com.epam.aidial.evaluation.service.domain.FileRefValidator`
-- `SuiteValidationService` — `com.epam.aidial.evaluation.service.domain.SuiteValidationService`
-- `TestCaseValidationService` — `com.epam.aidial.evaluation.service.domain.TestCaseValidationService`
-- Placeholder detection: use `TemplateVariableExtractor.isPlaceholder(String)` in `SuiteValidationService` before calling `fileRefValidator.validate()` for FILE form parts
-- The pattern must match the **full string** (use `Matcher.matches()`, not `Matcher.find()`) to distinguish full-value placeholders from strings that happen to contain `${{` substrings
-- `|file` constant binding validation is in the shared `BindingValidator.validate()` component — applies to both DEPLOYMENT and MCP_TOOL suite types
 
 ### Requirement: Skill references are outside file reference validation
 `FileRefValidator` and all file-ownership validation (suite/dataset `@ef` ownership, `public` prefix whitelist, dataset-shaped constant-binding rejection) SHALL apply only to `FILE`-typed fields, `FILE` form parts and `|file` constant bindings. `SKILL`-typed fields and `|skill` constant bindings SHALL NOT be passed to `FileRefValidator`; they are validated solely by the skill reference format check (`dial-skill-ref`). A `|file` constant binding SHALL NOT accept a skill-shaped value as valid, and a `|skill` constant binding SHALL NOT accept a file-shaped value as valid.
@@ -295,3 +269,14 @@ Implementation notes: `FileRefValidator` is still called only for FILE fields (`
 #### Scenario: Skill-shaped value in a file binding warns
 - **WHEN** a template contains `${{f|file}}` and the binding has `constantValue = "skills/b/x"`
 - **THEN** the existing file-reference format warning SHALL be produced
+
+## Implementation Notes
+
+
+- `BindingValidator` remains the shared typed-constant validator; ROUTE suites use the same HTTP request-template path as DEPLOYMENT suites.
+- `FileRefValidator` — `com.epam.aidial.evaluation.service.domain.FileRefValidator`
+- `SuiteValidationService` — `com.epam.aidial.evaluation.service.domain.SuiteValidationService`
+- `TestCaseValidationService` — `com.epam.aidial.evaluation.service.domain.TestCaseValidationService`
+- Placeholder detection: use `TemplateVariableExtractor.isPlaceholder(String)` in `SuiteValidationService` before calling `fileRefValidator.validate()` for FILE form parts
+- The pattern must match the **full string** (use `Matcher.matches()`, not `Matcher.find()`) to distinguish full-value placeholders from strings that happen to contain `${{` substrings
+- `|file` constant binding validation is in the shared `BindingValidator.validate()` component — applies to both DEPLOYMENT and MCP_TOOL suite types

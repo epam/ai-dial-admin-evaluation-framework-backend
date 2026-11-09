@@ -43,7 +43,7 @@ Every ZIP export SHALL include a `manifest.json` holding:
 
 The manifest SHALL be written even when no file is copied into the archive. When export produces a ZIP rather than a CSV is defined by the `test-cases` capability and is unchanged.
 
-On import the manifest SHALL be optional. An archive without a manifest SHALL import (see "ZIP import without a manifest"). A field `id` present in an imported manifest SHALL be ignored; the target dataset's field ids are resolved by name (see the `test-cases` requirement "Import persists the schema through the dataset update rules").
+On import the manifest SHALL be optional. An archive without a manifest SHALL import (see "ZIP import without a manifest"). A field `id` present in an imported manifest SHALL be ignored; the target dataset's field ids are resolved by name (see [CSV schema persistence](../test-case-csv-transfer/spec.md#requirement-import-persists-the-schema-through-the-dataset-update-rules)).
 
 Status: **Implemented**
 
@@ -327,13 +327,13 @@ Status: **Implemented**
 - **WHEN** a ZIP import is sent with an `If-Match` version that does not match the dataset's current version
 - **THEN** the system SHALL return HTTP 409 and no file in the dataset SHALL be created or changed
 
-### Requirement: ZIP import preview matches import
-ZIP import preview SHALL apply the same archive validation, manifest handling, schema resolution and cell rewriting as ZIP import, but SHALL NOT upload, overwrite or delete any file. For the same archive and parameters, preview SHALL report the outcome import would produce:
+### Requirement: ZIP import preview shares import preparation
+ZIP import preview SHALL apply the same read-only archive preparation, manifest handling, final schema derivation and cell rewriting as ZIP import, but SHALL NOT upload, overwrite or delete any file. For the same archive, parameters and unchanged target state:
 - FILE cells in sample rows SHALL show the dataset file reference import would store;
 - missing-file warnings SHALL be reported with the same row and column;
-- the reported schema, validity and warnings SHALL match what import would produce.
+- `autoDetectedSchema` SHALL report the final derived schema, while sample values, validity and validation warnings SHALL be provisional, computed during the CSV preview streaming pass. Samples SHALL NOT receive the post-persistence type fixup or dataset revalidation that import may execute; final persisted values and verdicts need not match preview.
 
-An archive that import would reject SHALL be rejected by preview with the same status. Preview takes no `If-Match` and so performs no version check.
+Archive errors checked by the shared read-only preparation SHALL be rejected by preview with the same status. Preview takes no `If-Match` and performs no version check; it does not predict storage-write failures or guarantee successful import under `conflictStrategy=FAIL` (CSV preview reports name collisions as warnings).
 
 Status: **Implemented**
 
@@ -381,15 +381,6 @@ Status: **Implemented**
 - **WHEN** a dataset imported from a ZIP holds a 2-turn case with a shared FILE field and a per-turn field, and it is run by a suite with one additional request in which each request binds a different field
 - **THEN** the run SHALL produce result rows for every `(request_index, turn_index)` pair the suite's bindings require, with FILE values resolved from the imported dataset files
 
-## Implementation Notes
-
-- Coordinators: `service/domain/ZipImportService.java` (import/preview flow, If-Match pre-check, journal rollback), `service/domain/ZipExportService.java` (`buildZip` temp-file archive, `ZipExportHandle`).
-- Components in `service/domain/zip/`: `ZipArchiveReader` (limits, path checks, running total), `ZipManifest`/`ZipManifestSerializer`, `ZipImportColumnTypeResolver`, `ZipCsvFileRefRewriter`, `ZipFileImportPlanner`, `ZipEntryFilenameSanitizer`, `ZipImportUploadJournal`, `ZipExportFileCollector`; `service/domain/io/LimitingInputStream`.
-- Shared with CSV: `service/domain/csv/TestCaseExportRowProjector`, `service/domain/csv/CsvImportSchemaHints` (manifest tier 0 in `CsvSchemaFieldBuilder`, `manifestDrivenColumns` in `CsvImportService`).
-- File writes: `FileService.putDatasetFile`, `FileService.checkDatasetFileCapacity`. Detection and staging: `web/controller/TestCaseController` (`isZipFile`, `stageUpload`).
-- Config: `csv.import.zip.max-entries`, `csv.import.zip.max-total-uncompressed-size` (`CsvImportProperties.Zip`).
-- Pattern doc: `docs/patterns/zip-archive-round-trip.md`.
-
 ### Requirement: SKILL columns are not packed and keep their type through the ZIP round trip
 `SKILL` values SHALL NOT be treated as file references by ZIP export or import: a suite/dataset whose only reference-typed columns are `SKILL` SHALL NOT trigger ZIP export (CSV is returned); in a ZIP archive produced because of `FILE` columns, `SKILL` cells SHALL be written verbatim and SHALL NOT be collected, downloaded or added as archive entries; on import, `SKILL` cells SHALL NOT be rewritten, uploaded or placed in storage. The manifest SHALL record `SKILL` columns with type `SKILL`, and on import the manifest-declared schema SHALL restore the `SKILL` type, so export → import is repeatable without change to values or types.
 
@@ -411,3 +402,12 @@ Implementation notes: no ZIP code change — `ZipExportService.hasFileFields`, `
 #### Scenario: Round trip is repeatable
 - **WHEN** the imported dataset is exported again
 - **THEN** the `SKILL` cells and manifest type SHALL be identical to the first export
+
+## Implementation Notes
+
+- Coordinators: `service/domain/ZipImportService.java` (import/preview flow, If-Match pre-check, journal rollback), `service/domain/ZipExportService.java` (`buildZip` temp-file archive, `ZipExportHandle`).
+- Components in `service/domain/zip/`: `ZipArchiveReader` (limits, path checks, running total), `ZipManifest`/`ZipManifestSerializer`, `ZipImportColumnTypeResolver`, `ZipCsvFileRefRewriter`, `ZipFileImportPlanner`, `ZipEntryFilenameSanitizer`, `ZipImportUploadJournal`, `ZipExportFileCollector`; `service/domain/io/LimitingInputStream`.
+- Shared with CSV: `service/domain/csv/TestCaseExportRowProjector`, `service/domain/csv/CsvImportSchemaHints` (manifest tier 0 in `CsvSchemaFieldBuilder`, `manifestDrivenColumns` in `CsvImportService`).
+- File writes: `FileService.putDatasetFile`, `FileService.checkDatasetFileCapacity`. Detection and staging: `web/controller/TestCaseController` (`isZipFile`, `stageUpload`).
+- Config: `csv.import.zip.max-entries`, `csv.import.zip.max-total-uncompressed-size` (`CsvImportProperties.Zip`).
+- Pattern doc: `docs/patterns/zip-archive-round-trip.md`.

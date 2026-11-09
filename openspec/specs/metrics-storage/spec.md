@@ -6,7 +6,7 @@ This spec defines the eval summary storage layer — a denormalized, append-only
 Status: **Implemented**
 
 ## Key Terms
-- **EvalSummary**: One row per (test case, run, run_index, computation) containing test case context + all metric scores. The primary analytical surface for the grid UI.
+- **EvalSummary**: One row per (test case, run, run_index, request_index, turn_index, computation) containing execution context and metric outputs. The primary analytical surface for the grid UI.
 - **RunMetricSnapshot**: Per-(computation, TSMD) record capturing binding configs and metric declaration versions used during a specific metric computation.
 - **computation_id**: UUID identifying a metric computation batch. All eval summaries and snapshots from one computation share the same computation_id.
 - **metric_values**: Compact JSONB column (~1-2 KB) containing metric output values only. Used for filtering, sorting, and grid display.
@@ -19,39 +19,31 @@ The analytics database SHALL contain a `test_case_eval_summaries` table storing 
 Status: **Implemented**
 
 #### Scenario: Table structure
-- **WHEN** the analytics Flyway migrations V1.5, V1.7, V1.14, V1.16, and V1.18 are applied
+- **WHEN** the installed analytics schema is inspected
 - **THEN** the `test_case_eval_summaries` table SHALL have columns: `id` (VARCHAR(36), NOT NULL), `test_suite_id` (VARCHAR(36), NOT NULL), `test_suite_run_id` (VARCHAR(36), NOT NULL), `test_case_run_result_id` (VARCHAR(36), NOT NULL), `test_case_id` (VARCHAR(36), NOT NULL), `test_case_name` (VARCHAR(255), NOT NULL), `run_index` (INTEGER, NOT NULL), `computation_id` (VARCHAR(36), NOT NULL), `test_case_data` (JSONB, NOT NULL), `extracted_columns` (JSONB, NOT NULL, DEFAULT '{}'), `extraction_warnings` (JSONB, NOT NULL, DEFAULT '[]'), `execution_status` (VARCHAR(20), NOT NULL), `exec_duration_ms` (BIGINT, NOT NULL), `metric_eval_duration_ms` (BIGINT, NOT NULL, DEFAULT 0), `response_status_code` (INTEGER, nullable), `metric_values` (JSONB, NOT NULL, DEFAULT '{}'), `metric_infos` (JSONB, nullable), `turn_index` (INTEGER, NOT NULL, DEFAULT 0), `total_turns` (INTEGER, NOT NULL, DEFAULT 1), `request_index` (INTEGER, NOT NULL, DEFAULT 0), `total_requests` (INTEGER, NOT NULL, DEFAULT 1), `created_at_ms` (BIGINT, NOT NULL), `computed_at_ms` (BIGINT, NOT NULL). Primary key: `(created_at_ms, id)`.
 
 #### Scenario: UNIQUE constraint for idempotent writes
-- **WHEN** the migration is applied
-- **THEN** the unique index `uq_eval_summaries_natural_key` SHALL be `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` — extended with `turn_index` and then `request_index` (positioned immediately after `run_index`, dropping and recreating the prior index each time) so each (request, turn) pair is uniquely keyed per computation
+- **WHEN** the installed database schema is inspected
+- **THEN** the unique index `uq_eval_summaries_natural_key` SHALL be `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)`, so each (request, turn) pair is uniquely keyed per computation
 
-#### Scenario: Turn columns added
-- **WHEN** the analytics Flyway migration `V1.14__AddTurnColumnsToEvalSummaries.sql` is applied
-- **THEN** `turn_index` (INTEGER, NOT NULL, DEFAULT 0) and `total_turns` (INTEGER, NOT NULL, DEFAULT 1) columns SHALL be added to `test_case_eval_summaries`, and existing rows backfill to those defaults
-
-#### Scenario: Request columns added
-- **WHEN** the analytics Flyway migration `V1.18__AddRequestColumnsToEvalSummaries.sql` is applied
-- **THEN** `request_index` (INTEGER, NOT NULL, DEFAULT 0) and `total_requests` (INTEGER, NOT NULL, DEFAULT 1) columns SHALL be added to `test_case_eval_summaries`, and existing rows backfill to those defaults
-
-#### Scenario: Metric evaluation latency column added
-- **WHEN** the analytics Flyway migration `V1.16__AddMetricEvalDurationToEvalSummaries.sql` is applied
-- **THEN** a `metric_eval_duration_ms` (BIGINT, NOT NULL, DEFAULT 0) column SHALL be added to `test_case_eval_summaries`, and existing rows backfill to `0`. The column SHALL become filterable, sortable, and aggregatable (e.g. `avg`, `sum`) through the structured Query DSL on the `eval_summaries` entity automatically, with no changes to the entity resolver or function registry, because DSL field bindings are derived at runtime from the generated jOOQ table's columns
+#### Scenario: Request-turn identity and metric latency
+- **WHEN** eval summaries are persisted and queried
+- **THEN** rows SHALL carry the request/turn identity and metric-evaluation latency columns listed above; `metric_eval_duration_ms` SHALL be filterable, sortable, and aggregatable through the `eval_summaries` Query DSL entity's generated-column bindings
 
 #### Scenario: Indexes
-- **WHEN** the migration is applied
-- **THEN** indexes SHALL be created on: `(test_suite_run_id, computation_id)` for run-scoped grid queries (the primary query path), `(computation_id)` for computation-scoped queries, `(id)` for direct lookups, and `(test_suite_run_id, computed_at_ms DESC, computation_id)` for latest-computation resolution. No new index is added for the request columns.
+- **WHEN** the installed database schema is inspected
+- **THEN** indexes SHALL be created on: `(test_suite_run_id, computation_id)` for run-scoped grid queries (the primary query path), `(computation_id)` for computation-scoped queries, `(id)` for direct lookups, and `(test_suite_run_id, computed_at_ms DESC, computation_id)` for latest-computation resolution. There SHALL be no separate request-column index.
 
 #### Scenario: Latest-computation resolution is a top-1 index probe
-- **WHEN** the analytics Flyway migration `V1.15__AddEvalSummariesRunComputedAtIndex.sql` is applied
+- **WHEN** the installed eval-summary indexes are inspected
 - **THEN** `idx_eval_summaries_run_computed_at` SHALL exist on `(test_suite_run_id, computed_at_ms DESC, computation_id)`, so `WHERE test_suite_run_id = ? ORDER BY computed_at_ms DESC LIMIT 1` is served as a single top-1 index descent with `computation_id` available from the index tuple rather than a scan of the run's rows plus a sort
 
 #### Scenario: No foreign keys
-- **WHEN** the migration is applied
+- **WHEN** the installed database schema is inspected
 - **THEN** no foreign key constraints SHALL exist (soft references to meta DB and test_case_run_results only)
 
 #### Scenario: No updated_at column
-- **WHEN** the migration is applied
+- **WHEN** the installed database schema is inspected
 - **THEN** the table SHALL NOT have an `updated_at_ms` column (rows are immutable/append-only)
 
 ### Requirement: Eval summaries carry turn columns
@@ -69,7 +61,7 @@ Status: **Implemented**
 ### Requirement: Eval summaries carry request columns
 `test_case_eval_summaries` SHALL persist one summary per result row for every call of a suite's request chain, with columns `request_index INTEGER NOT NULL DEFAULT 0` and `total_requests INTEGER NOT NULL DEFAULT 1` copied from the source `test_case_run_results` row. The columns SHALL be stamped only when the chain length is greater than 1. Response DTOs SHALL expose `requestIndex`/`totalRequests`; batch-write item DTOs SHALL accept them as optional, defaulting to `0`/`1`. No `chain_id` column SHALL be added — grouping is via `test_case_id` plus the `(request_index, turn_index)` pair. The `ON CONFLICT` target used by the eval-summary batch writer SHALL match the extended unique index exactly.
 
-A metric-less run SHALL continue to write one eval summary per result row (`metric_values = {}`, `metric_infos` JSON null, no `run_metric_snapshots`) for every chain call, so `test_case_eval_summaries` stays the single read surface for all rows of a chained run.
+A metric-less run SHALL write one eval summary per result row (`metric_values = {}`, `metric_infos` SQL NULL, no `run_metric_snapshots`) for every executed chain call, so `test_case_eval_summaries` stays the single read surface for all rows of a chained run.
 Status: **Implemented**
 
 #### Scenario: One summary per chain call
@@ -84,7 +76,7 @@ Status: **Implemented**
 - **WHEN** a chained run's suite has zero TSMDs
 - **THEN** one summary per chain call SHALL be written with `metric_values = {}` and no `run_metric_snapshots`
 
-#### Scenario: Legacy summaries keep the defaults
+#### Scenario: Single-request summaries keep the defaults
 - **WHEN** an eval summary is written for a single-request suite
 - **THEN** `request_index` SHALL be `0` and `total_requests` SHALL be `1` from the defaults
 
@@ -93,19 +85,19 @@ The **meta** database SHALL contain a `run_metric_snapshots` table storing per-c
 Status: **Implemented**
 
 #### Scenario: Table structure
-- **WHEN** the meta Flyway migration V1.32 is applied
+- **WHEN** the installed meta schema is inspected
 - **THEN** the `run_metric_snapshots` table SHALL have columns: `id` (VARCHAR(36), NOT NULL, PK), `computation_id` (VARCHAR(36), NOT NULL), `test_suite_run_id` (VARCHAR(36), NOT NULL), `tsmd_id` (VARCHAR(36), NOT NULL), `tsmd_name` (VARCHAR(255), NOT NULL), `metric_declaration_id` (VARCHAR(36), NOT NULL), `metric_declaration_version_id` (VARCHAR(36), NOT NULL), `config_bindings` (JSONB, NOT NULL, DEFAULT '[]'), `input_bindings` (JSONB, NOT NULL, DEFAULT '[]'), `output_schema` (JSONB, NOT NULL, DEFAULT '{}'), `computed_at_ms` (BIGINT, NOT NULL)
 
 #### Scenario: UNIQUE constraint
-- **WHEN** the migration is applied
+- **WHEN** the installed database schema is inspected
 - **THEN** a UNIQUE index (`CREATE UNIQUE INDEX`, not a table constraint) SHALL exist on `(computation_id, tsmd_id)`
 
 #### Scenario: Index for run lookup
-- **WHEN** the meta migrations up to and including V1.34 are applied
-- **THEN** exactly one non-unique index SHALL exist with `test_suite_run_id` as its leading column: `idx_run_metric_snapshots_run_computed_at` on `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)`. It SHALL serve every lookup by run (including the FK cascade) through its leading column and SHALL let the latest-computation lookup (`ORDER BY computed_at_ms DESC, computation_id DESC LIMIT 1` for one run) complete without a sort step. The former single-column index `idx_run_metric_snapshots_run` SHALL NOT exist (it is a strict prefix of the composite index).
+- **WHEN** the installed meta schema's run-snapshot indexes are inspected
+- **THEN** exactly one non-unique index SHALL exist with `test_suite_run_id` as its leading column: `idx_run_metric_snapshots_run_computed_at` on `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)`. It SHALL support run-scoped lookup through its leading column. Latest-computation queries SHALL use `computed_at_ms DESC, computation_id ASC`; the index does not match that full ordering, so this spec SHALL NOT promise a sort-free plan. The single-column index `idx_run_metric_snapshots_run` SHALL NOT exist.
 
 #### Scenario: Foreign key to test suite runs
-- **WHEN** the migration is applied
+- **WHEN** the installed database schema is inspected
 - **THEN** `test_suite_run_id` SHALL carry a foreign key referencing `test_suite_runs(id)` with `ON DELETE CASCADE`
 
 #### Scenario: Snapshot for an unknown run is rejected
@@ -117,7 +109,7 @@ Status: **Implemented**
 - **THEN** it SHALL read the meta `run_metric_snapshots` table. The same-named table in the analytics database SHALL NOT be read or written by any code path.
 
 ### Requirement: Batch write eval summaries
-The service SHALL support persisting eval summary rows both via the external REST API (`POST /api/v1/analytics/eval-summaries`) and via internal writes from the in-process metric evaluation engine. Both paths SHALL go through `EvalSummaryService.batchCreate()`, sharing the same validation, mapping, and persistence logic with idempotent `ON CONFLICT DO NOTHING`. Batch items MAY optionally carry a client-generated `id`; when omitted, the service generates one. `test_case_eval_summaries` itself carries no `score`/`passed` columns — those are computed and stored separately (see the new `test_case_eval_scores` table requirement).
+The service SHALL support persisting eval summary rows both via the external REST API (`POST /api/v1/analytics/eval-summaries`) and via internal writes from the in-process metric evaluation engine. Both paths SHALL go through `EvalSummaryService.batchCreate()`, sharing the same validation, mapping, and persistence logic with idempotent `ON CONFLICT DO NOTHING`. Batch items MAY optionally carry a client-generated `id`; when omitted, the service generates one. `test_case_eval_summaries` itself carries no `score`/`passed` columns — those are computed and stored separately (see the `test_case_eval_scores` table requirement).
 Status: **Implemented**
 
 #### Scenario: Successful batch write
@@ -171,11 +163,11 @@ Status: **Implemented**
 - **THEN** the service SHALL generate one, preserving the existing external-API contract
 
 ### Requirement: Database schema for eval summary scores
-The analytics database SHALL contain a `test_case_eval_scores` table storing one row per `(test_suite_run_id, test_case_id, computation_id)`, computed via SQL and exposed only through its own `test_case_eval_scores` Query DSL entity (never joined onto `eval_summaries` or any other table; not native columns on `test_case_eval_summaries`). The table SHALL carry `test_suite_run_id`, `test_case_id`, `test_case_name`, `computation_id`, and `execution_status`, denormalized/aggregated at write time, so the table can also be read directly (deduplicated — see the `test_case_eval_scores` Query DSL entity requirement below) without a join. The primary key SHALL be a surrogate `id` column. A unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)` SHALL enforce at most one row per test case per computation.
+The analytics database SHALL contain a `test_case_eval_scores` table storing at most one row per `(test_suite_run_id, test_case_id, computation_id)`, computed via SQL and exposed through its own `test_case_eval_scores` Query DSL entity, not joined into the eval-summary REST or Query DSL surface. The table SHALL carry `test_suite_run_id`, `test_case_id`, `test_case_name`, `computation_id`, and aggregated `execution_status`, so it can be read without a context join or deduplication. The primary key SHALL be a surrogate `id`; `uq_test_case_eval_scores_natural_key` SHALL enforce uniqueness on the run/test-case/computation tuple.
 Status: **Implemented**
 
 #### Scenario: Table structure
-- **WHEN** the analytics Flyway migration V1.21 is applied
+- **WHEN** the installed analytics score schema is inspected
 - **THEN** the `test_case_eval_scores` table SHALL have the columns: `id` (VARCHAR(36), NOT NULL, PK), `test_suite_run_id` (VARCHAR(36), NOT NULL), `test_case_id` (VARCHAR(36), NOT NULL), `test_case_name` (VARCHAR(255), NOT NULL), `computation_id` (VARCHAR(36), NOT NULL), `execution_status` (VARCHAR(20), NOT NULL), `score` (DOUBLE PRECISION, nullable), `passed` (BOOLEAN, nullable), `computed_at_ms` (BIGINT, NOT NULL), and a unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)`
 
 #### Scenario: A row's absence and a present-but-null row are distinguishable
@@ -183,12 +175,13 @@ Status: **Implemented**
 - **THEN** a client querying the `test_case_eval_scores` Query DSL entity directly SHALL be able to distinguish the two cases by row presence — no row versus a row present with `score = null, passed = null`
 
 ### Requirement: Batch write eval summary scores (internal only)
-The in-process metric evaluation engine SHALL write `test_case_eval_scores` rows via `TestCaseEvalScoreService.batchInsert()`, in chunks of the batch-size, once after the last Phase-2 flush completes and all `test_case_eval_summaries` rows are written. For each chunk of test cases, immediately after that chunk's `test_case_metric_scores_aggregated` aggregation, it SHALL write exactly one item per distinct test case (not one per raw `test_case_eval_summaries` row). There SHALL be no external REST endpoint for this table — it is populated only by the internal engine and read directly via the `test_case_eval_scores` Query DSL entity. The `eval_summaries` read surface SHALL NOT join to this table.
+The in-process metric evaluation engine SHALL write `test_case_eval_scores` via `TestCaseEvalScoreService.batchInsert()` in chunks of distinct test-case IDs after the final Phase-2 flush attempt, immediately after each chunk's `test_case_metric_scores_aggregated` write attempt. The effective per-test-case score definition SHALL prefer `testCaseOverallScore`, fall back to `overallScore` only when it is not `CustomFunction`, and skip scoring when neither supplies a usable definition. A FAILED aggregate SHALL receive one row with null score/pass; a SUCCESS aggregate SHALL receive a row only when the score query returns that test case. There SHALL be no external REST endpoint for this table, and the `eval_summaries` read surface SHALL NOT join it.
 Status: **Implemented**
 
 #### Scenario: Score batch writes once after final flush, chunked by test case
-- **WHEN** all Phase-2 flushes are complete and the suite has an `overallScore` definition configured, spanning M distinct test cases total
-- **THEN** the executor SHALL batch the test case ids into chunks of the configured batch size, and for each chunk issue one aggregation (to `test_case_metric_scores_aggregated`) followed by one score computation and batch write to `test_case_eval_scores`, containing exactly one item per test case in the chunk (never one per raw row), each carrying that test case's `test_suite_run_id`/`test_case_id`/`test_case_name`/`computation_id`/`execution_status`
+- **WHEN** the final Phase-2 flush has been attempted and an effective per-test-case score definition exists
+- **THEN** the executor SHALL process distinct test-case IDs in configured-size chunks, attempt the aggregated-metric write before score computation, and write at most one score item per test case with its run/name/computation/status context
+- **AND** FAILED test cases SHALL get null-score rows; SUCCESS test cases without any returned numeric-score group SHALL have no score row
 
 #### Scenario: A repeated write for the same test case is idempotent
 - **WHEN** a score batch write is retried (e.g. on a transient error), or a subsequent Phase 2 execution recomputes a score, for a `(test_suite_run_id, test_case_id, computation_id)` already present
@@ -230,7 +223,7 @@ Status: **Implemented**
 The service SHALL provide `GET /api/v1/analytics/eval-summaries` with cursor-based pagination, `filter=field:operator:value` syntax, and computation resolution.
 Status: **Implemented**
 
-#### Scenario: Computation parameter required
+#### Scenario: Computation parameter defaults to latest
 - **WHEN** client queries without `computation` query parameter
 - **THEN** system SHALL default to the latest computation for the specified run
 
@@ -268,7 +261,7 @@ Status: **Implemented**
 
 #### Scenario: Filter by identity fields
 - **WHEN** client includes filters for `suiteId`, `runId`, `testCaseId`, `testCaseName`, `runIndex`
-- **THEN** system SHALL filter using the existing filter framework (eq, ne, contains operators as applicable)
+- **THEN** system SHALL filter using the allowlisted `eq`, `ne`, `co`, and `in` operators as applicable to each field
 
 #### Scenario: Filter by execution fields
 - **WHEN** client includes filters for `executionStatus`, `execDurationMs`, `responseStatusCode`
@@ -287,7 +280,7 @@ Status: **Implemented**
 - **THEN** response DTOs SHALL include `metricValues` but SHALL NOT include `metricInfos` (lazy-loaded via detail endpoint only). The SQL SELECT clause SHALL explicitly exclude `metric_infos` to prevent TOAST decompression overhead. Only the `findById` detail query selects `metric_infos`.
 
 ### Requirement: Get single eval summary by ID
-`GET /api/v1/analytics/eval-summaries/{id}` SHALL return a single eval summary including `metricValues`, `metricInfos`, `extractionWarnings`, `requestBody`, and `responseBody`, or HTTP 404 if not found. The `requestBody` and `responseBody` fields are populated by LEFT-joining `test_case_run_results` on `test_case_run_result_id` in the `findById` query only. The list query SHALL NOT perform this join.
+`GET /api/v1/analytics/eval-summaries/{id}` SHALL return a single readable eval summary including `metricValues`, `metricInfos`, `extractionWarnings`, `requestBody`, and `responseBody`, or HTTP 404 if not found. Nullable fields SHALL be omitted when null. `findById` and export-with-bodies SHALL populate bodies through a LEFT JOIN to `test_case_run_results`; ordinary list SHALL NOT perform this join.
 Status: **Implemented**
 
 #### Scenario: Successful retrieval with full detail
@@ -300,7 +293,7 @@ Status: **Implemented**
 
 #### Scenario: Missing run result row (LEFT JOIN)
 - **WHEN** the referenced `test_case_run_result_id` no longer exists in `test_case_run_results`
-- **THEN** the detail response returns the eval summary with `requestBody: null` and `responseBody: null` (LEFT JOIN behavior)
+- **THEN** the detail response SHALL return the eval summary with absent `requestBody` and `responseBody` fields (LEFT JOIN nulls omitted by non-null serialization)
 
 ### Requirement: Metric evaluation latency exposed in eval summary responses
 `EvalSummaryResponseDto` and `EvalSummaryDetailResponseDto` SHALL expose the persisted `metric_eval_duration_ms` value as `metricEvalDurationMs` (Long), alongside the existing `execDurationMs`.
@@ -370,12 +363,16 @@ Where `count` is the number of eval summary rows where the metric output value i
 - **WHEN** client provides `computation=<uuid>` query parameter
 - **THEN** system SHALL compute aggregations only over eval summaries with that `computation_id`
 
-#### Scenario: Empty result
-- **WHEN** no eval summaries match the filters or all metric values are null
-- **THEN** system SHALL return HTTP 200 with `computationId` and empty `metrics` array
+#### Scenario: No readable computation
+- **WHEN** latest-computation resolution finds no readable eval summaries
+- **THEN** system SHALL return HTTP 200 with an empty `metrics` array and no non-null `computationId`
+
+#### Scenario: Requested paths have no numeric values
+- **WHEN** a computation resolves but filters match no rows or the requested metric outputs are all missing/null
+- **THEN** system SHALL return one aggregation item for each requested path with `count = 0`, not an empty `metrics` array; null `avg`/`min`/`max` values SHALL be omitted from the JSON item
 
 ### Requirement: List run metric snapshots
-`GET /api/v1/run-metric-snapshots` SHALL return metric binding snapshots for a run, grouped by computation.
+`GET /api/v1/run-metric-snapshots` SHALL return a flat, unpaginated JSON array of metric binding snapshots for the first supplied `runId` filter; it SHALL NOT group them into computation envelopes.
 Status: **Implemented**
 
 #### Scenario: List snapshots by run
@@ -395,7 +392,7 @@ Status: **Implemented**
 - **THEN** system SHALL return the same response body and status as the equivalent call to `GET /api/v1/run-metric-snapshots`
 
 ### Requirement: Deprecated run metric snapshot endpoint aliases
-The service SHALL retain `/api/v1/analytics/run-metric-snapshots` as a deprecated alias for both `GET` and `POST`, so existing clients continue to work while they migrate to `/api/v1/run-metric-snapshots`. The alias SHALL delegate to the same service methods as the canonical paths and SHALL be removed in a future release.
+The service SHALL retain `/api/v1/analytics/run-metric-snapshots` as a deprecated alias for both `GET` and `POST`, delegating to the same service methods as `/api/v1/run-metric-snapshots`.
 Status: **Implemented**
 
 #### Scenario: Alias is marked deprecated in OpenAPI
@@ -407,7 +404,7 @@ Status: **Implemented**
 - **THEN** the operations under `/api/v1/run-metric-snapshots` SHALL NOT be marked deprecated, and each operation SHALL carry its own operationId distinct from the alias operations
 
 ### Requirement: Configuration properties for eval summaries
-Configurable limits for eval summary batch writes.
+The system SHALL expose configurable item-count and HTTP request-size limits for eval summary batch writes.
 Status: **Implemented**
 
 #### Scenario: Batch max items
@@ -421,7 +418,7 @@ Status: **Implemented**
 ### Requirement: Computation versioning model
 Metric computations SHALL be versioned via `computation_id` with no mutable `is_latest` flag. "Latest" SHALL be resolved at query time, from the table the caller reads.
 
-Every latest-computation lookup, on either table, SHALL order by `computed_at_ms DESC, computation_id ASC` and take the first row, so that two computations of one run captured in the same millisecond resolve to the same computation on every path and on repeated calls. Resolution SHALL also be available for a set of runs at once, returning at most one computation per run in a single statement; a run with no eval summaries SHALL be absent from the result rather than mapped to a null computation. An empty set of runs SHALL resolve to an empty result without issuing any statement.
+Every latest-computation lookup, on either table, SHALL order by `computed_at_ms DESC, computation_id ASC` and take the first row, giving deterministic tie-breaking within its source table. Summary and snapshot lookups SHALL agree when their eligible computation sets agree; no cross-table equality SHALL be promised when only one table has rows for a computation. Summary resolution SHALL also accept a set of runs, returning at most one computation per run in a single statement; a run with no readable eval summaries SHALL be absent rather than mapped to null. An empty set SHALL resolve without issuing a statement.
 Status: **Implemented**
 
 #### Scenario: Recalculation creates new computation
@@ -440,9 +437,9 @@ Status: **Implemented**
 - **WHEN** a computation wrote `run_metric_snapshots` rows for a run but wrote no eval summaries (e.g. its batch write failed)
 - **THEN** latest resolution SHALL NOT select that computation, and SHALL select the run's most recent computation that does have eval summaries
 
-#### Scenario: Same-millisecond computations resolve identically on every path
-- **WHEN** two computations of one run share `computed_at_ms` and both the eval-summary-based and the snapshot-based lookups are performed for that run
-- **THEN** both return the same `computation_id` — the smallest of the tied ids — and repeated calls return the same value
+#### Scenario: Same-millisecond computations resolve deterministically
+- **WHEN** two computations of one run share `computed_at_ms`
+- **THEN** each lookup SHALL select the smallest tied computation ID from its own source table; summary-based and snapshot-based lookups SHALL agree when their eligible computation sets agree, but MAY differ when a computation has only snapshots or only summaries
 
 #### Scenario: Latest resolution for a set of runs
 - **WHEN** the latest computation is resolved for a set of runs at once
@@ -461,24 +458,24 @@ Status: **Implemented**
 - **THEN** the list endpoint SHALL support filtering by specific `computation_id` to enable side-by-side comparison
 
 ### Requirement: Filter framework extension for eval summary JSONB filtering
-The filter framework SHALL support JSONB path filtering on `metric_values` and `test_case_data` columns for eval summaries. A new `JSONB_NUMERIC` field type SHALL be added to `FilterFieldType` to handle two-level JSONB paths with numeric casting. The existing `WhereBuilder` currently rejects nested JSONB paths (dot in jsonbKey); this restriction SHALL be relaxed for `JSONB_NUMERIC` fields.
+The filter framework SHALL support two-level numeric JSONB paths on `metric_values` and one-level text JSONB paths on `test_case_data`. `WhereBuilder` SHALL use `JSONB_NUMERIC` and `JSONB_STRING` field definitions and bound path components to build typed-jOOQ predicates.
 Status: **Implemented**
 
 #### Scenario: New JSONB_NUMERIC FilterFieldType
-- **WHEN** the filter framework is extended
-- **THEN** `FilterFieldType` enum SHALL include a new `JSONB_NUMERIC` value. `WhereBuilder.parseValue()` SHALL parse raw values as `BigDecimal` (via `new BigDecimal(rawValue)`) for this type, ensuring exact decimal representation when bound as a JDBC `numeric` parameter — avoiding IEEE 754 floating-point precision loss that `Double` would introduce. `WhereBuilder.validateOperator()` SHALL allow comparison operators (EQ, NE, GT, GTE, LT, LTE) for `JSONB_NUMERIC`.
+- **WHEN** a `JSONB_NUMERIC` filter is built
+- **THEN** `WhereBuilder` SHALL parse its trimmed value as `BigDecimal` and allow the whitelist's comparison operators (`eq`, `ne`, `gt`, `ge`, `lt`, `le`), preserving decimal precision
 
 #### Scenario: Two-level JSONB path parsing in WhereBuilder
 - **WHEN** a filter field uses dot notation and resolves to a `JSONB_NUMERIC` field (e.g., `metricValues.Accuracy.score`)
-- **THEN** `WhereBuilder` SHALL split the jsonbKey on the FIRST dot to produce two parameterized path components (`jsonbKey1 = "Accuracy"`, `jsonbKey2 = "score"`). The current `jsonbKey.contains(".")` rejection in WhereBuilder (lines 61-63) SHALL be bypassed for `JSONB_NUMERIC` fields. Only two-level paths SHALL be supported; deeper nesting SHALL be rejected.
+- **THEN** `WhereBuilder` SHALL split the metric/output path into two bound components (`Accuracy`, `score`); one-level numeric paths and paths deeper than two levels SHALL be rejected
 
 #### Scenario: JSONB_NUMERIC SQL predicate generation
 - **WHEN** a `JSONB_NUMERIC` filter condition is built
-- **THEN** `WhereBuilder` SHALL generate a new predicate using the arrow operator with numeric cast: `(column->:jsonbKey1Param->>:jsonbKey2Param)::numeric <op> :valueParam` where `:jsonbKey1Param` and `:jsonbKey2Param` are named parameters bound as strings (NOT quoted literals) to prevent SQL injection, and `<op>` is the comparison operator.
+- **THEN** `WhereBuilder` SHALL extract the two-level JSONB value as numeric through `JsonPathAccessor`, bind both path strings and the numeric comparison value, and apply the requested comparison without interpolating client data into SQL
 
 #### Scenario: Metric value filter usage
 - **WHEN** client includes `filter=metricValues.Accuracy.score:ge:0.8`
-- **THEN** WhereBuilder SHALL produce SQL: `(metric_values->:jsonbKey1_N->>:jsonbKey2_N)::numeric >= :filter_N` with params `jsonbKey1_N = "Accuracy"`, `jsonbKey2_N = "score"`, `filter_N = 0.8`
+- **THEN** `WhereBuilder` SHALL compare the numeric metric output at bound path `Accuracy` / `score` against bound `BigDecimal("0.8")` using greater-than-or-equal
 
 #### Scenario: Single-level JSONB_STRING unchanged
 - **WHEN** a filter field uses dot notation and resolves to a `JSONB_STRING` field (e.g., `testCaseData.prompt`)
@@ -490,7 +487,7 @@ Status: **Implemented**
 
 ### Requirement: Extraction warnings in eval summary
 
-The `test_case_eval_summaries` table SHALL have an `extraction_warnings` column (`JSONB NOT NULL DEFAULT '[]'`), added via Flyway migration V1.7. `EvalSummary` model, `EvalSummaryRecordMapper`, batch-insert SQL, and `EvalSummaryDetailResponseDto` SHALL include `extractionWarnings`. The value SHALL be copied from `TestCaseRunResult.extractionWarnings` at eval summary write time. If the source value is null, the mapper SHALL default it to `"[]"`.
+The `test_case_eval_summaries` table SHALL have an `extraction_warnings` column (`JSONB NOT NULL DEFAULT '[]'`). `EvalSummary` model, `EvalSummaryRecordMapper`, batch-insert SQL, and `EvalSummaryDetailResponseDto` SHALL include `extractionWarnings`. The value SHALL be copied from `TestCaseRunResult.extractionWarnings` at eval summary write time. If the source value is null, the mapper SHALL default it to `"[]"`.
 Status: **Implemented**
 
 #### Scenario: Extraction warnings persisted
@@ -502,22 +499,22 @@ Status: **Implemented**
 - **THEN** the eval summary row has `extraction_warnings = '[]'` (defaulted by `@AfterMapping`)
 
 #### Scenario: Extraction warnings in API response
-- **WHEN** `GET /api/v1/eval-summaries/{id}` is called
+- **WHEN** `GET /api/v1/analytics/eval-summaries/{id}` is called
 - **THEN** the response includes `extractionWarnings` as a JSON value (omitted from list response via `@JsonInclude(NON_NULL)`)
 
 ---
 
 ### Requirement: Request and response body in eval summary detail
 
-`EvalSummaryDetailResponseDto` SHALL include `requestBody` and `responseBody` fields (nullable `JsonNode`). These SHALL be populated by LEFT-joining `test_case_run_results` on `test_case_run_result_id` in the `findById` query only (`SELECT_BY_ID_DETAIL_SQL`). The list query (`findAll`, count, aggregate) SHALL NOT include this join. `EvalSummaryRecordMapper` SHALL use `hasColumn()` to conditionally map these fields.
+`EvalSummaryDetailResponseDto` SHALL include `requestBody` and `responseBody` fields (nullable `JsonNode`). These SHALL be populated by LEFT-joining `test_case_run_results` on `test_case_run_result_id` in `findById`; the export-with-bodies path SHALL use the same join. Ordinary list, count, and aggregate queries SHALL NOT join the raw-result table. `EvalSummaryRecordMapper.mapExportWithBodies()` SHALL map the body fields from the projected columns.
 Status: **Implemented**
 
 #### Scenario: Request and response body in detail view
-- **WHEN** `GET /api/v1/eval-summaries/{id}` is called for an existing summary
+- **WHEN** `GET /api/v1/analytics/eval-summaries/{id}` is called for an existing summary
 - **THEN** the response includes `requestBody` and `responseBody` as JSON values (or omitted if null via `@JsonInclude(NON_NULL)`)
 
 #### Scenario: List query unaffected
-- **WHEN** `GET /api/v1/eval-summaries` (list) is called
+- **WHEN** `GET /api/v1/analytics/eval-summaries` (list) is called
 - **THEN** the response items do NOT include `requestBody`, `responseBody`, or `extractionWarnings` fields
 
 ---
@@ -539,17 +536,13 @@ Status: **Implemented**
 - **THEN** that run's rows SHALL be excluded, consistent with every other read of `test_case_eval_summaries`
 
 ## Implementation Notes
-- Controller: `EvalSummaryController` — `@LogExecution`, `@Validated`; `RunMetricSnapshotController` (`/api/v1/run-metric-snapshots`) — `@LogExecution`, `@Validated`; `RunMetricSnapshotDeprecatedController` (`/api/v1/analytics/run-metric-snapshots`, `@Deprecated(forRemoval = true)`) — delegates to the same service
-- Service: `EvalSummaryService` in `service.domain.analytics` — reads run from meta for validation, writes to analytics; `RunMetricSnapshotService` in `service.domain` — `@Transactional("metaTransactionManager")`, reads the run and writes the snapshot in one meta transaction; `TestCaseEvalScoreService.batchInsert(computedAtMs, items)` in `service.domain.analytics` — `@Transactional("analyticsTransactionManager")`, internal-only (no controller, no external REST endpoint)
-- Repository: `PostgresEvalSummaryRepository` — typed jOOQ `DSLContext` with `@Qualifier("analyticsDsl")`, batch insert with ON CONFLICT DO NOTHING; `findAll()`/`count()`/`aggregate()` project a list-tier column set (excludes `metric_infos`, `extraction_warnings`, `request_body`, `response_body`); `findById()` (and the export-with-bodies list query) LEFT JOINs `test_case_run_results` to include `request_body`, `response_body`, and all columns including `metric_infos` and `extraction_warnings`; it does **not** join `test_case_eval_scores` — `eval_summaries` never exposes `score`/`passed` (see the `test_case_eval_scores` Query DSL entity requirement above); `findLatestComputationId(runId)` resolves "latest" for the read path; `existsByRunIdAndComputationId(runId, computationId)` answers export's explicit-computation existence check via `fetchExists`; `PostgresRunMetricSnapshotRepository` (`data.db.repository`) — typed jOOQ `DSLContext` with `@Qualifier("metaDsl")` against the meta `run_metric_snapshots` table, and its own `findLatestComputationId` is retained for Query DSL metric-family discovery only; `TestCaseEvalScoreRepository`/`PostgresTestCaseEvalScoreRepository` — `saveAll`, jOOQ batch insert, `onConflict(TEST_SUITE_RUN_ID, TEST_CASE_ID, COMPUTATION_ID).doNothing()` (insert-only); `PostgresTestCaseEvalScoreEntityResolver` (`query.service.repository`) — the `test_case_eval_scores` Query DSL entity, a derived-table projection over the same jOOQ table, reusing `MetricScoreLatestComputationDefaulter` for `"latest"`; `TestCaseEvalScoresSchemaProvider` (`query.service`) — static base schema, reads the resolver's `SCORES` table constant directly rather than depending on the vendor-gated resolver bean
-- Computation resolution: `ComputationResolver` in `service.domain.analytics` — maps `computation` (explicit UUID | `latest` | `null`) to a `computationId`, resolving `latest` through `EvalSummaryRepository.findLatestComputationId`; shared by list, count, aggregate, export, preview, and the `metric_score_results`/`test_case_eval_scores` `"latest"`-sentinel path
-- Model: `EvalSummary` — JSONB fields as `String` (raw JSON) in data model; includes `extractionWarnings`, `requestBody`, `responseBody` (nullable); `RunMetricSnapshot` (`data.db.model`) — bindings as `String` (raw JSON); `TestCaseEvalScore` (`data.db.analytics.model`) — `id`, `testSuiteRunId`, `testCaseId`, `testCaseName`, `computationId`, `executionStatus`, `score` (nullable), `passed` (nullable), `computedAtMs`
-- Cursor: Reuse existing `Cursor` record and `CursorCodec` from analytics layer
-- Mapper: `EvalSummaryMapper` (MapStruct) — maps between model and DTOs; `@AfterMapping` defaults `extractionWarnings` to `"[]"` if null; `RunMetricSnapshotMapper`
-- DTOs: `EvalSummaryResponseDto` (excludes `metricInfos`, `extractionWarnings`, `requestBody`, `responseBody` for list; does not expose `score`/`passed`), `EvalSummaryDetailResponseDto` (includes all fields for get-by-id, nullable fields use `@JsonInclude(NON_NULL)`; does not expose `score`/`passed`), `EvalSummaryBatchWriteRequestDto` (items MAY carry `id`), `RunMetricSnapshotResponseDto`, `RunMetricSnapshotBatchWriteRequestDto` (both in `service.domain.dto`), `MetricAggregationResponseDto`, `TestCaseEvalScoreBatchWriteItemDto` (`service.domain.dto.analytics`: `testSuiteRunId`, `testCaseId`, `testCaseName`, `computationId`, `executionStatus`, `score`, `passed`)
-- Filter whitelist: New `FilterWhitelists.EVAL_SUMMARIES` with JSONB_NUMERIC type for metric value filtering
-- Migrations: `V1.5__CreateTestCaseEvalSummariesTable.sql`, `V1.7__AddExtractionWarningsToEvalSummaries.sql`, `V1.8__NormalizeErrorShapedMetricValues.sql`, `V1.15__AddEvalSummariesRunComputedAtIndex.sql`, `V1.19__CreateTestCaseEvalScoresTable.sql`, `V1.21__AddRunCaseContextToTestCaseEvalScores.sql` in `db/migration/analytics/POSTGRES/`
-- Computation semantics (per-test-case `GROUP BY test_case_id` graft, `CustomFunction` handling, threshold comparison) are owned by the `eval-summary-scoring` capability; this capability owns storage (`test_case_eval_scores`) and the internal batch-write path — API exposure is solely through the `test_case_eval_scores` Query DSL entity, not through `eval_summaries`.
-- Filtering/sorting the list endpoint by `score`/`passed` is moot — `eval_summaries` does not expose either field; a client needing to filter/sort by score queries the `test_case_eval_scores` Query DSL entity instead.
-- Run metric snapshots live in the **meta** database: table created by `db/migration/meta/POSTGRES/V1.32__CreateRunMetricSnapshotsTable.sql` (with an `ON DELETE CASCADE` foreign key to `test_suite_runs`), backfilled once from the analytics copy by the Java migration `V1_33__CopyRunMetricSnapshotsFromAnalytics`. The analytics `V1.6__CreateRunMetricSnapshotsTable.sql` table is frozen and unread — retained only so analytics `V1.8` and `V1.12` still apply on a fresh install — and is excluded from analytics jOOQ codegen (see `typed-sql-dsl`).
-- Filter whitelist: `data.db.repository.sql.FilterWhitelists.RUN_METRIC_SNAPSHOTS` backs the required `runId eq <uuid>` filter on both the canonical and deprecated `GET` endpoints; both paths are registered in `OpenApiQueryParamCustomizer`'s `REGISTRY` against that same whitelist.
+
+- [Summary controller](../../../src/main/java/com/epam/aidial/evaluation/web/controller/EvalSummaryController.java) and [service](../../../src/main/java/com/epam/aidial/evaluation/service/domain/analytics/EvalSummaryService.java) implement batch/list/detail/count/aggregate contracts and structural metric-value validation.
+- [Summary repository](../../../src/main/java/com/epam/aidial/evaluation/data/db/analytics/repository/PostgresEvalSummaryRepository.java) uses analyticsDsl, idempotent typed-jOOQ inserts, reduced list projection, body joins for detail/export, aggregate SQL, deterministic latest lookups and tombstone exclusion.
+- [Summary mapper](../../../src/main/java/com/epam/aidial/evaluation/service/domain/mapper/EvalSummaryMapper.java) applies defaults; [record mapper](../../../src/main/java/com/epam/aidial/evaluation/data/db/analytics/mapper/EvalSummaryRecordMapper.java) has separate list/export/body projections.
+- [Snapshot controller](../../../src/main/java/com/epam/aidial/evaluation/web/controller/RunMetricSnapshotController.java), [deprecated alias](../../../src/main/java/com/epam/aidial/evaluation/web/controller/RunMetricSnapshotDeprecatedController.java), [service](../../../src/main/java/com/epam/aidial/evaluation/service/domain/RunMetricSnapshotService.java), and [repository](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/PostgresRunMetricSnapshotRepository.java) use one meta-database transaction for batch checks/inserts and return flat snapshot arrays.
+- [Metric executor](../../../src/main/java/com/epam/aidial/evaluation/service/domain/job/InProcessMetricEvaluationExecutor.java) writes summaries and derived per-test-case score chunks; [job](../../../src/main/java/com/epam/aidial/evaluation/service/domain/job/TestSuiteEvaluationJob.java) resolves effective per-test-case scoring independently of Phase 3.
+- [Score service](../../../src/main/java/com/epam/aidial/evaluation/service/domain/analytics/TestCaseEvalScoreService.java), [score repository](../../../src/main/java/com/epam/aidial/evaluation/data/db/analytics/repository/PostgresTestCaseEvalScoreRepository.java), and [score entity](../../../src/main/java/com/epam/aidial/evaluation/query/service/repository/PostgresTestCaseEvalScoreEntityResolver.java) own internal writes and the standalone read surface. The unique key makes deduplication unnecessary; eval summaries do not expose score/pass.
+- [Computation resolver](../../../src/main/java/com/epam/aidial/evaluation/service/domain/analytics/ComputationResolver.java), [filter whitelists](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/FilterWhitelists.java), and [predicate builder](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/WhereBuilder.java) implement computation selection and REST filters.
+- [Application configuration](../../../src/main/resources/application.yml) supplies analytics batch defaults; [body-filter registration](../../../src/main/java/com/epam/aidial/evaluation/web/filter/MaxRequestBodyFilterConfiguration.java) applies the summary HTTP size limit.
+- Scoring expression semantics are owned by [eval-summary-scoring](../eval-summary-scoring/spec.md); storage and the internal write path are owned here.

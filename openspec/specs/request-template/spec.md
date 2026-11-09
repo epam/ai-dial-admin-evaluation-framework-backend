@@ -589,7 +589,13 @@ Status: **Implemented**
 - **THEN** `resolvedValue` SHALL be `null`
 
 ### Requirement: TemplateVariableSource enum
+Status: **Implemented**
+
 The `TemplateVariableSource` enum SHALL define: `BODY`, `URL`, `QUERY`, `HEADER`, `ARGUMENT`. HTTP suites use `BODY`, `URL`, `QUERY`, `HEADER` (representing where in the `RequestTemplateDto` a variable appears). MCP suites use `ARGUMENT` (representing a variable in the `ArgumentTemplateDto`).
+
+#### Scenario: Report variable source locations
+- **WHEN** template-variable extraction identifies variables in HTTP body, URL, query or headers, or in MCP arguments
+- **THEN** their sources SHALL use BODY, URL, QUERY, HEADER or ARGUMENT respectively
 
 ### Requirement: Template variables for MCP suites
 
@@ -811,49 +817,32 @@ Status: **Implemented**
 - **THEN** the system SHALL respond HTTP 400 (`VALIDATION_ERROR`) identifying that request's index
 
 ### Requirement: Resolved request preview for TestCase
+
+Status: **Implemented**
+
 The service SHALL provide `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/resolved-request` to return the **resolved request** for that test case: URL, query parameters, headers, and body after applying the effective template, effective bindings, and test case `data`. This supports debugging and UI preview without executing the request.
 
 The endpoint SHALL accept an optional `requestIndex` query parameter (integer, default `0`) selecting which request of the suite's chain to preview: `0` selects the suite's own request (`requestTemplate` + `inputBindings`), and `n > 0` selects `additionalRequests[n - 1]`'s template and bindings. A `requestIndex` that is negative or greater than `additionalRequests.size()` SHALL be rejected with HTTP 400 (`VALIDATION_ERROR`). Preview SHALL resolve with an **empty** JSONata frame regardless of `requestIndex` — no chain is executed to populate prior requests' response columns — so a chained request's references to earlier columns resolve as JSONata undefined and are reported as validation warnings, consistent with the existing unresolved-variable behavior.
 
-#### Scenario: Get resolved request for test case
-- **WHEN** client calls `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/resolved-request`
-- **THEN** system SHALL resolve the effective template with effective bindings and test case `data` (per Runtime request assembly contract) and return a `ResolvedRequestDto`
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: ResolvedRequestDto structure
-- **WHEN** system returns the resolved request
-- **THEN** the `ResolvedRequestDto` SHALL include: `url` (String — resolved URL path after placeholder substitution), `queryParams` (List of key-value pairs — resolved query parameters), `headers` (List of key-value pairs — resolved headers), `body` (`ResolvedBodyDto`, nullable — polymorphic resolved request body matching the template's content type), `warnings` (List of validation warning objects — unresolved placeholders, missing data, URL pattern mismatch, etc.)
-
-#### Scenario: Resolved request uses suite template and bindings
-- **WHEN** computing the resolved request for a test case
-- **THEN** system SHALL use the suite's `requestTemplate` + `inputBindings` with the test case `data` (same resolution rules as assembly; per-test-case overrides no longer exist)
-
-#### Scenario: Missing bindings or data produce warnings in response
-- **WHEN** resolution encounters required variables with no binding or missing data
-- **THEN** system SHALL still return a best-effort resolved request and SHALL include validation warnings (e.g. in response metadata or a `warnings` field) indicating unresolved placeholders or fallbacks used
-
-#### Scenario: Non-existent TestCase or TestSuite
-- **WHEN** client calls the endpoint with a non-existent testSuiteId or testCaseId
-- **THEN** system SHALL respond with HTTP 404
-
-#### Scenario: No effective template
-- **WHEN** effective template is null (suite and test case have no template)
-- **THEN** system SHALL respond with HTTP 400 or 404, or return a response that reflects "no template" (e.g. no resolvable path/body) per implementation choice
-
-#### Scenario: requestIndex omitted previews the suite's own request
-- **WHEN** client calls the endpoint without `requestIndex`
-- **THEN** system SHALL preview the suite's `requestTemplate` + `inputBindings`, identical to the behavior before the parameter existed
-
-#### Scenario: requestIndex selects an additional request
-- **WHEN** client calls the endpoint with `requestIndex=2` on a suite with two `additionalRequests`
-- **THEN** system SHALL preview `additionalRequests[1]`'s template and bindings
-
-#### Scenario: Out-of-range requestIndex is rejected
-- **WHEN** client calls the endpoint with `requestIndex=5` on a suite with two `additionalRequests`
-- **THEN** system SHALL respond with HTTP 400 (`VALIDATION_ERROR`)
-
-#### Scenario: Preview of a chained request warns about unresolved prior columns
-- **WHEN** client previews an additional request whose body references a response column produced by an earlier request
-- **THEN** system SHALL return a best-effort resolved request with that reference unresolved and a validation warning, and SHALL NOT execute any request
+| Case | When | Expected |
+|---|---|---|
+| Get resolved request for test case | `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/resolved-request` | SHALL resolve the effective template with effective bindings and test case `data` (per Runtime request assembly contract) and return a `ResolvedRequestDto` |
+| ResolvedRequestDto structure | system returns the resolved request | the `ResolvedRequestDto` SHALL include: `url` (String — resolved URL path after placeholder substitution), `queryParams` (List of key-value pairs — resolved query parameters), `headers` (List of key-value pairs — resolved headers), `body` (`ResolvedBodyDto`, nullable — polymorphic resolved request body matching the template's content type), `warnings` (List of validation warning objects — unresolved placeholders, missing data, URL pattern mismatch, etc.) |
+| Resolved request uses suite template and bindings | computing the resolved request for a test case | SHALL use the suite's `requestTemplate` + `inputBindings` with the test case `data` (same resolution rules as assembly; per-test-case overrides no longer exist) |
+| Missing bindings or data produce warnings in response | resolution encounters required variables with no binding or missing data | SHALL still return a best-effort resolved request and SHALL include validation warnings (e.g. in response metadata or a `warnings` field) indicating unresolved placeholders or fallbacks used |
+| Non-existent TestCase or TestSuite | the endpoint with a non-existent testSuiteId or testCaseId | SHALL respond with HTTP 404 |
+| No effective template | effective template is null (suite and test case have no template) | SHALL respond with HTTP 400 or 404, or return a response that reflects "no template" (e.g. no resolvable path/body) per implementation choice |
+| requestIndex omitted previews the suite's own request | the endpoint without `requestIndex` | SHALL preview the suite's `requestTemplate` + `inputBindings`, identical to the behavior before the parameter existed |
+| requestIndex selects an additional request | the endpoint with `requestIndex=2` on a suite with two `additionalRequests` | SHALL preview `additionalRequests[1]`'s template and bindings |
+| Out-of-range requestIndex is rejected | the endpoint with `requestIndex=5` on a suite with two `additionalRequests` | SHALL respond with HTTP 400 (`VALIDATION_ERROR`) |
+| Preview of a chained request warns about unresolved prior columns | client previews an additional request whose body references a response column produced by an earlier request | SHALL return a best-effort resolved request with that reference unresolved and a validation warning, and SHALL NOT execute any request |
+| Get resolved request for test case (under suite context) | `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/resolved-request` | SHALL return the resolved request (URL, query params, headers, body) using the suite's template/bindings and the test case's `data`; the `testCaseId` MUST belong to a dataset referenced by `testSuiteId` (otherwise HTTP 404). The endpoint is suite-scoped because request resolution depends on suite-level execution configuration. |
+| resolved-request endpoint stays under suite | `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/resolved-request` | SHALL serve this endpoint under the suite path because the resolved request needs the suite's `requestTemplate`/`inputBindings`; the implementation cross-checks that the test case belongs to a dataset the suite references |
+| TestCase under suite-scoped resolved-request endpoint | `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/resolved-request` where the suite does not exist, the test case does not exist, or the test case is not under the dataset referenced by the suite | SHALL respond with HTTP 404 |
 
 ### Requirement: Resolved request model matches the effective deployment
 
@@ -897,22 +886,6 @@ Status: **Implemented**
 
 - **WHEN** a client only retrieves the resolved-request preview without invoking Try-It-Out or a run
 - **THEN** the new runtime execution failure SHALL not be raised by that preview operation
-
-## Implementation Notes
-
-
-- `BindingValidator` remains shared across suite types; ROUTE suites use the same HTTP `requestTemplate` validation path as DEPLOYMENT suites.
-- Shared binding validation logic extracted into a `BindingValidator` `@Component` in `service.domain` — injected by `SuiteValidationService`. Method: `validate(variables, bindings, schema, suiteId)` returning `List<ValidationWarningDto>`
-- `validateDeploymentSuite()` calls `bindingValidator.validate(...)` with variables from `TemplateVariableExtractor.extractWithWarnings(requestTemplate)`
-- `validateMcpSuite()` calls `bindingValidator.validate(...)` with variables from `TemplateVariableExtractor.extractFromArgumentTemplateWithWarnings(argumentTemplate)` — new method that returns `ExtractionResult` (same as `extractWithWarnings()`)
-- The shared component includes `|file` constant-value validation — applies to both suite types
-- MCP path does NOT perform content-type mismatch, header blacklist, or endpoint schema checks (these are deployment-specific)
-- Warning codes and paths are consistent between deployment and MCP paths for frontend uniformity
-- JSON request-body evaluation seam (`service.domain`): `JsonataSourcePreprocessor` (textual `${{}}` placeholder substitution into raw body-text per the three substitution modes), `TemplateContentResolver` (Map `content` structural-resolution path and `jsonataContent` preprocess-only path converge on one body-text output), `RequestBodyEvaluator` (JSONata-evaluates the resolved body text via `JsonataEvaluationService`/`DashjoinJsonataEvaluationService`, enforces the JSON-object runtime contract). `TestSuiteRequestValidator` rejects an invalid `jsonataContent` JSONata source and a body with both `content` and `jsonataContent` set, as well as a `responseColumns[i].name` colliding with `JsonataReservedNames` (see `response-columns` spec) at suite create/update time. `ResolvedRequestService`'s preview path is wired through `RequestBodyEvaluator` so `GET .../resolved-request` reflects the JSONata-evaluated body.
-- `JsonataProperties` (`@ConfigurationProperties(prefix = "jsonata")`: `evaluationTimeoutMs`, `maxRecursionDepth`) bounds JSONata evaluation via `Frame.setRuntimeBounds`; defaults live in `application.yml`, documented in `docs/configuration.md`.
-- Resolved request-model validation (fixed-path model-selecting APIs): `RequestModelValidator` and `RequestBodyValidationException` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service` / `.exception`), with the canonical paths in `runner.constants.ModelSelectingEndpointPaths` — also consumed by `DialCoreUrlBuilder`. `validateContent` serves `SuiteValidationService`'s static plain-`content` check; `validateForExecution` throws for consumers at the pre-invocation boundary (`TurnLoopExecutor` for runs and CLI, `TryItOutService` for Try-It-Out). Error codes: `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` and `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR`. Placeholder detection reuses `TemplateContentResolver.PLACEHOLDER_PATTERN` with `find()` semantics. The `GET .../resolved-request` preview does not run this check.
-- `service.domain.TemplateVariableService` — iterates the chain (`requestTemplate` + `additionalRequests`) and builds the index-keyed map.
-- `web.controller.TemplateVariableController` — both endpoints return the map; OpenAPI examples under `src/main/resources/openapi/examples/api-v1-test-suites-testSuiteId{,-test-cases-testCaseId}-template-variables-GET-response-200-{minimal,full}.json`.
 
 ### Requirement: Runtime skill reference resolution for full-value placeholders
 When a placeholder is a **full-value** placeholder (the entire string is exactly one `${{...}}`) and is a *skill placeholder*, and its resolved value is a `String`, the resolved value SHALL be replaced by its canonical skill reference `skills/{bucket}/{path-to-skill}` (see `dial-skill-ref`). A placeholder is a skill placeholder when it carries an explicit `|skill` hint (case-insensitive), or when it has **no** type hint and its binding's `dataField` names a schema field of type `SKILL`. An explicit hint of any other type (e.g. `|string`, `|file`) SHALL take precedence over the bound column's type. This SHALL apply identically to: structured JSON `content` bodies, URL-encoded bodies, `jsonataContent` bodies (typed placeholder values) and MCP tool `arguments`. A non-String resolved value SHALL be passed through unchanged. A malformed String value SHALL be passed through unchanged (DIAL Core rejects it). Placeholders **embedded** in a longer string SHALL be interpolated verbatim with no canonicalisation. A skill placeholder SHALL NOT trigger `DialFileRefResolver` conversion and SHALL NOT be eligible for multipart file-part resolution. The `FILE` resolution behaviour SHALL be unchanged. The decision SHALL be made in one shared component used by all four paths.
@@ -977,3 +950,19 @@ Implementation notes: hint parsing is `TemplateVariableExtractor.parseTypeHint` 
 #### Scenario: Effective type from the bound column
 - **WHEN** a hintless variable is bound to a `SKILL` schema field
 - **THEN** it SHALL be reported with `declaredType: null` and `effectiveType: SKILL`
+
+## Implementation Notes
+
+
+- `BindingValidator` remains shared across suite types; ROUTE suites use the same HTTP `requestTemplate` validation path as DEPLOYMENT suites.
+- Shared binding validation logic extracted into a `BindingValidator` `@Component` in `service.domain` — injected by `SuiteValidationService`. Method: `validate(variables, bindings, schema, suiteId)` returning `List<ValidationWarningDto>`
+- `validateDeploymentSuite()` calls `bindingValidator.validate(...)` with variables from `TemplateVariableExtractor.extractWithWarnings(requestTemplate)`
+- `validateMcpSuite()` calls `bindingValidator.validate(...)` with variables from `TemplateVariableExtractor.extractFromArgumentTemplateWithWarnings(argumentTemplate)` — new method that returns `ExtractionResult` (same as `extractWithWarnings()`)
+- The shared component includes `|file` constant-value validation — applies to both suite types
+- MCP path does NOT perform content-type mismatch, header blacklist, or endpoint schema checks (these are deployment-specific)
+- Warning codes and paths are consistent between deployment and MCP paths for frontend uniformity
+- JSON request-body evaluation seam (`service.domain`): `JsonataSourcePreprocessor` (textual `${{}}` placeholder substitution into raw body-text per the three substitution modes), `TemplateContentResolver` (Map `content` structural-resolution path and `jsonataContent` preprocess-only path converge on one body-text output), `RequestBodyEvaluator` (JSONata-evaluates the resolved body text via `JsonataEvaluationService`/`DashjoinJsonataEvaluationService`, enforces the JSON-object runtime contract). `TestSuiteRequestValidator` rejects an invalid `jsonataContent` JSONata source and a body with both `content` and `jsonataContent` set, as well as a `responseColumns[i].name` colliding with `JsonataReservedNames` (see `response-columns` spec) at suite create/update time. `ResolvedRequestService`'s preview path is wired through `RequestBodyEvaluator` so `GET .../resolved-request` reflects the JSONata-evaluated body.
+- `JsonataProperties` (`@ConfigurationProperties(prefix = "jsonata")`: `evaluationTimeoutMs`, `maxRecursionDepth`) bounds JSONata evaluation via `Frame.setRuntimeBounds`; defaults live in `application.yml`, documented in `docs/configuration.md`.
+- Resolved request-model validation (fixed-path model-selecting APIs): `RequestModelValidator` and `RequestBodyValidationException` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service` / `.exception`), with the canonical paths in `runner.constants.ModelSelectingEndpointPaths` — also consumed by `DialCoreUrlBuilder`. `validateContent` serves `SuiteValidationService`'s static plain-`content` check; `validateForExecution` throws for consumers at the pre-invocation boundary (`TurnLoopExecutor` for runs and CLI, `TryItOutService` for Try-It-Out). Error codes: `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` and `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR`. Placeholder detection reuses `TemplateContentResolver.PLACEHOLDER_PATTERN` with `find()` semantics. The `GET .../resolved-request` preview does not run this check.
+- `service.domain.TemplateVariableService` — iterates the chain (`requestTemplate` + `additionalRequests`) and builds the index-keyed map.
+- `web.controller.TemplateVariableController` — both endpoints return the map; OpenAPI examples under `src/main/resources/openapi/examples/api-v1-test-suites-testSuiteId{,-test-cases-testCaseId}-template-variables-GET-response-200-{minimal,full}.json`.

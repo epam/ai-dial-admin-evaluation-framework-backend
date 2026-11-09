@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines the storage, validation, and evaluation of user-defined response column definitions scoped to a TestSuite. Each column specifies a JSONata expression to extract a named value from a test result's response body. Column definitions are stored as JSONB on the TestSuite (like `testCaseSchema`). At run time, expressions are evaluated against each result's `responseBody` and extracted values are persisted in the analytics DB for downstream sort/filter/analytics.
+Defines the storage, validation, and evaluation of user-defined response column definitions scoped to a TestSuite. Each column specifies a JSONata expression to extract a named value from a test result's response body. Column definitions are stored as JSONB on the TestSuite (like the dataset schema). At run time, expressions are evaluated in the worker against the corresponding response body before persistence and extracted values are persisted in the analytics DB for downstream sort/filter/analytics.
 
 Status: **Implemented**
 
@@ -40,9 +40,7 @@ Defaults when omitted: `displayName` = null (FE uses `name`), `type` = `STRING`.
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "name": "My Suite",
-  "testCaseSchema": [
-    {"name": "question", "type": "STRING", "required": true}
-  ],
+  "datasetRef": {"id": "550e8400-e29b-41d4-a716-446655440001"},
   "responseColumns": [
     {"name": "answer", "displayName": "Answer", "expression": "choices[0].message.content", "type": "STRING"},
     {"name": "token_count", "expression": "usage.total_tokens", "type": "NUMBER"}
@@ -109,9 +107,9 @@ Status: **Implemented**
 
 ### Requirement: Extracted values feed the chain-wide accumulated frame
 
-A response column's extracted, type-reconciled value SHALL be merged into the execution's accumulated frame and SHALL therefore be available, bound by name, to every later JSONata request-template evaluation in the same test-case execution — later turns of the same request and every turn of every later request. A column's own extraction expression SHALL continue to evaluate against the raw response body with only the additive `$request` / `$response` frame bindings; the accumulated frame is a consumer of extraction output, not an input to it. A column whose extraction failed SHALL be bound as an explicit JSONata null in the accumulated frame rather than left unbound.
+A response column's extracted, type-reconciled value SHALL be merged into the execution's accumulated frame and SHALL therefore be available, bound by name, to every later JSONata request-template evaluation in the same test-case execution — later turns of the same request and every turn of every later request. A column's own extraction expression SHALL continue to evaluate against the raw response body with only the additive `$_request` / `$_response` frame bindings; the accumulated frame is a consumer of extraction output, not an input to it. A column whose extraction failed SHALL be bound as an explicit JSONata null in the accumulated frame rather than left unbound.
 
-Each result row's persisted `extracted_columns` SHALL be the accumulated union of all columns extracted up to and including that row, so a single row read is sufficient for metric binding resolution and `response::<column>` rendering.
+Each HTTP result row's persisted `extracted_columns` SHALL combine earlier accumulated values with that row's extraction. A failed row includes its own null/failed values for diagnosis but does not feed them into subsequent frame state, so a single row read is sufficient for metric binding resolution and `response::<column>` rendering.
 
 Status: **Implemented**
 
@@ -121,7 +119,7 @@ Status: **Implemented**
 
 #### Scenario: Extraction expressions do not see other columns
 - **WHEN** an additional request declares a response column whose expression references another column's name
-- **THEN** that reference SHALL resolve as JSONata undefined — extraction expressions read the response body plus `$request`/`$response` only
+- **THEN** that reference SHALL resolve as JSONata undefined — extraction expressions read the response body plus `$_request`/`$_response` only
 
 #### Scenario: Row carries the accumulated union
 - **WHEN** a 2-request chain extracts `configId` on request #0 and `answer` on request #1
@@ -146,6 +144,8 @@ Status: **Implemented**
 - **THEN** system SHALL return HTTP 400
 
 ### Requirement: Response column name MUST NOT contain `::` (double colon)
+
+Status: **Implemented**
 The service SHALL reject TestSuite create and update requests in which any `responseColumns[i].name` contains the `::` (double-colon) sequence. The `::` sequence is reserved as the column-family separator in the evaluation summary CSV export; a single colon `:` is permitted in the name. Validation applies uniformly to `POST /api/v1/test-suites` and `PUT /api/v1/test-suites/{id}`. Pre-existing rows with `::`-bearing column names are NOT migrated; any subsequent update of such a suite SHALL fail validation until the column is renamed.
 
 #### Scenario: Create rejected when response column name contains a double colon
@@ -160,9 +160,9 @@ The service SHALL reject TestSuite create and update requests in which any `resp
 - **WHEN** client calls `POST /api/v1/test-suites` with a `responseColumns` entry whose `name` is `"with:colon"` (single colon, no `::` sequence)
 - **THEN** system SHALL persist the suite and respond with HTTP 201
 
-### Requirement: Evaluate expressions at result write time
+### Requirement: Extract response columns during execution before persistence
 
-When a test case run result is stored, the system SHALL evaluate all of the suite's response column expressions against the result's `responseBody`, reconcile each result against the column's declared `type`, and persist the reconciled values.
+Before a worker result is stored, the execution path SHALL evaluate that request's response column expressions against the result's `responseBody`, reconcile each result against the column's declared `type`, and persist the reconciled values.
 
 Status: **Implemented**
 
@@ -196,7 +196,7 @@ When a JSONata expression is evaluated for a response column, the system SHALL r
 
 Status: **Implemented**
 
-**Implementation notes:** Reconciliation is performed by `service.domain.ResponseColumnTypeReconciler`. On unsafe mismatch it throws `service.domain.exception.TypeMismatchException`, which is caught by the existing per-column handler in `service.domain.ResponseColumnExtractor.extract()` and emitted as an `ExtractionWarningDto`. See `openspec/changes/enforce-response-column-types/design.md` for the full coercion table.
+**Implementation notes:** Reconciliation is performed by `runner.service.ResponseColumnTypeReconciler`. On unsafe mismatch it throws `runner.exception.TypeMismatchException`, which is caught by the existing per-column handler in `runner.service.ResponseColumnExtractor.extract()` and emitted as an `ExtractionWarningDto`. The scenarios below define the coercion contract.
 
 #### Scenario: ARRAY column, JSONata returns single match
 - **WHEN** a column with `type: ARRAY` evaluates a JSONata expression that returns a single non-null scalar (JSONata's documented sequence-flattening behaviour)
@@ -229,8 +229,8 @@ Status: **Implemented**
 - **AND** `extraction_warnings` SHALL NOT contain an entry for that column
 
 #### Scenario: NUMBER column, JSONata returns parseable string
-- **WHEN** a column with `type: NUMBER` evaluates an expression that returns a string parseable as a JSON number
-- **THEN** `extracted_columns[columnName]` SHALL contain the parsed numeric value
+- **WHEN** a column with `type: NUMBER` evaluates an expression that returns a string accepted by `Double.parseDouble` after trimming
+- **THEN** `extracted_columns[columnName]` SHALL contain the parsed double value
 - **AND** `extraction_warnings` SHALL NOT contain an entry for that column
 
 #### Scenario: NUMBER column, JSONata returns non-parseable string
@@ -284,25 +284,25 @@ Status: **Implemented**
 - **WHEN** an INTEGER column receives a non-parseable string `"abc"`
 - **THEN** the warning's `error` SHALL include the actual value (truncated to at most 80 characters when needed) — for example `Type mismatch: expected INTEGER, got STRING ("abc") — not parseable as integer`
 
-### Requirement: displayName on testCaseSchema fields
+### Requirement: displayName on dataset schema fields
 
 `FieldDefinitionDto` SHALL support an optional `displayName` field for UI label purposes.
 
 Status: **Implemented**
 
 #### Scenario: Field with displayName
-- **WHEN** testCaseSchema includes `{"name": "q", "displayName": "Question", "type": "STRING"}`
+- **WHEN** the dataset schema includes `{"name": "q", "displayName": "Question", "type": "STRING"}`
 - **THEN** system SHALL persist and return the displayName
 
 #### Scenario: Field without displayName
-- **WHEN** testCaseSchema includes `{"name": "q", "type": "STRING"}` (no displayName)
+- **WHEN** the dataset schema includes `{"name": "q", "type": "STRING"}` (no displayName)
 - **THEN** system SHALL persist it as-is; FE uses `name` as display label
 
 ### Requirement: FILE type in response column definitions
 
 The `FILE` value of `SchemaFieldType` SHALL be an officially supported type for `ResponseColumnDefinitionDto.type`. A response column with `type: FILE` indicates that the JSONata expression extracts a DIAL file reference path (e.g., `"files/@myapp/results/output.pdf"`) from the response body.
 
-Semantics in this phase: **display hint only**. The extracted value is stored as a string in `extracted_columns` (identical to `STRING` storage). Clients (FE) SHALL use `type: FILE` to render the extracted value as a clickable/downloadable link rather than plain text. No backend extraction, validation, or download behaviour changes.
+Semantics in this phase: **display hint only**. The extracted value is stored as a string in `extracted_columns` (identical to `STRING` storage). Clients MAY use `type: FILE` as a rendering hint; frontend rendering is not implemented by this backend. No backend extraction, validation, or download behaviour changes.
 
 The default type (when omitted or null in the DTO) remains `STRING`. `FILE` type is **not** auto-inferred from the extracted value — it must be explicitly set on the column definition.
 
@@ -319,11 +319,15 @@ Status: **Implemented**
 #### Scenario: FILE type is a display hint — no backend validation of value format
 - **WHEN** a `FILE`-typed response column's JSONata expression resolves to a value that does not match the DIAL file path format
 - **THEN** system SHALL store the value as-is without emitting an extraction warning for format mismatch
-- **AND** the extraction proceeds normally (warnings are only emitted for JSONata evaluation failures, not for value format)
+- **AND** the extraction proceeds normally (type-reconciliation/evaluation failures can warn, but string format is not checked)
 
 #### Scenario: FILE type column with extraction failure
-- **WHEN** a `FILE`-typed response column's JSONata expression fails to evaluate (path not found, etc.)
+- **WHEN** a `FILE`-typed response column's JSONata expression throws during evaluation
 - **THEN** `extracted_columns["result_file"]` SHALL be `null` and `extraction_warnings` SHALL contain an entry with `column`, `expression`, and `error` — identical to the behaviour for all other types
+
+#### Scenario: FILE expression returns undefined
+- **WHEN** a `FILE`-typed response column's expression references an absent field and JSONata returns undefined without throwing
+- **THEN** the extracted value SHALL be null without an extraction warning
 
 ### Requirement: MCP response extraction paths
 
@@ -352,7 +356,7 @@ Status: **Implemented**
 
 #### Scenario: structuredContent absent
 - **WHEN** a response column targets `structuredContent.field` but the MCP response has no `structuredContent`
-- **THEN** `extracted_columns["field"]` SHALL be `null` and `extraction_warnings` SHALL contain a path-not-found warning
+- **THEN** `extracted_columns["field"]` SHALL be `null` with no warning when JSONata returns undefined
 
 ### Requirement: SSE response body envelope for JSONata extraction
 
@@ -376,7 +380,7 @@ Each element in `events` has:
 
 **OpenAI chat-completions mode (unchanged)**: When the SSE stream uses OpenAI chat-completions format (`choices[].delta.content`), the engine assembles a standard non-streaming response. JSONata expressions for OpenAI streams use the same paths as before (e.g., `choices[0].message.content`).
 
-**OpenAI Responses mode**: When the SSE stream uses the Responses format (events whose data `type` starts with `response.`), the engine assembles the terminal `response.completed` event's `response` object — i.e. exactly the non-streaming Responses body. Response columns therefore use the same paths for a streamed and a non-streamed Responses deployment (e.g. `output[0].content[0].text`, `output[content.type="output_text"].content.text`, `usage.total_tokens`), and never see an `{"events":[…]}` envelope.
+**OpenAI Responses mode**: When the first event selects Responses mode, the engine assembles the last terminal (`response.completed`, `response.incomplete`, or `response.failed`) event's `response` object — i.e. exactly the non-streaming Responses body. Response columns therefore use the same paths for a streamed and a non-streamed Responses deployment (e.g. `output[0].content[0].text`, `output[content.type="output_text"].content.text`, `usage.total_tokens`), and do not see an `{"events":[…]}` envelope. A non-success parser status instead yields a JSON-string partial text document; absent terminal events on a successful parse yield the fallback defined in `eval-execution-engine`.
 
 #### Scenario: Extract last result from non-OpenAI SSE stream
 - **WHEN** response body is `{"events":[{"event":"start","data":{}},{"event":"result","data":{"output":"Paris"}}]}`
@@ -442,7 +446,7 @@ A response column's `name` SHALL NOT collide with a JSONata built-in function na
 
 The plain names `request` and `response` are **not** reserved and SHALL be accepted as ordinary response column names.
 
-The reservation exists for authoring clarity, not to prevent a runtime collision: the response-column extraction frame and the request-template frame bind disjoint name sets (the former binds only `_request`/`_response`; the latter binds only the previous turn's extracted column names), so a column name can never actually shadow a frame variable during evaluation. What the reservation prevents is a `$name` token whose meaning would differ between the two authoring surfaces.
+The reservation exists for authoring clarity, not to prevent a runtime collision: the response-column extraction frame and the request-template frame bind disjoint name sets (the former binds only `_request`/`_response`; the latter binds chain-wide accumulated extracted column names), so a column name can never actually shadow a frame variable during evaluation. What the reservation prevents is a `$name` token whose meaning would differ between the two authoring surfaces.
 
 Status: **Implemented**
 
@@ -476,57 +480,6 @@ Status: **Implemented**
 - **WHEN** a response column named `context` is not configured for the suite at all
 - **THEN** turn 1's reference to `$context` is unbound (undefined), producing undefined-append semantics — distinct from the "configured but failed" case above
 
-## Validation Rules
-
-**Response columns array:**
-
-| Constraint          | Rules |
-|---------------------|-------|
-| `responseColumns`   | Max 50 elements per suite |
-
-**Response column definition (each element):**
-
-| Field        | Rules |
-|--------------|-------|
-| `name`       | Required, not blank, max 255 characters, unique within the array |
-| `displayName`| Optional, max 255 characters |
-| `expression` | Required, not blank, max 2000 characters, must be valid JSONata |
-| `type`       | Optional; one of `SchemaFieldType` values; null in DTO is normalized to `STRING` by `TestSuiteService.normalizeRequest()` |
-
-**testCaseSchema field (modified):**
-
-| Field        | Rules |
-|--------------|-------|
-| `displayName`| Optional (new), max 255 characters |
-| _(other fields unchanged)_ | |
-
-## Implementation Notes
-
-- **Meta DB migration** `V1.8__AddResponseColumnsToTestSuites.sql`:
-  - `ALTER TABLE test_suites ADD COLUMN response_columns JSONB NOT NULL DEFAULT '[]'::jsonb;`
-- **Analytics DB migration** `V1.2__AddExtractedColumnsToTestCaseRunResults.sql`:
-  - `ALTER TABLE test_case_run_results ADD COLUMN extracted_columns JSONB NOT NULL DEFAULT '{}'::jsonb;`
-  - `ALTER TABLE test_case_run_results ADD COLUMN extraction_warnings JSONB NOT NULL DEFAULT '[]'::jsonb;`
-- **New DTO**: `ResponseColumnDefinitionDto` in `service.domain.dto` — `name`, `displayName`, `expression`, `type` (SchemaFieldType).
-- **Modified DTO**: `FieldDefinitionDto` — add `displayName` (String, optional, `@Size(max=255)`).
-- **Modified DTOs**: `TestSuiteRequestDto`, `TestSuiteResponseDto` — add `List<ResponseColumnDefinitionDto> responseColumns`.
-- **Modified model**: `TestSuite` — add `String responseColumns` (JSONB string).
-- **Modified model**: `TestCaseRunResult` — add `String extractedColumns`, `String extractionWarnings`.
-- **New component**: `JsonataEvaluationService` in `service.domain` — validates expressions (parse-only), evaluates expressions against JSON data.
-- **Modified service**: `TestSuiteService.validateTestSuiteSchemas()` — add JSONata validation for response columns.
-- **Modified service**: Result write path — evaluate response columns after building result. Extraction is a **job-layer concern**: `MockResultsGenerator` (and future real runners) load the suite's `responseColumns` from meta DB and evaluate expressions before calling the analytics batch writer. The analytics batch write API (`POST /api/v1/analytics/results`) is a pure persistence endpoint and does NOT trigger extraction — external callers must pre-populate `extractedColumns`/`extractionWarnings` or accept empty defaults.
-- **JSONB serialization**: Uses existing `JsonbMapper` pattern for responseColumns. Uses `ValidationWarningsSerializer` pattern for extraction warnings.
-- **JSONata library**: `com.dashjoin:jsonata:0.9.9` — 100% reference test coverage, zero extra transitive dependencies. `DashjoinJsonataEvaluationService` is the only class that imports from `com.dashjoin.jsonata`; it also owns the `$_request`/`$_response` 3-arg frame-evaluate overload and the `Jsonata.NULL_VALUE` frame-binding logic for the request-template frame (F2) — a narrow, explicit exception to (not a repeal of) the "only importer" invariant, since both live in the same class.
-- `runner.constants.JsonataReservedNames` (in the `evaluation-runner-core` module, so the standalone runner and the EF backend share one definition) is the single source for the built-in-function-name set (a hand-maintained list of JSONata built-in function names, unrelated to the query-DSL function registry — which enumerates SQL/jOOQ functions for a different subsystem) and for the frame binding names themselves: `REQUEST_FRAME_BINDING = "_request"` / `RESPONSE_FRAME_BINDING = "_response"`, from which `FRAME_RESERVED_NAMES` is derived. `ResponseColumnExtractor` binds the frame from those same constants and `TestSuiteRequestValidator` consumes `RESERVED_COLUMN_NAMES` for the reserved-name 400 check, so the bound name and the reserved name cannot drift apart.
-- **Transaction**: Response columns are part of `test_suites` — uses `@Transactional("metaTransactionManager")`. Extraction happens in the analytics write path — uses `@Transactional("analyticsTransactionManager")`.
-
-## Deferred
-
-- Re-evaluation of historical results when expressions change.
-- Eval results CSV export with extracted columns.
-- Unified schema at suite level (merging testCaseSchema + responseColumns).
-- Import/export of response columns as part of suite CSV import (suite JSON export includes them naturally).
-
 ### Requirement: SKILL type in response column definitions
 The `SKILL` value of `SchemaFieldType` SHALL be a supported `ResponseColumnDefinitionDto.type`. A `SKILL` response column indicates that the JSONata expression extracts a DIAL skill reference (`skills/{bucket}/{path}`) from the response. Storage and reconciliation SHALL be identical to `STRING` (`ResponseColumnTypeReconciler` handles `SKILL` like `STRING`); the extracted value is stored as a string, is NOT format-validated, and `SKILL` is NOT auto-inferred from the extracted value. Clients MAY use the type as a rendering hint. Extraction failures behave as for every other type.
 
@@ -544,3 +497,12 @@ Implementation notes: `ResponseColumnTypeReconciler.reconcile` (`case STRING, FI
 #### Scenario: Non-string result is reconciled like STRING
 - **WHEN** a `SKILL` column's expression resolves to the number `5`
 - **THEN** the reconciliation outcome SHALL be identical to that of a `STRING` column with the same result
+
+## Implementation Notes
+
+- Definitions/validation: `evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/dto/ResponseColumnDefinitionDto.java`; backend `src/main/java/com/epam/aidial/evaluation/service/domain/TestSuiteRequestValidator.java`, `ResponseColumnUnionResolver.java`, `TestSuiteService.java`.
+- Extraction/coercion: `evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/service/ResponseColumnExtractor.java`, `ResponseColumnTypeReconciler.java`, `DashjoinJsonataEvaluationService.java`.
+- Frame/row accumulation: runner-core `runner.job.TurnLoopExecutor` and `RequestChainExecutor`; MCP extraction: `EvaluationWorker`.
+- Extraction precedes analytics persistence; direct analytics batch writes do not trigger extraction. HTTP Try-It-Out extracts successful invocations only, uses the run-assembled SSE document for extraction while displaying raw events, and returns each invocation's own extraction rather than the accumulated union; MCP Try-It-Out does not extract.
+- Constraints: names required/nonblank/max255/no `::`, displayName optional/max255, expression required/nonblank/max2000/syntax checked; chain-wide union max50 and unique/reserved-name checks. Omitted/null type is normalized to STRING on suite save.
+- Tests: runner-core `ResponseColumnExtractorTest`, `ResponseColumnTypeReconcilerTest`, `ResponseColumnDefinitionDtoValidationTest`; backend `ResponseColumnFunctionalTests`, `ResponseColumnUnionResolverTest`, `TryItOutServiceTest`.

@@ -1,109 +1,73 @@
 # Runner and Jobs
 
 ## Purpose
-This spec defines how evaluation execution is orchestrated (Kubernetes Jobs) and how job components interact with the backend.
 
-Status: **Planned/Vision** (based on design docs; not fully implemented in current codebase)
+Define the current backend job orchestration boundary: post-commit dispatch, ordered in-process evaluation phases, run-owned resources, and terminal-status handling. Detailed phase contracts belong to [eval-execution-engine](../eval-execution-engine/spec.md), [metrics-storage](../metrics-storage/spec.md), [suite-run-snapshot](../suite-run-snapshot/spec.md), and [test-suite-runs](../test-suite-runs/spec.md).
 
-## Key Terms
-- **Runner**: component that submits and tracks K8s Jobs for evaluation and metric calculation.
-- **Evaluation Job**: job that executes test cases and records per-case outcomes.
-- **Metrics Calculation Job**: job that computes metrics based on run outcomes.
+Status: **Implemented**
 
 ## Requirements
 
-### Requirement: Submit Kubernetes Jobs for evaluation
-The runner SHALL submit Kubernetes Jobs to execute TestSuites.
-Status: **Planned**
-
-#### Scenario: Create evaluation job
-- **WHEN** a TestSuiteRun is started
-- **THEN** runner SHALL submit a Kubernetes Job to execute the suite
-
-### Requirement: Evaluation job writes outcomes to backend
-The evaluation job SHALL publish per-test-case outcomes to the backend.
-Status: **Planned**
-
-#### Scenario: Persist results
-- **WHEN** evaluation job completes a test case
-- **THEN** it SHALL publish TestCaseRunResult and related metadata to the backend API
-
-### Requirement: Metrics job computes and writes MetricResults
-The metrics calculation job SHALL compute metrics from run outcomes and publish MetricResults to the backend.
-Status: **Planned**
-
-#### Scenario: Metrics evaluation
-- **WHEN** metrics job runs for a TestSuiteRun
-- **THEN** it SHALL call metrics services to evaluate metrics and write MetricResults via backend API
-
-## Implementation Notes
-- Vision reference: `docs/design/infrastructure-architecture.md` (jobs and data flows, security/observability open questions).
-
-### Requirement: Mock job writes per-test-case analytics results on successful completion
-On successful run completion the mock evaluation job SHALL write one `TestCaseRunResult` per enabled-and-valid test case per run index (0 to `numberOfRuns - 1` from `runConfig`) to the analytics storage.
+### Requirement: Dispatch after successful run creation or result import
 Status: **Implemented**
+The run service SHALL defer evaluation dispatch until the meta transaction commits. Normal dispatch SHALL invoke `TestSuiteEvaluationJob` in process. When DIAL App mode is enabled, its trigger client is available, and a caller credential exists, dispatch SHALL trigger the DIAL Core Application Route; the internal execution endpoint still dispatches the same in-process job.
 
-#### Scenario: Results written for all enabled+valid test cases
-- **WHEN** the mock job completes a run successfully (status → COMPLETED)
-- **THEN** the system SHALL have written `TestCaseRunResult` rows to analytics storage for every enabled-and-valid test case in the suite, for each run index from 0 to `numberOfRuns - 1`
+#### Scenario: Direct dispatch
+- **WHEN** a run is created and committed without the DIAL App trigger conditions
+- **THEN** the service SHALL dispatch the job with deployment execution enabled
 
-#### Scenario: Disabled or invalid test cases are excluded
-- **WHEN** a test suite contains test cases with `enabled = false` or `isValid = false`
-- **THEN** those test cases SHALL NOT have `TestCaseRunResult` rows written for that run
+#### Scenario: Imported results skip deployment execution
+- **WHEN** result import commits and metric evaluation is dispatched without a caller credential
+- **THEN** the service SHALL dispatch directly with deployment execution skipped, including when DIAL App mode is enabled
 
-#### Scenario: Large suites are processed in page-batches
-- **WHEN** a test suite has more enabled+valid test cases than the configured page size
-- **THEN** the system SHALL read enabled+valid test cases in pages (via a dedicated repository query) and commit each page-batch to analytics in a separate analytics transaction
+#### Scenario: Dispatch failure compensation
+- **WHEN** direct dispatch is rejected by the executor or a DIAL App route trigger fails
+- **THEN** the service SHALL apply the respective run-failure compensation instead of leaving the run pending without execution
 
-#### Scenario: Result generation failure does not prevent run completion
-- **WHEN** analytics result generation throws an unexpected exception
-- **THEN** the mock job SHALL log a WARN and still mark the run as COMPLETED (results may be incomplete)
-
-### Requirement: Mock job produces structured request body per test case
-The mock job SHALL set `TestCaseRunResult.requestBody` to a JSON string resolved from the suite's `requestTemplate` + `inputBindings` applied over `TestCase.data` (with per-case overrides), using `MockRequestBodyBuilder`.
+### Requirement: Job resources are registered before asynchronous submission
 Status: **Implemented**
+The job SHALL register a run handle before submitting work to `testSuiteRunExecutor`, reject duplicate active dispatch, and remove/close the handle if submission throws. Cancellation and worker teardown SHALL follow the run cancellation contract in [test-suite-runs](../test-suite-runs/spec.md).
 
-#### Scenario: Request body reflects template resolution
-- **WHEN** the suite has a `requestTemplate` with bindings
-- **THEN** `TestCaseRunResult.requestBody` SHALL be the resolved template body JSON string
+#### Scenario: Cancellation before the job starts
+- **WHEN** cancellation arrives after registration but before the job thread starts
+- **THEN** cancellation SHALL find the handle and the job SHALL observe it before executing phases
 
-#### Scenario: Request body falls back to test case data when no template
-- **WHEN** the suite has no `requestTemplate`
-- **THEN** `TestCaseRunResult.requestBody` SHALL be the raw `TestCase.data` JSON string
+#### Scenario: Duplicate dispatch or failed submission
+- **WHEN** a run already has an active handle
+- **THEN** dispatch SHALL throw `RunAlreadyActiveException`
+- **AND** if submission of a newly registered handle throws, dispatch SHALL remove and close that handle before rethrowing
 
-### Requirement: Mock job produces structured response body per execution status
-The mock job SHALL set `TestCaseRunResult.responseBody` and `TestCaseRunResult.responseStatusCode` according to the simulated `ExecutionStatus` for that result.
+### Requirement: Evaluation phases execute in order
 Status: **Implemented**
+The job SHALL establish a suite snapshot, perform a guarded PENDING-to-RUNNING transition, execute deployment evaluation unless explicitly skipped, execute metric evaluation, and compute metric-score statistics using the metric phase's computation ID. Snapshot inputs SHALL be selected through the runnable-case selector, not generated by mock jobs.
 
-#### Scenario: SUCCESS response body
-- **WHEN** a result is assigned `ExecutionStatus.SUCCESS`
-- **THEN** `responseStatusCode` SHALL be `200` and `responseBody` SHALL be a chat-completions-style JSON envelope
+#### Scenario: Normal run
+- **WHEN** snapshot capture succeeds and the guarded RUNNING transition updates the run
+- **THEN** deployment, metric evaluation, and metric-score computation SHALL execute in that order
 
-#### Scenario: ERROR response body
-- **WHEN** a result is assigned `ExecutionStatus.ERROR`
-- **THEN** `responseStatusCode` SHALL be `500` and `responseBody` SHALL contain a JSON error envelope with code `MOCK_INTERNAL_ERROR`
+#### Scenario: Run no longer pending
+- **WHEN** the guarded RUNNING transition updates no row
+- **THEN** the job SHALL return without executing evaluation phases
 
-### Requirement: Mock job respects per-result failure probability
-The mock job SHALL assign `ExecutionStatus.ERROR` to individual results with probability `test-suite-run.mock-job.result-failure-probability`, independently of the run-level `failure-probability`.
+#### Scenario: Regenerable metric-score computation failure
+- **WHEN** Phase 3 metric-score computation throws a runtime exception
+- **THEN** the job SHALL log the failure and still attempt run completion because score statistics are regenerable
+
+### Requirement: Terminal outcomes use guarded writes and release resources
 Status: **Implemented**
+The job SHALL use guarded status writes, send terminal SSE updates only when its status write changes a row, and always remove/close its run handle. Analytics write failure SHALL take FAILED precedence; cancellation or rejected phase dispatch SHALL map to CANCELLED. Other failures SHALL map to CANCELLED only if cancellation has been observed, otherwise FAILED.
 
-#### Scenario: Configurable per-result error rate
-- **WHEN** `result-failure-probability` is configured (default 0.10)
-- **THEN** approximately that fraction of results SHALL be marked `ExecutionStatus.ERROR`, the rest `ExecutionStatus.SUCCESS`
+#### Scenario: Job failure or cancellation
+- **WHEN** evaluation exits through success, cancellation, or failure
+- **THEN** the job SHALL apply the appropriate guarded terminal status and release its handle in `finally`
 
-### Requirement: Mock job respects numberOfRuns from runConfig
-The mock job SHALL generate `numberOfRuns` results per test case (one per run index), where `numberOfRuns` is parsed from `TestSuiteRun.runConfig`.
-Status: **Implemented**
+#### Scenario: Status was already changed concurrently
+- **WHEN** the job's terminal status write changes no row
+- **THEN** it SHALL NOT emit a duplicate terminal status-update notification
 
-#### Scenario: Multiple run indices generated
-- **WHEN** `runConfig.numberOfRuns` is 3
-- **THEN** each enabled+valid test case SHALL have 3 `TestCaseRunResult` rows with `runIndex` 0, 1, and 2
+## Implementation notes
 
-#### Scenario: Default to single run when runConfig is absent or unparseable
-- **WHEN** `runConfig` is null or cannot be parsed
-- **THEN** the mock job SHALL generate results with `runIndex = 0` only and log a WARN
-
-## Open Questions / TODO
-- Define authentication model for jobs calling backend and metrics services (service JWT, mTLS, etc.).
-- Define traceability: correlation IDs and OpenTelemetry propagation across jobs.
-
+- [TestSuiteRunService](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestSuiteRunService.java) — post-commit direct/route dispatch and rejection compensation.
+- [TestSuiteEvaluationJob](../../../src/main/java/com/epam/aidial/evaluation/service/domain/job/TestSuiteEvaluationJob.java) — registration, snapshot, phase order, guarded terminal writes, cleanup.
+- [ActiveRunRegistry](../../../src/main/java/com/epam/aidial/evaluation/service/domain/job/ActiveRunRegistry.java) — per-run handles and cancellation lifecycle.
+- [EvalExecuteInternalController](../../../src/main/java/com/epam/aidial/evaluation/web/controller/EvalExecuteInternalController.java) — feature-gated DIAL App execution entry point.

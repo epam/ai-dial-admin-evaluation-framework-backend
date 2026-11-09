@@ -1,14 +1,15 @@
 # Entity Filtering
 
 ## Purpose
-This spec defines structured filtering and pagination behavior shared by list endpoints (TestSuites, TestCases, MetricDeclarations).
+This spec defines the repeatable REST filter contract and offset pagination shared by registered list endpoints. It is distinct from the structured Query DSL and its null-polarity rules.
 
 Status: **Implemented** (whitelist, AND semantics, HTTP 400 on invalid filter; `in` operator on STRING/UUID fields).
 
 ## Requirements
 
 ### Requirement: List endpoints covered by this spec
-This spec applies to list endpoints that support pagination, structured filtering, and sort/filter parameter limits. The endpoints in scope SHALL be: TestSuites, TestCases, MetricDeclarations, and TestSuiteMetricDefinitions.
+Status: **Implemented**
+This spec applies to list endpoints using `FilterParser`, `WhereBuilder`, and `PaginationParamResolver`. The endpoints in scope SHALL include datasets, dataset-scoped test cases, test suites, metric declarations, test-suite metric definitions, and test-suite runs. Analytics cursor pagination remains owned by the analytics specs; its repeatable filters use the same parser/builder.
 
 #### Scenario: MetricDeclarations list endpoint
 - **WHEN** client calls a MetricDeclarations list endpoint (e.g. `GET /api/v1/metric-declarations`) with pagination, filter, or sort parameters
@@ -19,18 +20,20 @@ This spec applies to list endpoints that support pagination, structured filterin
 - **THEN** system SHALL apply the same pagination, filtering, and parameter-limit rules as for other list endpoints
 
 ### Requirement: Pagination parameters are supported on list endpoints
-All list endpoints SHALL support pagination parameters.
+Status: **Implemented**
+The offset-paginated endpoints in scope SHALL support pagination parameters with configuration-backed size defaults and bounds.
 
 #### Scenario: Default pagination
 - **WHEN** client calls a list endpoint without pagination parameters
-- **THEN** system SHALL return `page=0` with `size=20`
+- **THEN** system SHALL use `page=0` and `pagination.default-size` (100 by default)
 
 #### Scenario: Bounds validation
-- **WHEN** client calls a list endpoint with `page < 0` or `size` outside `[1..100]`
+- **WHEN** client calls a list endpoint with `page < 0` or `size` outside `[1..pagination.max-size]` (1000 by default)
 - **THEN** system SHALL respond with HTTP 400
 
 ### Requirement: Structured filtering via repeatable `filter` parameter
-List endpoints SHALL support structured filtering via a repeatable query parameter: `filter=<field>:<op>:<value>`.
+Status: **Implemented**
+List endpoints in scope SHALL support structured filtering via a repeatable query parameter: `filter=<field>:<op>:<value>`.
 
 Supported operators SHALL include: `eq`, `ne`, `co` (case-insensitive substring), `gt`, `ge`, `lt`, `le`, `in` (set membership). The names `gte` and `lte` SHALL be accepted as **deprecated aliases** of `ge` and `le` for backwards compatibility with clients that have not yet migrated to the new operator vocabulary; aliases SHALL produce identical behavior to their canonical counterparts. Aliases are parser-only and SHALL NOT appear in the OpenAPI / Swagger-generated operator catalog or in per-entity whitelist definitions.
 
@@ -38,7 +41,9 @@ Per-entity whitelists define allowed fields and operators. The whitelist value f
 
 The `eq` and `ne` operators on `STRING` and `JSONB_STRING` fields SHALL perform case-insensitive exact matching (`lower(column) = lower(:value)` / `lower(column) <> lower(:value)`). For all other field types (`UUID`, `LONG`, `BOOLEAN`, `JSONB_NUMERIC`), `eq`/`ne` perform exact (non-lowercased) matching.
 
-The `in` operator is supported on `STRING` and `UUID` field types only. The value for `in` is a comma-separated list of values (e.g., `filter=testCaseName:in:name1,name2,name3`). Each element is URL-decoded individually. Literal commas within a value SHALL be percent-encoded as `%2C` by the caller.
+The `in` operator is supported on `STRING` and `UUID` field types only. Its value is split on commas before each element is URL-decoded by `FilterParser`. STRING membership is case-sensitive, unlike STRING `eq`. At the HTTP boundary the servlet already decodes query parameters: a literal comma inside one IN element therefore requires `%252C` on the wire so `%2C` reaches the parser. Non-IN values are also URL-decoded by the parser; literal plus signs must likewise survive both decoding stages.
+
+REST `ne` SHALL use ordinary SQL inequality: SQL NULL values (including missing JSONB paths) do not match. This is not the total/null-inclusive negation contract of the Query DSL.
 
 **Filter key naming convention**: Filter field names SHALL match the JSON property names in the corresponding response DTO. For primitive `boolean` fields serialized by Jackson without the `is` prefix (e.g., `valid`, `enabled`), the filter key SHALL also omit the `is` prefix.
 
@@ -60,9 +65,9 @@ The `in` operator is supported on `STRING` and `UUID` field types only. The valu
 - **WHEN** a response DTO has a boolean field serialized as `valid` in JSON
 - **THEN** the filter key SHALL be `valid` (not `isValid`)
 
-#### Scenario: Boolean filter for enabled field
+#### Scenario: Removed enabled field is rejected
 - **WHEN** client sends `filter=enabled:eq:true`
-- **THEN** system SHALL filter test cases where enabled is true
+- **THEN** the dataset test-case list SHALL return HTTP 400 because `enabled` is not in `FilterWhitelists.TEST_CASES`
 
 #### Scenario: `co` operator rejected for non-string fields
 - **WHEN** client sends a `co` filter on a numeric or UUID field
@@ -79,10 +84,11 @@ The `in` operator is supported on `STRING` and `UUID` field types only. The valu
 #### Scenario: `ne` on STRING field is case-insensitive
 - **WHEN** client sends `filter=name:ne:Test`
 - **THEN** system SHALL exclude entities whose `name` equals `"test"` in any casing
+- **AND** rows whose compared field is SQL NULL SHALL NOT match `ne`, including missing JSONB text paths
 
 #### Scenario: `eq` on non-STRING field remains exact-match
-- **WHEN** client sends `filter=id:eq:550e8400-E29B-41D4-A716-446655440000`
-- **THEN** system SHALL perform exact byte-level comparison (UUID matching is normalized separately)
+- **WHEN** client sends `filter=id:eq:550e8400-E29B-41D4-A716-446655440000` to the test-suite-runs list
+- **THEN** system SHALL normalize the UUID to its canonical string and perform exact matching
 
 #### Scenario: `contains` operator is rejected
 - **WHEN** client sends a filter with operator `contains` (former operator name, renamed to `co`)
@@ -123,9 +129,9 @@ The `in` operator is supported on `STRING` and `UUID` field types only. The valu
 - **WHEN** client sends a filter like `filter=testCaseId:in:<uuid1>,<uuid2>`
 - **THEN** system SHALL match only entities whose ID equals one of the provided UUIDs
 
-#### Scenario: IN operator with a single value
+#### Scenario: IN operator remains case-sensitive
 - **WHEN** client sends `filter=testCaseName:in:name1`
-- **THEN** system SHALL behave identically to `filter=testCaseName:eq:name1`
+- **THEN** system SHALL match `name1` but not `NAME1`, whereas `eq:name1` matches either casing
 
 #### Scenario: IN operator with empty or blank value rejected
 - **WHEN** client sends `filter=testCaseName:in:` or `filter=testCaseName:in:,`
@@ -140,13 +146,14 @@ The `in` operator is supported on `STRING` and `UUID` field types only. The valu
 - **THEN** system SHALL respond with HTTP 400
 
 #### Scenario: Comma in value is percent-encoded
-- **WHEN** a value contains a literal comma and the client encodes it as `%2C`
-- **THEN** system SHALL treat `%2C` as a literal comma within that element, not as a separator
+- **WHEN** an HTTP IN filter contains `hello%252Cworld,other` on the wire
+- **THEN** the servlet SHALL pass `hello%2Cworld,other` to the parser, which SHALL produce the two elements `hello,world` and `other`
 
 ### Requirement: Filter parameter binding preserves commas verbatim
-List endpoints SHALL bind the `filter` query parameter from the raw HTTP parameter values without comma tokenization. A comma occurring inside a single `?filter=…` parameter value SHALL be preserved as a literal character of that filter expression. Multiple filter conditions SHALL be submitted only via repeated `?filter=…` parameters (e.g. `?filter=a:eq:x&filter=b:eq:y`). A single `?filter=a,b` parameter SHALL be treated as one filter expression whose value contains a literal comma, NOT as two filters.
+Status: **Implemented**
+List endpoints SHALL bind each servlet-decoded `filter` parameter without Spring comma tokenization. Commas SHALL be preserved at binding time, not split into additional filters. Multiple conditions SHALL use repeated parameters (e.g. `?filter=a:eq:x&filter=b:eq:y`). The parser SHALL subsequently interpret commas as separators only for IN values; a malformed single expression such as `?filter=a,b` SHALL still fail syntax validation.
 
-**Implementation notes**: Enforced at the HTTP binding layer via a custom argument resolver (`FilterParamArgumentResolver` in `com.epam.aidial.evaluation.web.pagination`) that reads `HttpServletRequest.getParameterValues("filter")` directly and bypasses Spring's `StringToCollectionConverter`. Controllers declare the parameter with the `@FilterParam` annotation instead of `@RequestParam`. Percent-encoding of commas (`%2C`) still works and is no longer required when only one `filter=` parameter is submitted.
+**Implementation notes**: `FilterParamArgumentResolver` reads `HttpServletRequest.getParameterValues("filter")`, bypassing Spring's `StringToCollectionConverter`; controllers use `@FilterParam`. Non-IN value commas may appear unencoded or as `%2C` on the wire. IN separator commas may also appear either way, but a literal comma within one IN element requires `%252C` so `%2C` survives servlet decoding until the parser splits the value and decodes each element.
 
 #### Scenario: IN filter with comma-separated values in a single parameter
 - **WHEN** client sends `?filter=testCaseName:in:Delete1,Delete2`
@@ -161,6 +168,7 @@ List endpoints SHALL bind the `filter` query parameter from the raw HTTP paramet
 - **THEN** system SHALL treat `hello,world` as the literal value of a single `name:eq:…` filter and MUST NOT split it into two filter expressions
 
 ### Requirement: Upper bound on filter and sort parameter count (separate limits)
+Status: **Implemented**
 List endpoints SHALL enforce **separate** upper bounds on the number of repeatable `filter` parameters (default 32) and `sort` parameters (default 32) per request. When the client exceeds either limit, the system SHALL respond with HTTP 400.
 
 **Implementation notes**: The `filter` limit is enforced at the HTTP binding layer via the `@FilterParam` annotation's `max` attribute, validated by `FilterParamArgumentResolver` before the filter parser runs. Preserves the existing `ValidationConstants.MAX_LIST_FILTER_PARAMS` default.
@@ -204,11 +212,8 @@ Status: **Implemented**
 - **AND THEN** the path-key parameters SHALL flow through the same prepared-statement binding pipeline as the comparison value
 - **AND THEN** SQL injection via path keys SHALL be impossible by construction, even though path keys are already constrained by configured whitelists
 
-## Open Questions / Follow-up Task
+## Implementation notes
 
-### Requirement: Filtering DSL refinement (future)
-The filtering DSL SHALL be reviewed and refined in a separate task after initial UI/usage feedback.
-
-#### Scenario: Future extension areas
-- **WHEN** filtering requirements expand
-- **THEN** system MAY introduce OR groups, nested jsonb-path filters, `isnull` operator, and/or `q` search (case-sensitive or case-insensitive), or adopt a standard query language (e.g., RSQL/OData) while preserving backward compatibility where possible
+- [FilterParser](../../../src/main/java/com/epam/aidial/evaluation/service/domain/filter/FilterParser.java) — syntax, aliases, and post-binding value decoding.
+- [WhereBuilder](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/WhereBuilder.java) and [FilterWhitelists](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/FilterWhitelists.java) — typed conditions, operator/type validation, and exact endpoint allowlists.
+- [FilterParamArgumentResolver](../../../src/main/java/com/epam/aidial/evaluation/web/pagination/FilterParamArgumentResolver.java) and [PaginationParamResolver](../../../src/main/java/com/epam/aidial/evaluation/web/pagination/PaginationParamResolver.java) — comma-preserving binding/count cap and configurable pagination bounds.

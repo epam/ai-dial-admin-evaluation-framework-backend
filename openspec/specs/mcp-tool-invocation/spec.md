@@ -9,8 +9,8 @@ Status: **Implemented**
 ## Key Terms
 
 - **McpToolInvoker**: Component in `evaluation-runner-core` (`runner.client.mcp`) wrapping the MCP Java SDK to execute `tools/call` against DIAL Core's MCP proxy.
-- **McpRequestResolver**: Service-layer component (stateless transformer) that resolves a pre-loaded argument template by merging input bindings with test case data, producing a `Map<String, Object>` of tool arguments. Does NOT perform DB I/O — receives all inputs as method parameters.
-- **McpResponseSerializer**: Service-layer component that serializes MCP SDK's `CallToolResult` to a JSON string preserving the MCP envelope structure for JSONata extraction.
+- **McpRequestResolver**: Runner-core component (stateless transformer) that resolves a pre-loaded argument template by merging input bindings with test case data, producing a `Map<String, Object>` of tool arguments. Does NOT perform DB I/O — receives all inputs as method parameters.
+- **McpResponseSerializer**: Runner-core component that serializes MCP SDK's `CallToolResult` to a JSON string preserving the MCP envelope structure for JSONata extraction.
 - **ArgumentTemplate**: JSONB structure defining tool call arguments with `${{variable}}` placeholders and constant values, stored on MCP test suites.
 - **CallToolResult**: MCP SDK type representing the tool's response — contains `content` (list of typed content blocks), `structuredContent` (optional Map), and `isError` (boolean).
 
@@ -64,7 +64,7 @@ Status: **Implemented**
 
 #### Scenario: DIAL Core returns JSON-RPC error
 - **WHEN** DIAL Core returns a JSON-RPC error response (e.g., tool not found, invalid arguments)
-- **THEN** the invoker SHALL throw `McpInvocationException` with the error code and message from the JSON-RPC error
+- **THEN** the invoker SHALL map the SDK exception to HTTP 502 with code `MCP_ERROR` and a message prefixed `MCP tool invocation failed:` (unless a nested timeout/connection exception selects the corresponding mapping). It SHALL NOT expose a separate JSON-RPC numeric code
 
 ### Requirement: McpToolInvoker configuration
 
@@ -101,7 +101,7 @@ Status: **Implemented**
 
 #### Scenario: tools/list filtered by DIAL Core
 - **WHEN** the deployment has `allowed_tools` configured in DIAL Core
-- **THEN** DIAL Core's MCP proxy SHALL filter the `tools/list` response to only include allowed tools (EF receives the filtered list)
+- **THEN** EF SHALL return the tools supplied by DIAL Core; EF performs no local `allowed_tools` filtering
 
 #### Scenario: tools/list failure
 - **WHEN** `tools/list` fails (connection error, timeout, JSON-RPC error)
@@ -109,7 +109,7 @@ Status: **Implemented**
 
 ### Requirement: McpRequestResolver resolves argument templates
 
-The system SHALL provide a `McpRequestResolver` component in `service.domain` that resolves an MCP argument template by substituting `${{variable}}` placeholders with values from input bindings and test case data. The resolver SHALL produce a `Map<String, Object>` of resolved tool arguments. The resolver is a stateless transformer — it receives the argument template, input bindings, and test case data as method parameters and does NOT perform any DB I/O. The caller (worker or try-it-out service) is responsible for loading data before calling the resolver.
+The system SHALL provide a `McpRequestResolver` component in `runner.service` that resolves an MCP argument template by substituting `${{variable}}` placeholders with values from input bindings and test case data. The resolver SHALL produce a `Map<String, Object>` of resolved tool arguments. The resolver is a stateless transformer — it receives the argument template, input bindings, and test case data as method parameters and does NOT perform any DB I/O. The caller (worker or try-it-out service) is responsible for loading data before calling the resolver.
 
 Method signatures:
 - `resolve(ArgumentTemplateDto argumentTemplate, List<InputBindingDto> bindings, Map<String, Object> testCaseData, List<FieldDefinitionDto> testCaseSchema)` — used by test-case try-it-out, variables try-it-out and evaluation worker; `testCaseSchema` is nullable (`null`/empty ⇒ only explicit type hints convert)
@@ -117,7 +117,7 @@ Method signatures:
 Resolution priority per variable:
 1. Binding `constantValue` (if a binding exists for the variable and has `constantValue`)
 2. Binding `dataField` lookup (if a binding exists and has `dataField`, look up `data[dataField]`)
-3. Direct variable name lookup in data (fallback when no binding matches the variable)
+3. Direct variable name lookup in data (fallback if no constant or nonblank dataField selects a value; a missing/null bound field does not fall back to the variable name)
 4. Template default value (from `${{var:default}}` syntax)
 5. `null` + `REQUIRED` validation warning (when no value can be resolved and no default exists)
 
@@ -218,7 +218,7 @@ Status: **Implemented**
 
 ### Requirement: MCP argument resolution converts placeholders bound to FILE columns without a type hint
 
-In addition to the `|file` type-hint behaviour of `McpRequestResolver`, a full-value placeholder with **no** type hint whose binding `dataField` names a schema field of type `FILE` SHALL be resolved via `DialFileRefResolver.resolveToDialRef()` when the resolved value is a `String`, using the shared `DialFileRefResolver.isFileReference` rule (see `dial-file-ref` spec). The resolver's `resolve` method SHALL receive the test case schema (`List<FieldDefinitionDto>`, nullable) as an additional parameter; `null`/empty schema means only explicit hints convert. `resolveWithVariables` (an alias of `resolve`) SHALL be removed; variables-mode try-out SHALL call `resolve` with the dataset schema, and a supplied variable that the suite binds via `dataField` to a `FILE` column SHALL be passed as a `dataField` binding with the value in the data map, so it converts like in a run. Embedded (mixed-text) placeholders SHALL remain string-concatenated without conversion.
+In addition to the `|file` type-hint behaviour of `McpRequestResolver`, a full-value placeholder with **no** type hint whose binding `dataField` names a schema field of type `FILE` SHALL be resolved via `DialFileRefResolver.resolveToDialRef()` when the resolved value is a `String`, using the shared `DialFileRefResolver.isFileReference` rule (see `dial-file-ref` spec). The resolver's `resolve` method SHALL receive the test case schema (`List<FieldDefinitionDto>`, nullable) as an additional parameter; `null`/empty schema means only explicit hints convert. Variables-mode try-out SHALL call `resolve` with the dataset schema and preserve a supplied variable as a constant-value binding carrying the suite's FILE-column `dataField` metadata, so each constant resolves independently and the shared resource-ref detector can identify its column type. Embedded (mixed-text) placeholders SHALL remain string-concatenated without conversion.
 
 Status: Implemented
 
@@ -249,11 +249,11 @@ Status: Implemented
 - **THEN** the resolver SHALL still convert the value via `DialFileRefResolver.resolveToDialRef()`
 
 #### Implementation notes
-- `McpRequestResolver.resolveFileRef` delegates to `ResourceRefPlaceholderResolver` (`DialFileRefResolver.isFileReference`); callers: `EvaluationWorker` (schema from `EvaluationContext.snapshotTestCaseSchema`) and `TryItOutService` (dataset schema).
+- `McpRequestResolver.resolveStringValue` delegates to `ResourceRefPlaceholderResolver` (`DialFileRefResolver.isFileReference`); callers: `EvaluationWorker` (schema from `EvaluationContext.snapshotTestCaseSchema`) and `TryItOutService` (dataset schema).
 
 ### Requirement: McpResponseSerializer converts CallToolResult to JSON
 
-The system SHALL provide a `McpResponseSerializer` component in `service.domain` that serializes an MCP `CallToolResult` into a JSON string with a well-defined envelope structure for JSONata extraction.
+The system SHALL provide a `McpResponseSerializer` component in `runner.service` that serializes an MCP `CallToolResult` into a JSON string with a well-defined envelope structure for JSONata extraction.
 
 Status: **Implemented**
 
@@ -267,7 +267,7 @@ Status: **Implemented**
 
 #### Scenario: Serialize result with mixed content types
 - **WHEN** `CallToolResult` has content blocks of different types (text, image, resource_link)
-- **THEN** the serialized JSON SHALL preserve each content block's type discriminator and type-specific fields
+- **THEN** the serialized JSON SHALL retain text/text, image or audio/data+mimeType, embedded resource/resource, and resource_link/uri+name; optional block metadata is not copied
 
 #### Scenario: Serialize isError result
 - **WHEN** `CallToolResult` has `isError = true`
@@ -279,7 +279,7 @@ Status: **Implemented**
 
 ### Requirement: MCP response size limiting
 
-The system SHALL enforce the existing `max-response-size-bytes` limit on the serialized MCP response JSON.
+The evaluation worker SHALL enforce `test-suite-run.execution.max-response-size-bytes` on the serialized MCP response JSON. MCP try-it-out does not apply this worker size gate.
 
 Status: **Implemented**
 
@@ -289,10 +289,10 @@ Status: **Implemented**
 
 #### Scenario: Response exceeds limit
 - **WHEN** the serialized MCP response exceeds `max-response-size-bytes` (e.g., large base64-encoded image in content block)
-- **THEN** the system SHALL truncate the serialized JSON string at the byte limit (same behavior as HTTP response truncation)
+- **THEN** the worker SHALL truncate the serialized envelope text at the byte limit (a split multibyte character is decoded as a replacement character) and serialize that fragment as a JSON string, preserving JSONB validity
 - **AND** set `executionStatus = ERROR` regardless of the MCP-level `isError` value (truncation overrides tool-level status because the response is incomplete)
-- **AND** add a truncation warning to `extractionWarnings`
-- **AND** store the truncated string in `responseBody` (note: this is NOT a valid MCP JSON envelope — JSONata expressions targeting `$.isError`, `$.content`, or `$.structuredContent` will produce null or extraction errors, which is expected and correct since the data is incomplete)
+- **AND** run ordinary response-column extraction on that JSON-string document; no dedicated truncation warning is appended
+- **AND** store the JSON-encoded fragment in `responseBody`, not an MCP object envelope; object-path extraction may therefore return null
 
 ### Requirement: MCP execution status mapping
 
@@ -322,7 +322,7 @@ Status: **Implemented**
 
 ### Requirement: McpTransport enum
 
-A `McpTransport` enum SHALL exist in `service.domain.dto` with values `STREAMABLE_HTTP("streamable-http")` and `SSE("sse")`. `McpDeploymentReferenceDto.transport` and `ToolsetInfoDto.transport` SHALL use this enum type. The `@Pattern` regex validator on `McpDeploymentReferenceDto.transport` SHALL NOT be used — enum deserialization validation replaces it. Jackson SHALL use `@JsonCreator` on `McpTransport.fromValue()` and fail fast (throw `IllegalArgumentException`) on unrecognized values. `DeploymentMapper` SHALL convert `DialTransport.HTTP` → `McpTransport.STREAMABLE_HTTP` and `DialTransport.SSE` → `McpTransport.SSE` when mapping to `ToolsetInfoDto`.
+A `McpTransport` enum SHALL exist in `runner.client.mcp` with values `STREAMABLE_HTTP("streamable-http")` and `SSE("sse")`. `McpDeploymentReferenceDto.transport` and `ToolsetInfoDto.transport` SHALL use this enum type. The `@Pattern` regex validator on `McpDeploymentReferenceDto.transport` SHALL NOT be used — enum deserialization validation replaces it. Jackson SHALL use `@JsonCreator` on `McpTransport.fromValue()` and fail fast (throw `IllegalArgumentException`) on unrecognized values. `DeploymentMapper` SHALL convert `DialTransport.HTTP` → `McpTransport.STREAMABLE_HTTP` and `DialTransport.SSE` → `McpTransport.SSE` when mapping to `ToolsetInfoDto`.
 Status: **Implemented**
 
 #### Scenario: Known transport value accepted in request (streamable-http)
@@ -351,24 +351,6 @@ Status: **Implemented**
 
 ---
 
-## Implementation Notes
-- `McpRequestResolver.PLACEHOLDER_PATTERN` captures the type hint: `(?:\|([^:}]+))?` (capturing group 2). Variable name is group 1, type hint is group 2, default value is group 3. Update all `matcher.group()` references when modifying the pattern.
-- `DialFileRefResolver` is injected into `McpRequestResolver` via constructor injection. Both are in `service.domain` — no layering issue.
-- File resolution check: `if (SchemaFieldType.FILE.name().equalsIgnoreCase(typeHint) && resolved instanceof String resolvedRef)` — same pattern as `ResolvedRequestService`.
-- Only full-value placeholders trigger file resolution. Embedded placeholders use string concatenation and skip file ref transformation.
-- MCP SDK dependency: `io.modelcontextprotocol.sdk:mcp` in `build.gradle`
-- Package: `com.epam.aidial.evaluation.runner.client.mcp` in the `evaluation-runner-core` module (originally `com.epam.aidial.evaluation.client.mcp` in the main app)
-- Classes: `McpToolInvoker`, `McpClientConfiguration`, `McpClientProperties`, `McpInvocationException`
-- New service classes: `McpRequestResolver`, `McpResponseSerializer` in `service.domain`
-- New enum: `McpTransport` in `service.domain.dto` — `STREAMABLE_HTTP("streamable-http")`, `SSE("sse")`, fail-fast via `@JsonCreator`
-- New enum: `DialTransport` in `client.dialcore.dto` — `HTTP("HTTP")`, `SSE("SSE")` (maps to `McpTransport` via `DeploymentMapper`)
-- Transport dispatch in `McpToolInvoker`: STREAMABLE_HTTP uses `HttpClientStreamableHttpTransport` (endpoint `/mcp`); SSE uses `HttpClientSseClientTransport` (endpoint `/sse`)
-- Endpoint path construction: `buildMcpEndpoint(deploymentId)` and `buildSseEndpoint(deploymentId)` decode `%2F` to path separators and percent-encode special characters via `UriComponentsBuilder.encode()`
-- No-op `JsonSchemaValidator` provided to MCP client builder to avoid `NoClassDefFoundError` from `networknt/json-schema-validator` 1.x/2.x version conflict (MCP SDK 1.1.0 compiles against 2.x, project uses 1.x). Safe because schema validation is only active when `enableCallToolSchemaCaching=true` (off by default).
-- Config properties: `dial.mcp.connect-timeout-ms`, `dial.mcp.read-timeout-ms` in `application.yml`
-- `docs/configuration.md` must be updated with new MCP properties
-- Caller credential: `callTool`/`listTools` take a `runner.util.CallerCredential` (never a bare token string); both transport builders route through the package-private `applyCredentialHeader`, which sets exactly one header from `CallerCredential#headerName()`/`headerValue()` and none at all for a `null` credential. Header selection per kind is asserted on that helper in `McpToolInvokerTest`, not per method. Callers passing the credential through: `service.domain.DeploymentService#listTools`, `service.domain.TryItOutService`, and runner-core `runner.job.EvaluationWorker` (from `EvaluationContext#credential`).
-
 ### Requirement: MCP argument resolution canonicalises skill placeholders
 `McpRequestResolver` SHALL resolve a full-value argument placeholder that is a skill placeholder (explicit `|skill` hint, case-insensitive, or no hint and a binding to a `SKILL` schema field — see `request-template`, "Runtime skill reference resolution for full-value placeholders") to its canonical skill reference `skills/{bucket}/{path}` when the resolved value is a `String`. The decision SHALL use the same shared component as the HTTP body paths. Embedded placeholders SHALL stay verbatim; a malformed value SHALL pass through unchanged; `|file` resolution SHALL be unchanged.
 
@@ -386,3 +368,12 @@ Implementation notes: `McpRequestResolver.resolveStringValue` → `ResourceRefPl
 #### Scenario: Embedded placeholder verbatim
 - **WHEN** an argument string is `"load ${{s|skill}}"` and `s` is `"skills/b/x/"`
 - **THEN** the argument SHALL be `"load skills/b/x/"`
+
+## Implementation Notes
+
+- Invoker/transport/error mapping: `evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/client/mcp/McpToolInvoker.java` and `McpClientConfiguration.java`.
+- Argument/response transformations: `evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/service/McpRequestResolver.java`, `McpResponseSerializer.java`, `ResourceRefPlaceholderResolver.java`.
+- Execution status/size/retry: `evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/job/EvaluationWorker.java`.
+- Transport enum: `evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/client/mcp/McpTransport.java`; backend mapping: `src/main/java/com/epam/aidial/evaluation/service/domain/mapper/DeploymentMapper.java`.
+- Backend callers: `src/main/java/com/epam/aidial/evaluation/service/domain/TryItOutService.java` and `DeploymentService.java`.
+- Tests: runner-core `McpToolInvokerTest`, `McpRequestResolverTest`, `McpResponseSerializerTest`, `EvaluationWorkerTest`.

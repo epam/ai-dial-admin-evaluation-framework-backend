@@ -14,16 +14,19 @@ Status: **Planned/Vision** (based on design docs; not fully implemented in curre
 ## Requirements
 
 ### Requirement: Maintain a catalog of MetricDeclarations
-The system SHALL maintain a catalog of MetricDeclarations available for use in TestSuites. Each MetricDeclaration SHALL be identified by (provider_id, name); provider_id SHALL be required and SHALL come from configuration when synced from a metric provider. The catalog SHALL contain only metrics synced from configured metric provider services; previously seeded (stub) records SHALL be removed by migration and SHALL NOT be returned by the API.
-Status: **Planned**
 
-#### Scenario: Declarations are discoverable
-- **WHEN** clients query metric catalog
-- **THEN** system SHALL expose available MetricDeclarations and their schemas
+Status: **Implemented**
 
-#### Scenario: Catalog contains only provider-synced metrics
-- **WHEN** clients query metric catalog after migration and sync
-- **THEN** system SHALL return only MetricDeclarations that were synced from configured metric providers (no legacy seeded stubs)
+The system SHALL maintain a catalog of MetricDeclarations available for use in TestSuites. Each MetricDeclaration SHALL be identified by (provider_id, name); provider_id SHALL be required and SHALL come from configuration when synced from a metric provider. The catalog SHALL contain only metrics synced from configured metric provider services; the API SHALL return the provider-synchronized catalog, not a fixed seeded stub.
+
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
+
+| Case | When | Expected |
+|---|---|---|
+| Declarations are discoverable | clients query metric catalog | SHALL expose available MetricDeclarations and their schemas |
+| Catalog contains provider-synchronized metrics | clients query the metric catalog | declarations SHALL come from configured metric-provider synchronization |
 
 ### Requirement: Support MetricDeclaration versioning
 The system SHALL version MetricDeclarations to support reproducibility and recalculation. MetricDeclarationVersion SHALL be persisted with id, metric_declaration_id, schema_version, config_schema, input_schema, output_schema, description, display_name, and created_at. A new version SHALL be created when config_schema, input_schema, output_schema, description, or display_name change. implementation_version and implementation_ref are out of scope. schema_version SHALL be a per-declaration sequence: the database SHALL enforce that at most one MetricDeclarationVersion row exists for a given (metric_declaration_id, schema_version) pair. A write that would violate that uniqueness SHALL be rejected and its transaction SHALL roll back whole, leaving no partial data. The system MAY store a version whose schemas duplicate the preceding one when concurrent writers assign distinct schema_versions; it SHALL NOT be required to serialize assignment to prevent that.
@@ -79,29 +82,25 @@ Status: **Implemented**
 - **WHEN** the metric computation pipeline produces results
 - **THEN** results SHALL be stored in `test_case_eval_summaries` (analytics DB), not in a separate normalized `metric_results` table
 
-### Requirement: List metric declarations (stub)
-The service SHALL provide a paginated endpoint to list metric declarations available for discovery. Each listed declaration SHALL include id, provider_id, name, display_name, description, and created_at. The endpoint MAY support an optional filter by provider_id. This endpoint SHALL NOT embed version schemas; clients needing the latest version's config_schema, input_schema, and output_schema SHALL use GET /api/v1/metric-declarations/versions/latest (see "List every metric declaration with its latest version"), which returns them as JSON objects. Previously seeded (stub) records SHALL have been removed by migration; the list SHALL contain only provider-synced metrics. The display_name field SHALL be nullable in the response (providers may omit it).
-Status: **Partial** (provider_id and versioning added; filter optional; version schemas served by the dedicated latest-versions endpoint)
+### Requirement: List metric declarations
 
-#### Scenario: Empty catalog
-- **WHEN** client calls `GET /api/v1/metric-declarations` and no metric declarations exist (e.g. no sync run yet or no providers configured)
-- **THEN** system SHALL respond with HTTP 200 and an empty page result
+Status: **Implemented**
 
-#### Scenario: Pagination and sorting
-- **WHEN** client calls `GET /api/v1/metric-declarations?page=<p>&size=<s>&sort=<field>[,<asc|desc>]` (repeatable)
-- **THEN** system SHALL apply pagination and safe sorting using a whitelist of allowed fields
+The service SHALL provide a paginated endpoint to list metric declarations available for discovery. Each listed declaration SHALL include id, provider_id, name, display_name, description, and created_at. The endpoint MAY support an optional filter by provider_id. This endpoint SHALL NOT embed version schemas; clients needing the latest version's config_schema, input_schema, and output_schema SHALL use GET /api/v1/metric-declarations/versions/latest (see "List every metric declaration with its latest version"), which returns them as JSON objects. The list SHALL contain only provider-synchronized metrics. The display_name field SHALL be nullable in the response (providers may omit it).
 
-#### Scenario: Optional filter by provider_id
-- **WHEN** client calls `GET /api/v1/metric-declarations?filter=providerId:eq:<id>` (using the existing generic filter mechanism)
-- **THEN** system SHALL return only MetricDeclarations for that provider_id when the filter is present
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: displayName included in response
-- **WHEN** client calls `GET /api/v1/metric-declarations` and a declaration has a display_name
-- **THEN** system SHALL include the displayName field in each response item
-
-#### Scenario: displayName null when provider did not supply it
-- **WHEN** client calls `GET /api/v1/metric-declarations` and a declaration has no display_name (provider omitted it or sync has not run yet)
-- **THEN** system SHALL return null (or omit) the displayName field for that item
+| Case | When | Expected |
+|---|---|---|
+| Empty catalog | `GET /api/v1/metric-declarations` and no metric declarations exist (e.g. no sync run yet or no providers configured) | SHALL respond with HTTP 200 and an empty page result |
+| Pagination and sorting | `GET /api/v1/metric-declarations?page=<p>&size=<s>&sort=<field>[,<asc\|desc>]` (repeatable) | SHALL apply pagination and safe sorting using a whitelist of allowed fields |
+| Optional filter by provider_id | `GET /api/v1/metric-declarations?filter=providerId:eq:<id>` (using the existing generic filter mechanism) | SHALL return only MetricDeclarations for that provider_id when the filter is present |
+| displayName included in response | `GET /api/v1/metric-declarations` and a declaration has a display_name | SHALL include the displayName field in each response item |
+| displayName null when provider did not supply it | `GET /api/v1/metric-declarations` and a declaration has no display_name (provider omitted it or sync has not run yet) | SHALL return null (or omit) the displayName field for that item |
+| List metric declarations | `GET /api/v1/metric-declarations` with optional pagination, filter, sort | SHALL return a paginated list of MetricDeclarations (or empty page) |
+| Filter and sort metric declarations | `GET /api/v1/metric-declarations?filter=...&sort=...` | SHALL apply filtering and sorting per entity-filtering spec |
 
 ### Requirement: MetricDeclaration has provider identity
 Each MetricDeclaration SHALL have a non-null provider_id. The system SHALL enforce UNIQUE(provider_id, name) so the same metric name from different providers is distinct. provider_id SHALL be set from configuration when declarations are synced from a metric provider.
@@ -162,6 +161,16 @@ Status: **Implemented**
 #### Scenario: Schemas returned as JSON objects
 - **WHEN** client calls GET /api/v1/metric-declarations/versions/latest
 - **THEN** each item's latestVersion.configSchema, latestVersion.inputSchema, and latestVersion.outputSchema SHALL be JSON objects (empty objects when the stored schema is `{}`), consistent with GET /api/v1/metric-declarations/{id}/latest
+
+### Requirement: Get metric declaration by ID
+
+Status: **Implemented**
+
+The service SHALL provide `GET /api/v1/metric-declarations/{id}` returning the declaration without substituting the separate latest-version endpoint. Unknown IDs SHALL return HTTP 404.
+
+#### Scenario: Get metric declaration by ID
+- **WHEN** client calls `GET /api/v1/metric-declarations/{id}` with a valid declaration ID
+- **THEN** system SHALL return the MetricDeclaration with id, name, description, createdAt
 
 ## Implementation Notes
 - Null response fields are omitted, not emitted as null: `JsonMapperConfiguration` builds the HTTP `JsonMapper` with `NON_NULL` inclusion for both values and content. The requirements above therefore only state that a field (e.g. display_name) is nullable; the wire payload simply lacks the key when the value is null, and OpenAPI examples must not show `"field": null`.

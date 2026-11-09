@@ -25,6 +25,8 @@ The system SHALL provide a `McpToolInvoker` component in the `runner.client.mcp`
 
 The deployment ID may contain slashes (e.g., `toolsets/public/my-tool`) and special characters (spaces, parentheses). The invoker SHALL decode any `%2F`-encoded slashes in the deployment ID to path separators and percent-encode other special characters (spaces → `%20`) in each path segment using `UriComponentsBuilder.encode()`.
 
+Implementation note: both client builders are given a no-op `JsonSchemaValidator`, so the SDK never loads `DefaultJsonSchemaValidator` (it needs networknt json-schema-validator 2.x; the classpath has 1.x). Safe because SDK schema validation is used only when `enableCallToolSchemaCaching=true` (off by default).
+
 Status: **Implemented**
 
 #### Scenario: Successful tool call

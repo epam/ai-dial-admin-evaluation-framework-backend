@@ -41,7 +41,7 @@ Every ZIP export SHALL include a `manifest.json` holding:
 - the dataset's full `testCaseSchema`: every field with its `name`, `type`, `perTurn`, `required`, `displayName` and `description`. Field `id`s SHALL NOT be written: an id identifies a field within one dataset schema only and has no meaning in another dataset;
 - a `files` list pairing each archive file path with the file reference it was exported from.
 
-The manifest SHALL be written even when no file is copied into the archive. When export produces a ZIP rather than a CSV is defined by the `test-cases` capability and is unchanged.
+The manifest SHALL be written even when no file is copied into the archive. When export produces a ZIP rather than a CSV is defined by [test-case-csv-transfer](../test-case-csv-transfer/spec.md#requirement-csv-export-and-flat-multi-turn-round-trip) ("CSV export and flat multi-turn round trip") and is unchanged.
 
 On import the manifest SHALL be optional. An archive without a manifest SHALL import (see "ZIP import without a manifest"). A field `id` present in an imported manifest SHALL be ignored; the target dataset's field ids are resolved by name (see [CSV schema persistence](../test-case-csv-transfer/spec.md#requirement-import-persists-the-schema-through-the-dataset-update-rules)).
 
@@ -331,7 +331,7 @@ Status: **Implemented**
 ZIP import preview SHALL apply the same read-only archive preparation, manifest handling, final schema derivation and cell rewriting as ZIP import, but SHALL NOT upload, overwrite or delete any file. For the same archive, parameters and unchanged target state:
 - FILE cells in sample rows SHALL show the dataset file reference import would store;
 - missing-file warnings SHALL be reported with the same row and column;
-- `autoDetectedSchema` SHALL report the final derived schema, while sample values, validity and validation warnings SHALL be provisional, computed during the CSV preview streaming pass. Samples SHALL NOT receive the post-persistence type fixup or dataset revalidation that import may execute; final persisted values and verdicts need not match preview.
+- `autoDetectedSchema` SHALL be the CSV preview's value for the rewritten CSV (see [CSV import modes and schema derivation](../test-case-csv-transfer/spec.md#requirement-csv-import-modes-and-schema-derivation)): the full derived schema for `OVERRIDE` or an empty stored schema, only the new-field delta (or absent when there is none) for `MERGE` into a non-empty schema, and absent for `APPEND` into a non-empty schema; sample values, validity and validation warnings SHALL be provisional, computed during the CSV preview streaming pass. Samples SHALL NOT receive the post-persistence type fixup or dataset revalidation that import may execute; final persisted values and verdicts need not match preview.
 
 Archive errors checked by the shared read-only preparation SHALL be rejected by preview with the same status. Preview takes no `If-Match` and performs no version check; it does not predict storage-write failures or guarantee successful import under `conflictStrategy=FAIL` (CSV preview reports name collisions as warnings).
 

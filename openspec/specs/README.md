@@ -48,6 +48,14 @@ Specs defining the primary business entities and their APIs.
   TSMD soft validation — `MetricDefinitionValidationService` with 6 checks (INVALID_OUTPUT_SCHEMA for missing/malformed output schemas, UNRESOLVED_REFERENCE for TestCase/Response column refs, REQUIRED for missing/null-constant required properties, ADDITIONAL for unknown properties), synchronous auto-revalidation on suite schema update, manual revalidation endpoint side effect, `enabled` flag management.
 - **[aggregated-metric-definition](aggregated-metric-definition/spec.md)** — Implemented
   Read-only aggregated endpoints returning one TSMD or an unpaginated suite-wide list enriched with full metric declaration and version details (schemas) in a single response. Related: test-suite-metric-definitions, metrics-system.
+- **[response-columns](response-columns/spec.md)** — Implemented
+  User-defined response column definitions scoped to TestSuite. JSONata expressions to extract named values from response bodies, stored as JSONB, evaluated at run time with an additive `$_request`/`$_response` frame; column names must not collide with a JSONata built-in function name or the reserved `_request`/`_response` names (plain `request`/`response` are allowed column names). `FILE` type supported as a display hint for DIAL file reference columns. Failed extractions feed forward to the next multi-turn turn's frame as an explicit JSONata null, not undefined. Related: request-template, multi-turn-test-case.
+- **[test-suite-runs](test-suite-runs/spec.md)** — Implemented
+  Foundational infrastructure for async test suite execution: run lifecycle (PENDING→RUNNING→(CANCELLING→)COMPLETED/FAILED/CANCELLED), CRUD with filtering/sorting/pagination, SSE status streaming, startup reconciliation, configurable concurrency limits. Uses in-process evaluation engine on thread-per-task executors (virtual by default, platform opt-out via `spring.threads.virtual.enabled`); run concurrency governed solely by `test-suite-run.limits.*`; streaming SSE support, retry/rate-limiting, and configurable execution settings. `numberOfTestCases` finalized at snapshot phase (not immutable at creation). `suiteSnapshot` field in API response (detail only; omitted from list).
+- **[eval-results-import](eval-results-import/spec.md)** — Implemented
+  `POST /api/v1/test-suites/{testSuiteId}/runs/import` — imports a batch of already-produced eval results for an existing, dataset-bound suite in one request (creates the run, persists results with per-row `(request, turn)` identity and caller-supplied extracted columns verbatim) and asynchronously runs Phase 2 (metric evaluation) + Phase 3 (score computation) against them, skipping deployment invocation entirely. Related: test-suite-runs, response-columns, analytics-results.
+- **[runner-and-jobs](runner-and-jobs/spec.md)** — Implemented
+  Current in-process job orchestration: post-commit direct/DIAL App dispatch, run-owned resources, ordered evaluation phases, guarded terminal writes, and cleanup.
 
 ### Polymorphic Request Body
 
@@ -91,6 +99,8 @@ Specs for external service integrations.
   `GET /api/v1/costs/deployment/**` — total test-case execution cost and total metric-evaluation cost for a deployment over an arbitrary `[from, to]` time range, computed from dial-adas usage-log aggregate queries correlated by `deployment`, `request_time`, and OTel baggage `eval.phase`. `CostController`, `CostService`, `AdasCostQueryBuilder.buildDeploymentAggregateQuery`, `DeploymentCostsResponseDto`. Related: test-suite-run-costs, structured-query-model.
 - **[batch-run-costs](batch-run-costs/spec.md)** — Implemented
   `POST /api/v1/costs/test-suite-runs` — overall cost plus execution (`testCaseCost`) and metric-evaluation (`metricEvalCost`) totals for up to a page's worth of test suite runs in exactly one dial-adas call, via an `or` of per-run baggage predicates grouped by a `case`-derived `run_id` alias; null costs per run id with no matching usage data. `CostController.getTotalRunCosts`, `CostService.getTotalRunCosts`, `AdasCostQueryBuilder.buildPageTotalCostQuery`. Related: test-suite-run-costs, deployment-costs, structured-query-model.
+- **[metric-provider-sync](metric-provider-sync/spec.md)** — Implemented
+  Scheduled sync of metric declarations and versions from external metric provider services via GET /metrics API.
 
 ### Try It Out
 
@@ -212,15 +222,5 @@ Specs documented but not yet fully implemented.
 
 - **[metrics-system](metrics-system/spec.md)** — Partial
   Metric declarations/versioning and metric results storage. Implemented: paginated/sorted/filtered declaration list (provider-synced only; the seeded stubs were dropped by migration), `GET /{id}/latest` for one declaration's latest version, and `GET /versions/latest` returning every declaration with its latest version nested, plus per-declaration uniqueness of `schema_version`. Planned: MetricResult reproducibility and recalculation.
-- **[metric-provider-sync](metric-provider-sync/spec.md)** — Implemented
-  Scheduled sync of metric declarations and versions from external metric provider services via GET /metrics API.
-- **[response-columns](response-columns/spec.md)** — Implemented
-  User-defined response column definitions scoped to TestSuite. JSONata expressions to extract named values from response bodies, stored as JSONB, evaluated at run time with an additive `$_request`/`$_response` frame; column names must not collide with a JSONata built-in function name or the reserved `_request`/`_response` names (plain `request`/`response` are allowed column names). `FILE` type supported as a display hint for DIAL file reference columns. Failed extractions feed forward to the next multi-turn turn's frame as an explicit JSONata null, not undefined. Related: request-template, multi-turn-test-case.
-- **[test-suite-runs](test-suite-runs/spec.md)** — Implemented
-  Foundational infrastructure for async test suite execution: run lifecycle (PENDING→RUNNING→(CANCELLING→)COMPLETED/FAILED/CANCELLED), CRUD with filtering/sorting/pagination, SSE status streaming, startup reconciliation, configurable concurrency limits. Uses in-process evaluation engine on thread-per-task executors (virtual by default, platform opt-out via `spring.threads.virtual.enabled`); run concurrency governed solely by `test-suite-run.limits.*`; streaming SSE support, retry/rate-limiting, and configurable execution settings. `numberOfTestCases` finalized at snapshot phase (not immutable at creation). `suiteSnapshot` field in API response (detail only; omitted from list).
-- **[eval-results-import](eval-results-import/spec.md)** — Implemented
-  `POST /api/v1/test-suites/{testSuiteId}/runs/import` — imports a batch of already-produced eval results for an existing, dataset-bound suite in one request (creates the run, persists results with per-row `(request, turn)` identity and caller-supplied extracted columns verbatim) and asynchronously runs Phase 2 (metric evaluation) + Phase 3 (score computation) against them, skipping deployment invocation entirely. Related: test-suite-runs, response-columns, analytics-results.
 - **[evaluation-runs](evaluation-runs/spec.md)** — Planned
   Running suites, storing run history and per-case results.
-- **[runner-and-jobs](runner-and-jobs/spec.md)** — Implemented
-  Current in-process job orchestration: post-commit direct/DIAL App dispatch, run-owned resources, ordered evaluation phases, guarded terminal writes, and cleanup.

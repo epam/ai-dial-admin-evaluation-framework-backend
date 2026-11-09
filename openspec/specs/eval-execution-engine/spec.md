@@ -32,15 +32,15 @@ Status: **Implemented**
 - **AND** deployment invocations SHALL use that credential's `headerName()`/`headerValue()` exactly as they already do for a `BEARER`-kind credential — no branching logic is added to `DialCoreDeploymentInvoker`, `EvaluationWorker`, `DeploymentTurnInvoker`, or `McpToolInvoker`
 
 ### Requirement: In-process evaluation execution
-The `InProcessEvaluationExecutor` SHALL read test inputs from the `test_case_run_inputs` table (populated at snapshot phase) in pages, dispatch execution tasks (one per test case per run index) bounded by the configured concurrency level, collect results, and flush them to analytics DB in batches. When no input rows exist, it SHALL fall back to paginated valid cases from the snapshot-referenced dataset; this code path remains supported. When `dial-app-proxy.enabled=true`, the executor is started from `EvalExecuteInternalController` (triggered by the DIAL Core Application Route, with an `API_KEY`-kind credential) via the existing `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` method; when `dial-app-proxy.enabled=false`, the executor is started by direct dispatch from `TestSuiteRunService.dispatchEvaluation` with the initiating caller's credential (bearer or API key). Both paths call the same `dispatch` method — only the caller and the credential's kind differ.
+The `InProcessEvaluationExecutor` SHALL read test inputs from the `test_case_run_inputs` table (populated at snapshot phase) in pages, dispatch execution tasks (one per test case per run index) bounded by the configured concurrency level, collect results, and flush them to analytics DB in batches. When no input rows exist, the executor itself falls back to paginated valid cases from the snapshot-referenced dataset (ignoring `testCaseFilter`); this is a legacy path that `TestSuiteEvaluationJob` does not reach, because the snapshot phase always stores a snapshot and a snapshot without input rows fails with `SNAPSHOT_STATE_INCONSISTENT` before Phase 1. When `dial-app-proxy.enabled=true`, the executor is started from `EvalExecuteInternalController` (triggered by the DIAL Core Application Route, with an `API_KEY`-kind credential) via the existing `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` method; otherwise (`dial-app-proxy.enabled=false`, or the flag is on but there is no caller credential or no `DialRouteTriggerClient`), the executor is started by direct dispatch from `TestSuiteRunService.dispatchEvaluation` with the initiating caller's credential (bearer or API key, or none). Both paths call the same `dispatch` method — only the caller and the credential's kind differ.
 Status: **Implemented**
 
 #### Scenario: Snapshot path — pages from inputs table
 - **WHEN** `test_case_run_inputs` rows exist for the run (snapshot phase committed)
 - **THEN** the executor SHALL page through `testCaseRunInputRepository.findByRunId()` instead of `testCaseRepository.findValidByDatasetId()`. The `testCaseRepository` SHALL NOT be called.
 
-#### Scenario: No input rows — reads current dataset cases
-- **WHEN** `test_case_run_inputs` rows do NOT exist for the run
+#### Scenario: No input rows — reads current dataset cases (legacy, not reached by the job)
+- **WHEN** the executor is invoked for a run with no `test_case_run_inputs` rows
 - **THEN** the executor SHALL fall back to paging through live test cases from `testCaseRepository.findValidByDatasetId()`, wrapping each `TestCase` as a `TestCaseRunInput` struct for uniform worker interface.
 
 #### Scenario: DIAL App mode — executor started from internal endpoint
@@ -92,7 +92,7 @@ Status: **Implemented**
 
 
 ### Requirement: Multi-turn dispatch and per-turn result emission
-The worker that executes one HTTP run input SHALL execute the request chain and return one result per executed request/turn. Readable multi-turn input expands a request only when that request binds a perTurn schema field; otherwise it collapses to shared data. MCP execution returns a singleton. Request/turn identity fields are stamped for multi-request/multi-turn plans; a plain single-turn path leaves turn identity null. Query/export consumers may normalize absent identity to 0/1.
+The worker that executes one HTTP run input SHALL execute the request chain and return one result per executed request/turn. Readable multi-turn input expands a request only when that request binds a perTurn schema field; otherwise it collapses to shared data. MCP execution returns a singleton. Request/turn identity fields are stamped for multi-request/multi-turn plans; a plain single-turn/single-request path keeps the defaults `turnIndex=0`, `totalTurns=1`, `requestIndex=0`, `totalRequests=1` (the result fields are non-null and the analytics columns are `NOT NULL`).
 Status: **Implemented**
 
 #### Scenario: Multi-turn input yields per-turn results
@@ -101,7 +101,7 @@ Status: **Implemented**
 
 #### Scenario: Single-turn input is unchanged
 - **WHEN** a run input has no `multi_turn_data`
-- **THEN** the existing single-turn path runs and returns one result per chain request, with turn identity omitted for a single-turn request
+- **THEN** the existing single-turn path runs and returns one result per chain request, with turn identity at the defaults `turnIndex=0`, `totalTurns=1` for a single-turn request
 
 ### Requirement: One concurrency permit per test-case run
 The execution unit SHALL be the whole test-case run: turns of one multi-turn case run sequentially under a single concurrency permit, and progress is counted one unit per test-case run regardless of how many turn rows it writes.
@@ -141,7 +141,7 @@ Status: **Implemented**
 
 #### Scenario: Missing stored snapshot — synthesized current snapshot
 - **WHEN** a run with no stored snapshot is executed
-- **THEN** `TestSuiteEvaluationJob.resolveSnapshot()` SHALL load the live suite and its dataset and call `SuiteSnapshotBuilder.build(liveSuite, liveDataset)` to synthesize a transient snapshot; if the live suite no longer exists, the run SHALL fail with `SNAPSHOT_SUITE_MISSING`
+- **THEN** `TestSuiteEvaluationJob.resolveSnapshot()` SHALL load the live suite and its dataset and call `SuiteSnapshotBuilder.build(liveSuite, liveDataset)` to synthesize a transient snapshot; if the live suite or dataset no longer exists, the run SHALL fail with `UNEXPECTED_ERROR` (the lazy resolution runs inside the job's generic failure handler). This path is legacy: the snapshot phase always stores a snapshot, and `SNAPSHOT_SUITE_MISSING`/`SNAPSHOT_DATASET_MISSING` are produced only by the snapshot phase
 
 #### Scenario: Endpoint invocation (non-streaming)
 - **WHEN** the resolved request is sent and the response `Content-Type` is NOT `text/event-stream`
@@ -170,7 +170,7 @@ Status: **Implemented**
 
 #### Scenario: Request body stored in results
 - **WHEN** the worker builds a `TestCaseRunResult`
-- **THEN** the worker SHALL serialize and store the resolved request body in `requestBody` (JSONB). The serialization SHALL use the existing `serializeBody()` method. `requestBody` SHALL also be null when the resolved body is absent; serialization errors follow the execution error path.
+- **THEN** the worker SHALL serialize and store the resolved request body in `requestBody` (JSONB). On the HTTP path the body SHALL be serialized as JSON, falling back to its `toString()` form on a serialization failure (never failing the row); the MCP path serializes the resolved arguments via `EvaluationWorker.serializeBody()`. `requestBody` SHALL be null when the resolved body is absent.
 
 #### Scenario: Retry count tracked in results
 - **WHEN** the worker completes execution of a test case (with or without retries)
@@ -363,7 +363,7 @@ The Postgres writer SHALL buffer rows per test-case run and flush them in an ana
 Status: **Implemented**
 
 #### Scenario: Threshold flush
-- **WHEN** adding a case's result rows brings the buffer to at least result-batch-size (default100)
+- **WHEN** adding a case's result rows brings the buffer to at least result-batch-size (default 100)
 - **THEN** the writer SHALL detach and clear the buffer under its lock and save the detached rows in an analytics transaction
 
 #### Scenario: Normal completion and cancellation

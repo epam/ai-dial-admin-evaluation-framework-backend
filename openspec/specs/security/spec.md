@@ -251,20 +251,18 @@ The service SHALL derive the `createdBy` value stored on newly created or cloned
 
 #### Scenario: Contract cases
 - **WHEN** an input or operation matches a case below
-- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
+- **THEN** its expected result SHALL hold
 
 | Case | When | Expected |
 |---|---|---|
 | No JWT present | an entity is created with no authenticated caller at all (security mode `none`) | SHALL store `createdBy = "anonymous"` and SHALL NOT call DIAL Core, regardless of `security.jwt.resolve-user-name` |
 | API-key caller | an entity is created by a caller authenticated with an `Api-Key` whose introspected principal is `my-project` | SHALL store `createdBy = "my-project"` and SHALL NOT attempt display-name resolution, regardless of `security.jwt.resolve-user-name` |
-| Configured claim missing from JWT | an authenticated JWT does not carry the claim named by `security.jwt.user-claim` | SHALL store `createdBy = "anonymous"` and SHALL NOT call DIAL Core |
+| Configured claim missing from JWT | an authenticated JWT does not carry the claim named by `security.jwt.user-claim` | SHALL store `createdBy = "anonymous"` (no fallback to any other principal) and SHALL NOT call DIAL Core |
 | Display-name resolution disabled | `security.jwt.resolve-user-name=false` (default) and an authenticated JWT carries the configured claim | SHALL store the raw claim value as `createdBy` and SHALL NOT call DIAL Core |
 | Display name resolved from DIAL Core | `security.jwt.resolve-user-name=true`, the JWT carries the configured claim, and DIAL Core `GET /v1/user/info` (called with the caller's bearer token) responds with a non-blank string `userDisplayName` | SHALL store that `userDisplayName` as `createdBy` |
 | Display name missing or blank | `security.jwt.resolve-user-name=true` and DIAL Core responds successfully but `userDisplayName` is absent, `null`, not a string, or blank — or the response body is empty | SHALL store the raw claim value as `createdBy` and SHALL log the fallback at debug level |
 | DIAL Core error or unreachable | `security.jwt.resolve-user-name=true` and DIAL Core responds with a non-2xx status, or the connection fails or times out | SHALL store the raw claim value as `createdBy`, SHALL log a warning including the cause, and SHALL complete the create/clone request normally |
 | Stored value is a snapshot | a display name has been stored as `createdBy` and the user's display name later changes in the identity provider | the previously stored `createdBy` SHALL remain unchanged (no synchronisation or back-fill) |
-| Attribution without a caller identity | a dataset or suite is created with no JWT, or with a JWT missing the configured claim, and no authenticated non-JWT principal supplies attribution | its `createdBy` SHALL be `anonymous` |
-| API-key principal attribution | a dataset or suite is created by an authenticated non-anonymous non-JWT caller | its `createdBy` SHALL use that principal's name without JWT display-name resolution |
 
 ## Implementation Notes
 - Configuration entrypoints:

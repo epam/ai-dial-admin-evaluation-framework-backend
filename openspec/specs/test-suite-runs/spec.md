@@ -473,7 +473,7 @@ Status: **Implemented**
 
 #### Scenario: Configuration resolution uses configured defaults
 - **WHEN** the job resolves run configuration values with system defaults
-- **THEN** omitted concurrency, timeout and retry fields SHALL use runner-core's configured defaults (`ObjectUtils.getIfNull` in the context builder)
+- **THEN** omitted concurrency, timeout and retry fields SHALL use the configured defaults from runner-core's `EvaluationRunProperties` (applied via `ObjectUtils.getIfNull` in the root app's `TestSuiteEvaluationJob.buildContext`)
 
 #### Scenario: Metric evaluation chained after deployment evaluation
 - **WHEN** the deployment evaluation phase completes (all test cases executed) and the run is not cancelled

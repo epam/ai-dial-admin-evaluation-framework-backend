@@ -261,7 +261,7 @@ Status: **Implemented**
 
 #### Scenario: Filter by identity fields
 - **WHEN** client includes filters for `suiteId`, `runId`, `testCaseId`, `testCaseName`, `runIndex`
-- **THEN** system SHALL filter using the allowlisted `eq`, `ne`, `co`, and `in` operators as applicable to each field
+- **THEN** system SHALL filter using the allowlisted operators per field: `suiteId`, `runId`, `testCaseId` accept `eq` and `in`; `testCaseName` accepts `eq`, `ne`, `co`, and `in`; `runIndex` accepts `eq`, `gt`, `ge`, `lt`, and `le`
 
 #### Scenario: Filter by execution fields
 - **WHEN** client includes filters for `executionStatus`, `execDurationMs`, `responseStatusCode`

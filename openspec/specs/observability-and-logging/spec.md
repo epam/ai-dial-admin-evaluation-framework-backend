@@ -173,7 +173,7 @@ Status: **Implemented**
 - **THEN** `trace_id` and `span_id` fields SHALL render as empty strings in the log line
 
 ### Requirement: traceparent in error responses
-Responses constructed as `ErrorView` SHALL include the W3C `traceparent` value when the current span context is valid, and omit it otherwise. This covers the global REST exception handler and API-key error responses, not arbitrary transport/security/library error payloads.
+Responses constructed as `ErrorView` SHALL include the W3C `traceparent` value when the current span context is valid, and omit it otherwise. This covers the global REST exception handler, API-key error responses, and the `MaxRequestBodyFilter` 413 response, not arbitrary transport/security/library error payloads.
 Status: **Implemented**
 
 #### Scenario: Error response includes traceparent when tracing active

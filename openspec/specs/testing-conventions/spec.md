@@ -79,7 +79,7 @@ Functional test assertions that verify persisted state SHALL use production repo
 
 ### Requirement: ArchUnit fence forbids raw JdbcTemplate outside allowed packages in production code
 
-`JdbcTemplateFenceTest` SHALL fail when any imported production class outside the two allowed packages (`configuration.datasource` and `service.infrastructure.health`) depends on `org.springframework.jdbc.core.JdbcTemplate` or `NamedParameterJdbcTemplate`. Test infrastructure classes such as `PostgresTestPersistenceService` (schema reset DDL) are excluded by `ImportOption.DoNotIncludeTests`. The full persistence contract is owned by the `typed-sql-dsl` capability.
+`JdbcTemplateFenceTest` SHALL fail when any imported production class outside the two allowed packages (`configuration.datasource` and `service.infrastructure.health`) depends on `org.springframework.jdbc.core.JdbcTemplate` or `org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate`. Test infrastructure classes such as `PostgresTestPersistenceService` (schema reset DDL) are excluded by `ImportOption.DoNotIncludeTests`. The full persistence contract is owned by the `typed-sql-dsl` capability.
 
 Status: **Implemented**
 

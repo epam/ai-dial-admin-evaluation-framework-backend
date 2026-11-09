@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Current dataset-scoped test-case model, CRUD, listing and single-case PATCH. Dataset schema/lifecycle is owned by [datasets](../datasets/spec.md); content checks by [test-case-validation](../test-case-validation/spec.md); batches by [test-case-bulk-update](../test-case-bulk-update/spec.md); transfer by [test-case-csv-transfer](../test-case-csv-transfer/spec.md) and [ZIP archive](../test-case-zip-archive/spec.md); strict schema-change processing by [test-case-revalidation](../test-case-revalidation/spec.md). Suite participation is determined by [testCaseFilter](../suite-test-case-filter/spec.md), not stored per-case state.
+Current dataset-scoped test-case model, CRUD, listing and single-case PATCH. Dataset schema/lifecycle is owned by [datasets](../datasets/spec.md); content checks by [test-case-validation](../test-case-validation/spec.md); batches by [test-case-bulk-update](../test-case-bulk-update/spec.md); delete by explicit id list by [test-case-bulk-delete-by-ids](../test-case-bulk-delete-by-ids/spec.md); transfer by [test-case-csv-transfer](../test-case-csv-transfer/spec.md) and [ZIP archive](../test-case-zip-archive/spec.md); strict schema-change processing by [test-case-revalidation](../test-case-revalidation/spec.md). Suite participation is determined by [testCaseFilter](../suite-test-case-filter/spec.md), not stored per-case state.
 
 Status: **Implemented**
 
@@ -14,7 +14,7 @@ Status: **Implemented**
 
 The service SHALL manage TestCases as children of a Dataset with full CRUD operations. TestCases carry their identity, shared `data` (Map<String, Object>), optional `multiTurnData`, and validity metadata. A test case carries no per-suite participation state: which of a dataset's test cases a given suite runs is decided solely by that suite's `testCaseFilter` (see `suite-test-case-filter`).
 
-Test-case CRUD, batch PUT/PATCH, CSV/ZIP import/preview, and CSV/ZIP export endpoints SHALL be rooted at `/api/v1/datasets/{datasetId}/test-cases`; composite bulk PATCH SHALL use `/api/v1/datasets/{datasetId}/test-cases:bulk`. The `testCaseId` in nested paths SHALL belong to the specified `datasetId`.
+Test-case CRUD, batch PUT/PATCH, CSV/ZIP import/preview, and CSV/ZIP export endpoints SHALL be rooted at `/api/v1/datasets/{datasetId}/test-cases`; composite bulk PATCH and bulk delete by explicit id list (`DELETE`, see [test-case-bulk-delete-by-ids](../test-case-bulk-delete-by-ids/spec.md)) SHALL use `/api/v1/datasets/{datasetId}/test-cases:bulk`. The `testCaseId` in nested paths SHALL belong to the specified `datasetId`.
 
 All TestCase operations SHALL validate that the testCaseId belongs to the specified datasetId.
 
@@ -69,7 +69,7 @@ On a write carrying `multiTurnData`, a field **declared in the dataset schema** 
 | Undeclared field is warned about, not rejected | a write places a key that no dataset schema field declares into `data` or into a turn map | the write SHALL succeed and the case SHALL be stored with `is_valid=false` and an unknown-field warning whose `path` identifies the bucket the key was found in |
 | Multi-turn case is identified by multiTurnData | a test case is stored with a non-empty `multiTurnData` array | it is treated as a multi-turn test case whose turns are the array elements in order (`turn_index` = array position, `0..N-1`), regardless of whether `data` is empty or carries shared fields |
 | Single-turn case is unaffected | a test case has `multiTurnData` absent/null | it behaves exactly as today, using its `data` map as a single turn |
-| Shared data coexists with turns | a multi-turn case has `data` carrying shared fields and `multiTurnData` carrying per-turn fields | both are stored and the case is multi-turn; the shared fields are visible to every turn (see the merged-view execution requirement) |
+| Shared data coexists with turns | a multi-turn case has `data` carrying shared fields and `multiTurnData` carrying per-turn fields | both are stored and the case is multi-turn; the shared fields are visible to every turn (see [multi-turn-test-case](../multi-turn-test-case/spec.md#requirement-jsonata-driven-turn-loop-execution-with-frame-based-history) "JSONata-driven turn-loop execution with frame-based history") |
 | Empty multiTurnData rejected | a request supplies `multiTurnData: []` | the request is rejected with HTTP 400 |
 
 ### Requirement: Single-case PATCH contract

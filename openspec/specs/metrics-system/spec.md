@@ -21,7 +21,7 @@ The system SHALL maintain a catalog of MetricDeclarations available for use in T
 
 #### Scenario: Contract cases
 - **WHEN** an input or operation matches a case below
-- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
+- **THEN** its expected result SHALL hold
 
 | Case | When | Expected |
 |---|---|---|
@@ -90,7 +90,7 @@ The service SHALL provide a paginated endpoint to list metric declarations avail
 
 #### Scenario: Contract cases
 - **WHEN** an input or operation matches a case below
-- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
+- **THEN** its expected result SHALL hold
 
 | Case | When | Expected |
 |---|---|---|

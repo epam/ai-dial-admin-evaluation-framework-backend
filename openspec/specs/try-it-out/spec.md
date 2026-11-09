@@ -47,11 +47,11 @@ Status: **Implemented**
 - **AND** for a single-request suite the response SHALL omit `history`; a multi-request suite SHALL still retain invocation history
 
 #### Scenario: Turn failure stops the sequence
-- **WHEN** executing a multi-turn test case and a turn's invocation resolves to a non-2xx DIAL Core status, has a non-success SSE parse result, or fails resolved request-model validation (`RequestBodyValidationException`)
+- **WHEN** executing a multi-turn test case and a turn's invocation resolves to a non-2xx DIAL Core status, has a non-success SSE parse result, fails request-body JSONata evaluation (`RequestBodyEvaluationException`), or fails resolved request-model validation (`RequestBodyValidationException`)
 - **THEN** the system SHALL stop executing further turns (fail-fast)
 - **AND** the failed turn's resolved request and error response SHALL be returned as the `resolvedRequest`/`response`, and as the last entry of `history`
 - **NOTE**: a transport-level failure during a turn's invocation (timeout, connection refused, unreachable deployment) is NOT caught by this mechanism — it propagates uncaught exactly as in the single-turn path, producing the pre-existing plain 502/504 error response.
-- **NOTE**: `ValidationException` (null resolved URL) or `TryItOutValidationException` (unresolved REQUIRED variables or `REQUEST_BODY_EVALUATION_ERROR` warnings) thrown by `validateResolutionResult` for turns after the first remain uncaught. `runChain` catches only `RequestBodyEvaluationException` and the new `RequestBodyValidationException`; other validation failures propagate exactly like transport-level failures.
+- **NOTE**: `ValidationException` (null resolved URL) or `TryItOutValidationException` (unresolved REQUIRED variables) thrown by `validateResolutionResult` for turns after the first remain uncaught. `runChain` catches only `RequestBodyEvaluationException` and `RequestBodyValidationException`; other validation failures propagate exactly like transport-level failures. A `REQUEST_BODY_EVALUATION_ERROR` warning never reaches `validateResolutionResult` in the chain: `runChain` resolves via `RequestResolver.resolveForRun`, which throws `RequestBodyEvaluationException` instead of downgrading to a warning, so a body evaluation failure is always caught there. The `TryItOutValidationException` for that warning fires only on single-invocation paths that use the preview resolver.
 
 #### Scenario: MCP suite rejects multi-turn test case
 - **WHEN** the test suite has `suiteType = MCP_TOOL` and the test case has non-null `multiTurnData`
@@ -446,7 +446,7 @@ Status: **Implemented**
 ### Requirement: URL construction for DIAL Core invocation
 The system SHALL construct the full DIAL Core URL by combining the base URL, a deployment prefix (DEPLOYMENT suites only), and the resolved URL template. `DialCoreUrlBuilder` SHALL maintain a `Set<String>` of known OpenAI-standard paths to determine the routing prefix.
 
-Known deployment-prefixed paths: `/chat/completions`, `/embeddings`. Canonical `/openai/v1/responses` and `/anthropic/v1/messages` pass through without a deployment prefix; their body model selects the deployment.
+Known deployment-prefixed paths: `/chat/completions`, `/embeddings`. Model-selecting paths pass through without a deployment prefix and their body model selects the deployment: any resolved URL that starts with `/openai/v1/responses` (case-insensitive prefix match), and `/anthropic/v1/messages` on exact (case-sensitive) match only.
 
 Status: **Implemented**
 

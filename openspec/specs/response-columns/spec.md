@@ -40,7 +40,7 @@ Defaults when omitted: `displayName` = null (FE uses `name`), `type` = `STRING`.
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "name": "My Suite",
-  "datasetRef": {"id": "550e8400-e29b-41d4-a716-446655440001"},
+  "datasetId": "550e8400-e29b-41d4-a716-446655440001",
   "responseColumns": [
     {"name": "answer", "displayName": "Answer", "expression": "choices[0].message.content", "type": "STRING"},
     {"name": "token_count", "expression": "usage.total_tokens", "type": "NUMBER"}

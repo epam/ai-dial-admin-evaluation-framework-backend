@@ -71,7 +71,7 @@ Selectors may instead use `{"filter":["<filter-expression>"]}`; exactly one sele
 
 | Path | Accepted fields / merge rule | Validation |
 |---|---|---|
-| Selector-scoped `bulkOperations` | Fixed, non-configurable whitelist `testCaseName`/`data`; `data` replaces the whole map, null stores SQL NULL | No per-row validation or NUMBER normalization; stored validity/warnings remain unchanged |
+| Selector-scoped `bulkOperations` | Fixed, non-configurable whitelist `testCaseName`/`data`; `data` replaces the whole map. A `null` `data` or `testCaseName` is passed through to the UPDATE; both columns are NOT NULL, so when the selector matches rows the request fails with HTTP 500 and rolls back (known limitation: no 400 mapping) | No per-row validation or NUMBER normalization; stored validity/warnings remain unchanged |
 | `itemOperations` | [Single-case PATCH rules](../test-cases/spec.md#requirement-single-case-patch-contract), including `multiTurnData` | Recompute validation/normalization when any `data`, `multiTurnData`, or `testCaseName` key is present, even for ignored/unchanged values; otherwise skip |
 
 An unknown selector patch field SHALL return HTTP 400 naming it and roll back. Validation cost follows relevant item operations, not selector match count. Limits, response flags and name permutations are specified below.
@@ -87,6 +87,7 @@ An unknown selector patch field SHALL return HTTP 400 naming it and roll back. V
 | Empty body is rejected | client sends a body with both `bulkOperations` and `itemOperations` absent or empty (including a missing body) | SHALL respond with HTTP 400 (VALIDATION_ERROR) |
 | Atomic rollback on any failure | any validation, resolver, or DB error occurs during execution of any bulk or item operation | SHALL roll back all changes from the request and respond with the corresponding error HTTP status (no partial apply) |
 | Bulk patch with non-whitelisted field | `bulkOperations[i].patch` contains a key other than `testCaseName` or `data` | SHALL respond with HTTP 400 (VALIDATION_ERROR) naming the offending field, and roll back |
+| Bulk patch with null data or name | a bulk operation whose selector matches at least one case sets `data` or `testCaseName` to `null` | the NOT NULL constraint violation SHALL surface as HTTP 500 and the whole request SHALL roll back (known limitation) |
 | Item operation patches a field not in the bulk whitelist | `itemOperations[i].patch` contains `multiTurnData`, which is valid for single-row PATCH but outside the bulk whitelist | SHALL accept the item operation |
 | Item op on data triggers per-row re-validation | an `itemOperations[i].patch` modifies `data` | SHALL re-run validation for that row and persist the updated `valid` / `validation_warnings` against the dataset's schema |
 | Item op on testCaseName triggers per-row re-validation | an `itemOperations[i].patch` modifies `testCaseName` only | SHALL re-run validation for that row (name uniqueness + downstream checks) and persist the updated state |
@@ -111,7 +112,7 @@ Bulk operations SHALL execute sequentially in array order, followed by item oper
 | IDs selector with an id not in the dataset | client provides `selector.ids` containing one or more UUIDs that do not belong to `{datasetId}` (either nonexistent or belonging to a different dataset) | SHALL respond with HTTP 404 (NOT_FOUND) and roll back |
 | Filter selector with an empty filter list | client provides `selector.filter` as an empty list `[]` | SHALL treat the selector as matching every test case in the dataset |
 | Filter selector with valid filter expressions | client provides `selector.filter` with expressions referencing fields in the test-case filter whitelist | SHALL apply the shared `patch` to every test case in the dataset that matches all expressions |
-| Filter selector rejects unknown or non-whitelisted field | client provides a `filter` expression referencing a field that is not in the test-case filter whitelist (or uses an operator not allowed for that field) | SHALL respond with HTTP 400 (VALIDATION_ERROR) and roll back. The data-layer `InvalidFilterException` raised by the underlying `WhereBuilder` SHALL be translated by the service layer into a `FilterValidationException` so the global exception handler maps it to HTTP 400; an unwrapped data-layer exception SHALL NOT reach the client. |
+| Filter selector rejects unknown or non-whitelisted field | client provides a `filter` expression referencing a field that is not in the test-case filter whitelist (or uses an operator not allowed for that field) | SHALL respond with HTTP 400 (INVALID_FILTER) and roll back. The data-layer `InvalidFilterException` raised by the underlying `WhereBuilder` SHALL be translated by the service layer into a `FilterValidationException` so the global exception handler maps it to HTTP 400; an unwrapped data-layer exception SHALL NOT reach the client. |
 | Selector must declare exactly one variant | a `selector` contains both `ids` and `filter`, or neither | SHALL respond with HTTP 400 (VALIDATION_ERROR) |
 | Empty IDs selector matches no cases | a bulk operation uses `selector.ids:[]` | it SHALL be accepted as an empty selection with matched and updated counts of zero |
 | Item operation overrides a field set by a prior bulk operation | a bulk operation sets `data:{"tag":"bulk"}` on cases including `X`, and an item operation patches `X` with `data:{"tag":"item"}` | the final shared data for `X` SHALL contain `tag:"item"`, with the item patch applied to the bulk-replaced map |
@@ -183,7 +184,7 @@ Response shape:
 
 Status: **Implemented**
 
-Selector-scoped names obey immediate database case-insensitive uniqueness: assigning one name to multiple matches or creating an intermediate collision SHALL return HTTP 409 and roll back before later operations.
+Selector-scoped names obey immediate database case-insensitive uniqueness: assigning one name to multiple matches or creating an intermediate collision SHALL fail the request with HTTP 500 and roll back before later operations. Known limitation: the selector write does not translate the unique-index violation, so it is not reported as HTTP 409 `UNIQUE_CONSTRAINT_VIOLATION`.
 
 Array-body PUT/PATCH and composite `itemOperations` SHALL instead permit pairwise swaps and arbitrary rename cycles when their final state is case-insensitively unique. Items are prepared after bulk operations, checked against each other and cases outside the request, parked at temporary names, then persisted. A genuine final duplicate SHALL return HTTP 409 `UNIQUE_CONSTRAINT_VIOLATION` atomically. This prepare/park/apply guarantee SHALL NOT extend to selector-scoped bulk writes.
 
@@ -195,7 +196,7 @@ Array-body PUT/PATCH and composite `itemOperations` SHALL instead permit pairwis
 |---|---|---|
 | Item ops produce duplicate names within the request | two `itemOperations` result in the same `testCaseName` (case-insensitive) inside the same dataset | SHALL respond with HTTP 409 (UNIQUE_CONSTRAINT_VIOLATION) and roll back |
 | Item op collides with existing name outside the request | an `itemOperations[i]` sets `testCaseName` to a value already used by a test case in the same dataset that is not part of the request | SHALL respond with HTTP 409 (UNIQUE_CONSTRAINT_VIOLATION) and roll back |
-| Later item rename cannot rescue a bulk name collision | a selector-scoped bulk rename creates a database name collision before a later item operation would remove it | the bulk write SHALL fail and roll back the entire request rather than evaluate uniqueness only at the whole-request final state |
+| Later item rename cannot rescue a bulk name collision | a selector-scoped bulk rename creates a database name collision before a later item operation would remove it | the bulk write SHALL fail with HTTP 500 (known limitation, not 409) and roll back the entire request rather than evaluate uniqueness only at the whole-request final state |
 | Pairwise name swap via batch PUT succeeds | a dataset has test cases named `A` and `B`, and `PUT /api/v1/datasets/{datasetId}/test-cases` with the first item renaming `A → B` and the second renaming `B → A` | SHALL return HTTP 200 and the two test cases SHALL have their names swapped (no HTTP 409) |
 | Pairwise name swap via batch PATCH succeeds | a dataset has test cases named `A` and `B`, and `PATCH /api/v1/datasets/{datasetId}/test-cases` with the first item renaming `A → B` and the second renaming `B → A` | SHALL return HTTP 200 and the two test cases SHALL have their names swapped (no HTTP 409) |
 | Multi-way rename cycle succeeds | a dataset has test cases named `A`, `B`, and `C`, and a single batch operation renames `A → B`, `B → C`, and `C → A` | SHALL return HTTP 200 and the three test cases SHALL reflect the rotated names (no HTTP 409) |
@@ -204,6 +205,7 @@ Array-body PUT/PATCH and composite `itemOperations` SHALL instead permit pairwis
 
 ## Implementation notes
 
-- [TestCaseBulkPatchController.java](../../../src/main/java/com/epam/aidial/evaluation/web/controller/TestCaseBulkPatchController.java), [TestCaseService.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestCaseService.java): array/composite dispatch, sequential selectors, item preparation and response comparisons.
+- [TestCaseController.java](../../../src/main/java/com/epam/aidial/evaluation/web/controller/TestCaseController.java): array-body PUT/PATCH endpoints; [TestCaseBulkPatchController.java](../../../src/main/java/com/epam/aidial/evaluation/web/controller/TestCaseBulkPatchController.java): composite `:bulk` endpoint only.
+- [TestCaseService.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestCaseService.java): sequential selectors, item preparation and response comparisons.
 - [TestCaseBulkPatchValidator.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestCaseBulkPatchValidator.java), [TestCaseBulkSelectorResolver.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestCaseBulkSelectorResolver.java): limits, duplicate IDs and materialization.
 - [BulkPatchFields.java](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/BulkPatchFields.java), [PostgresTestCaseRepository.java](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/PostgresTestCaseRepository.java): fixed whitelist, NULL-safe change detection and prepare/park/apply uniqueness.

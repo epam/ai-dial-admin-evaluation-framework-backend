@@ -3,10 +3,10 @@
 ## Purpose
 This spec describes TestSuite authoring and management via the backend REST API.
 
-Status: **Planned** (dataset-rooted re-scoping). CRUD, deploymentRef, endpointRef, requestTemplate, inputBindings, cascade delete remain in place. `testCaseSchema` and TestCases are managed under `Dataset` (see `specs/datasets/spec.md` and `specs/test-cases/spec.md`).
+Status: **Implemented**. Suites own execution configuration; `testCaseSchema` and test cases are managed under `Dataset` (see `datasets` and `test-cases`).
 
 ## Key Terms
-- **TestSuite**: A named container for evaluation execution configuration. Has a `suiteType` discriminator (`DEPLOYMENT` or `MCP_TOOL`). DEPLOYMENT suites have `deploymentRef`, `endpointRef`, `requestTemplate`, and `inputBindings`. MCP_TOOL suites have `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, and `inputBindings`. Every suite references one `Dataset` via a mandatory `datasetId` (the dataset owns `testCaseSchema` and the test-case rows). A suite narrows which of its dataset's test cases run through the optional `testCaseFilter` (see `suite-test-case-filter`); there is no per-suite exclude list.
+- **TestSuite**: A named container for evaluation execution configuration. Has a `suiteType` discriminator (`DEPLOYMENT`, `ROUTE` or `MCP_TOOL`). ROUTE suites have `routesRef`, `endpointRef`, `requestTemplate` and `inputBindings`. DEPLOYMENT suites have `deploymentRef`, `endpointRef`, `requestTemplate`, and `inputBindings`. MCP_TOOL suites have `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, and `inputBindings`. A suite may reference one `Dataset` via an optional `datasetId`; an unbound suite is editable but cannot run (the dataset owns `testCaseSchema` and the test-case rows). A suite narrows which of its dataset's test cases run through the optional `testCaseFilter` (see `suite-test-case-filter`); there is no per-suite exclude list.
 
 ## Requirements
 
@@ -48,7 +48,7 @@ Status: **Implemented**
 
 ### Requirement: Suite references a dataset (optional `datasetId`)
 A TestSuite SHALL reference at most one Dataset via an OPTIONAL `datasetId` field (UUID, NULLABLE FK in `test_suites.dataset_id` to `datasets.id`). The reference SHALL be optional on both create and update; suites with `datasetId = null` SHALL be persisted in an **unbound** state and SHALL be retrievable and editable, but SHALL NOT be runnable (see the "Trigger a test suite run" requirement in the `test-suite-runs` spec for the run-start guard). Many suites MAY share a single PUBLIC dataset; at most one suite MAY be bound to a given PRIVATE dataset at any time (enforced application-side and by the trigger defined in the `datasets` spec).
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Create without datasetId allowed (unbound suite)
 - **WHEN** client calls `POST /api/v1/test-suites` with a body that omits `datasetId` or sends it as `null`
@@ -76,51 +76,52 @@ Status: **Planned**
 
 #### Scenario: Suite delete cascade is visibility-conditional
 - **WHEN** client deletes a TestSuite via `DELETE /api/v1/test-suites/{id}`
-- **THEN** if the suite is bound to a PRIVATE dataset, the dataset SHALL be cascade-deleted in the same transaction (see "Suite delete cascades a PRIVATE dataset" requirement); if the suite is bound to a PUBLIC dataset or is unbound, the dataset SHALL remain intact; in all cases the suite row and its owned children (TSMDs, runs, eval-summaries) SHALL be removed
+- **THEN** if the suite is bound to a PRIVATE dataset, the dataset SHALL be cascade-deleted in the same transaction (see "Suite delete cascades a PRIVATE dataset" requirement); if the suite is bound to a PUBLIC dataset or is unbound, the dataset SHALL remain intact; in all cases the suite row and its owned meta children (TSMDs, runs, snapshots) SHALL be removed, and owned runs SHALL be tombstoned for analytics reads
 
 #### Scenario: Dataset delete behavior depends on visibility
-- **WHEN** client calls `DELETE /api/v1/datasets/{id}` and one or more `TestSuite` rows reference this dataset
+- **WHEN** client calls `DELETE /api/v1/datasets/{id}` without `force=true` and one or more `TestSuite` rows reference this dataset
 - **THEN** if the dataset's `visibility = PUBLIC`, system SHALL respond with HTTP 409 (FK RESTRICT) — users must rebind or delete those suites first; if the dataset's `visibility = PRIVATE`, system SHALL atomically unbind the single bound suite (`dataset_id := NULL`) and delete the dataset (see the PRIVATE delete requirement in the `datasets` spec)
 
 ### Requirement: Reject rebind/unbind when current dataset is PRIVATE
-When a TestSuite is currently bound to a `PRIVATE` dataset, `PATCH /api/v1/test-suites/{id}` (or any other update mechanism) SHALL reject any request that changes `datasetId` — including setting it to a different dataset id OR to `null`. The rejection SHALL be HTTP 409 with error code `PRIVATE_DATASET_REBIND_FORBIDDEN`. The constraint exists because a PRIVATE dataset belongs exclusively to its one bound suite; unbinding it would orphan the dataset, and rebinding it elsewhere would violate the "one PRIVATE dataset, one suite" invariant. Users who want to swap the dataset of a PRIVATE-bound suite SHALL first delete the PRIVATE dataset (which unbinds the suite) and then PATCH the suite with the new `datasetId`.
-Status: **Planned**
+When a TestSuite is currently bound to a `PRIVATE` dataset, `PUT /api/v1/test-suites/{id}` SHALL reject any request that changes `datasetId` — including setting it to a different dataset id OR to `null`. The rejection SHALL be HTTP 409 with error code `PRIVATE_DATASET_REBIND_FORBIDDEN`. The constraint exists because a PRIVATE dataset belongs exclusively to its one bound suite; unbinding it would orphan the dataset, and rebinding it elsewhere would violate the "one PRIVATE dataset, one suite" invariant. Users who want to swap the dataset of a PRIVATE-bound suite SHALL first delete the PRIVATE dataset (which unbinds the suite) and then PUT the suite with the new `datasetId`.
+Status: **Implemented**
 
 #### Scenario: Rebind PRIVATE-bound suite to different dataset rejected
-- **WHEN** client calls `PATCH /api/v1/test-suites/{id}` with a `datasetId` differing from the stored value, and the stored dataset's `visibility = PRIVATE`
+- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with a `datasetId` differing from the stored value, and the stored dataset's `visibility = PRIVATE`
 - **THEN** system SHALL respond with HTTP 409 and error code `PRIVATE_DATASET_REBIND_FORBIDDEN`; the suite's `datasetId` SHALL remain unchanged
 
 #### Scenario: Unbind PRIVATE-bound suite (set to null) rejected
-- **WHEN** client calls `PATCH /api/v1/test-suites/{id}` with `datasetId: null` on a suite whose stored dataset's `visibility = PRIVATE`
+- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with `datasetId: null` on a suite whose stored dataset's `visibility = PRIVATE`
 - **THEN** system SHALL respond with HTTP 409 and error code `PRIVATE_DATASET_REBIND_FORBIDDEN`; the suite's `datasetId` SHALL remain unchanged
 
 #### Scenario: Rebind PUBLIC-bound suite to different dataset succeeds
-- **WHEN** client calls `PATCH /api/v1/test-suites/{id}` with a `datasetId` differing from the stored value, and the stored dataset's `visibility = PUBLIC`
-- **THEN** system SHALL update `datasetId`, re-run suite-level validation against the new dataset's schema, and return the updated suite (the new dataset's visibility does not influence acceptance; see "Concurrent PRIVATE-binding prevention" in the `datasets` spec for the trigger-side guard on the target side)
+- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with a `datasetId` differing from the stored value, and the stored dataset's `visibility = PUBLIC`
+- **THEN** system SHALL update `datasetId`, re-run suite-level validation against the new dataset's schema, and return the updated suite (the target must allow the binding: PUBLIC allows sharing, while a PRIVATE target already bound elsewhere is rejected; see "Concurrent PRIVATE-binding prevention" in `datasets`)
 
 #### Scenario: Unbind PUBLIC-bound suite (set to null) succeeds
-- **WHEN** client calls `PATCH /api/v1/test-suites/{id}` with `datasetId: null` on a suite whose stored dataset's `visibility = PUBLIC`
+- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with `datasetId: null` on a suite whose stored dataset's `visibility = PUBLIC`
 - **THEN** system SHALL set `datasetId = null` and return the updated suite; the suite enters the unbound state
 
 ### Requirement: Suite delete cascades a PRIVATE dataset
-When `DELETE /api/v1/test-suites/{id}` is called on a suite bound to a `PRIVATE` dataset, the system SHALL — within the same meta transaction that removes the suite — delete the bound `PRIVATE` dataset row. Test cases under that dataset cascade via the existing FK. The suite's own runs, TSMDs, and eval-summaries cascade via existing FKs (no behavior change). The suite-delete on a `PUBLIC`-bound or unbound suite leaves the dataset untouched (unchanged baseline behavior).
-Status: **Planned**
 
-#### Scenario: Delete suite bound to PRIVATE dataset cascades dataset
-- **WHEN** client calls `DELETE /api/v1/test-suites/{id}` on a suite bound to a PRIVATE dataset
-- **THEN** the suite row SHALL be deleted; the bound PRIVATE dataset row SHALL be deleted; the PRIVATE dataset's test cases SHALL be cascade-deleted; all suite-owned children (TSMDs, runs, eval-summaries) SHALL be cascade-deleted via existing FKs; the response SHALL be HTTP 204 (or HTTP 200 with the deleted suite body per project convention)
+Status: **Implemented**
 
-#### Scenario: Delete suite bound to PUBLIC dataset preserves dataset
-- **WHEN** client calls `DELETE /api/v1/test-suites/{id}` on a suite bound to a PUBLIC dataset
-- **THEN** the suite row SHALL be deleted; the PUBLIC dataset SHALL remain intact (still discoverable via `GET /api/v1/datasets/{id}` and the list endpoint, possibly bound to other suites)
+When `DELETE /api/v1/test-suites/{id}` is called on a suite bound to a `PRIVATE` dataset, the system SHALL — within the same meta transaction that removes the suite — delete the bound `PRIVATE` dataset row. Test cases under that dataset cascade via the existing FK. The suite's runs, snapshots and TSMDs cascade in the meta database; deleting its PRIVATE dataset also cascades that dataset's test cases and revalidation tasks; its run-scoped analytics rows are excluded by tombstones, not physically deleted. The suite-delete on a `PUBLIC`-bound or unbound suite leaves the dataset untouched (unchanged baseline behavior).
 
-#### Scenario: Delete unbound suite touches no dataset
-- **WHEN** client calls `DELETE /api/v1/test-suites/{id}` on a suite whose `datasetId IS NULL`
-- **THEN** the suite row SHALL be deleted; no dataset SHALL be affected
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: PRIVATE-cascade is atomic with suite delete
-- **WHEN** any step of the PRIVATE-cascade delete path fails (dataset delete, test-case cascade, or any suite-owned cascade)
-- **THEN** the entire transaction SHALL roll back; the suite, its bound PRIVATE dataset, and all cascaded children SHALL remain unchanged
+| Case | When | Expected |
+|---|---|---|
+| Delete suite bound to PRIVATE dataset cascades dataset | `DELETE /api/v1/test-suites/{id}` on a suite bound to a PRIVATE dataset | the suite row SHALL be deleted; the bound PRIVATE dataset row SHALL be deleted; the PRIVATE dataset's test cases SHALL be cascade-deleted; suite-owned meta children (TSMDs, runs, snapshots) SHALL be cascade-deleted and the owned runs SHALL be tombstoned for analytics reads; the response SHALL be HTTP 200 with `{"deleted": true}` |
+| Delete suite bound to PUBLIC dataset preserves dataset | `DELETE /api/v1/test-suites/{id}` on a suite bound to a PUBLIC dataset | the suite row SHALL be deleted; the PUBLIC dataset SHALL remain intact (still discoverable via `GET /api/v1/datasets/{id}` and the list endpoint, possibly bound to other suites) |
+| Delete unbound suite touches no dataset | `DELETE /api/v1/test-suites/{id}` on a suite whose `datasetId IS NULL` | the suite row SHALL be deleted; no dataset SHALL be affected |
+| PRIVATE-cascade is atomic with suite delete | any step of the PRIVATE-cascade delete path fails (dataset delete, test-case cascade, or any suite-owned cascade) | the meta transaction SHALL roll back; the suite, its bound PRIVATE dataset, and all cascaded meta children SHALL remain unchanged; analytics `run_deletions` tombstones already written for the suite's runs are on the analytics datasource and are NOT rolled back |
+| Delete PUBLIC-bound TestSuite with children | `DELETE /api/v1/test-suites/{id}` for a suite with TSMDs and runs bound to a PUBLIC dataset containing test cases and revalidation tasks | SHALL remove the suite and its suite-owned meta children and return HTTP 200 with `{"deleted":true}`; the PUBLIC dataset, its test cases, and its revalidation tasks SHALL remain intact |
+| Delete PRIVATE-bound suite deletes its dataset children | client deletes a suite bound to a PRIVATE dataset | the suite, its suite-owned meta children, the PRIVATE dataset, its test cases, and its revalidation tasks SHALL be deleted in the same meta transaction |
+| Delete unbound suite affects no dataset | client deletes a suite whose `datasetId` is null | only the suite and its suite-owned children SHALL be removed; no dataset or dataset-owned test case SHALL be deleted |
+| PRIVATE suite cascade rolls back on a meta deletion failure | a meta deletion step fails while deleting a PRIVATE-bound suite and its dataset | the meta transaction SHALL roll back, preserving the suite, dataset, and their meta children |
 
 ### Requirement: Get TestSuite by id
 The service SHALL allow retrieving a TestSuite by its id.
@@ -135,7 +136,7 @@ Status: **Implemented**
 - **THEN** system SHALL respond with HTTP 404
 
 ### Requirement: Create a TestSuite
-The service SHALL allow creating a new TestSuite. The request body SHALL accept `suiteType` (optional, defaults to `DEPLOYMENT`) and `datasetId` (required — FK to `datasets.id`). For `DEPLOYMENT` suites: `requestTemplate`, `inputBindings`, `deploymentRef`, `endpointRef` (existing behavior — `deploymentRef` hard-required, `endpointRef`/`requestTemplate` soft-validated). For `MCP_TOOL` suites: `inputBindings`, `mcpDeploymentRef` (hard-required), `toolRef` (hard-required), `argumentTemplate` (soft-validated — null produces warning). For `ROUTE` suites: `routesRef` (hard-required), `endpointRef` and `requestTemplate` (both hard-required), `inputBindings`, `responseColumns`, `additionalRequests`, `requestName` (see "Type-specific field validation" and "Route reference on ROUTE suites"). `testCaseSchema` SHALL NOT appear on the suite request — it lives on the referenced dataset. `disabledTestCaseIds` SHALL NOT appear on the suite request — the runnable subset is narrowed by `testCaseFilter` (see `suite-test-case-filter`). The system SHALL perform type-specific validation and suite-level soft validation, sourcing the dataset's schema via `DatasetSchemaProvider` for binding cross-checks. Additionally, the system SHALL support cloning an existing suite via `POST /api/v1/test-suites/{sourceId}/clone` (see `test-suite-clone` spec).
+The service SHALL allow creating a new TestSuite. The request body SHALL accept `suiteType` (optional, defaults to `DEPLOYMENT`) and `datasetId` (optional — nullable FK to `datasets.id`). For `DEPLOYMENT` suites: `requestTemplate`, `inputBindings`, `deploymentRef`, `endpointRef` (existing behavior — `deploymentRef` hard-required, `endpointRef`/`requestTemplate` soft-validated). For `MCP_TOOL` suites: `inputBindings`, `mcpDeploymentRef` (hard-required), `toolRef` (hard-required), `argumentTemplate` (soft-validated — null produces warning). For `ROUTE` suites: `routesRef` (hard-required), `endpointRef` and `requestTemplate` (both hard-required), `inputBindings`, `responseColumns`, `additionalRequests`, `requestName` (see "Type-specific field validation" and "Route reference on ROUTE suites"). `testCaseSchema` SHALL NOT appear on the suite request — it lives on the referenced dataset. `disabledTestCaseIds` SHALL NOT appear on the suite request — the runnable subset is narrowed by `testCaseFilter` (see `suite-test-case-filter`). The system SHALL perform type-specific validation and suite-level soft validation, sourcing the dataset's schema via `DatasetSchemaProvider` for binding cross-checks. Additionally, the system SHALL support cloning an existing suite via `POST /api/v1/test-suites/{sourceId}/clone` (see `test-suite-clone` spec).
 Status: **Implemented**
 
 #### Scenario: Valid DEPLOYMENT payload
@@ -160,13 +161,17 @@ Status: **Implemented**
 
 #### Scenario: CreatedBy attribution
 - **WHEN** `config.rest.security.mode=oidc` and an authenticated client creates a TestSuite
-- **THEN** system SHALL store `createdBy` from JWT subject
+- **THEN** system SHALL store `createdBy` using the configured `security.jwt.user-claim`; when `security.jwt.resolve-user-name=true`, a resolved display name SHALL be used with the claim value as fallback
+
+#### Scenario: Authenticated non-JWT author
+- **WHEN** a suite is created by an authenticated non-anonymous, non-JWT principal
+- **THEN** `createdBy` SHALL be that principal's name, without JWT display-name resolution
 
 #### Scenario: Missing author is rejected in OIDC mode
 - **WHEN** `config.rest.security.mode=oidc` and a request is not authenticated (no user detected)
 - **THEN** system SHALL reject the request with HTTP 401
 
-#### Scenario: Anonymous author allowed only in no-security mode
+#### Scenario: Anonymous author without an available identity
 - **WHEN** `config.rest.security.mode=none` and an unauthenticated client creates a TestSuite
 - **THEN** system SHALL store `createdBy` as `anonymous`
 
@@ -179,60 +184,44 @@ Status: **Implemented**
 - **THEN** system SHALL deep-copy suite-level configuration (the cloned suite references the same dataset as the source by default; see `test-suite-clone` spec)
 
 ### Requirement: Update a TestSuite
-The service SHALL allow updating an existing TestSuite by id. Suite type SHALL NOT be changeable on update. `datasetId` MAY be changed (re-binding the suite to a different dataset triggers synchronous re-validation against the new dataset's schema). When binding-relevant configuration fields change, the system SHALL perform synchronous suite-level re-validation; suite PUTs SHALL NOT spawn an async `RevalidationTask` (only dataset PUTs that mutate `testCaseSchema` spawn tasks — see the `datasets` spec).
+
+Status: **Implemented**
+
+The service SHALL allow updating an existing TestSuite by id. Suite type SHALL NOT be changeable on update. `datasetId` MAY be changed (re-binding the suite to a different dataset triggers synchronous re-validation against the new dataset's schema). When binding-relevant configuration fields change, the system SHALL perform synchronous suite-level re-validation; suite PUTs SHALL NOT create a `RevalidationTask`; dataset schema updates create and execute those tasks synchronously (see `datasets`).
+
+Suite PUT SHALL implement optimistic locking against the suite's own version, independently of the optional dataset-version If-Match used by imports. Suite PUT SHALL accept a non-null `createdBy` replacement; create attribution follows [security](../security/spec.md).
+
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
+
+| Case | When | Expected |
+|---|---|---|
+| Existing id | `PUT /api/v1/test-suites/{id}` with a valid body | SHALL update the existing TestSuite, recalculate suite-level `isValid` and `validationWarnings` against the referenced dataset's schema, and return the updated entity |
+| Missing id | `PUT /api/v1/test-suites/{id}` for a non-existent TestSuite | SHALL respond with HTTP 404 |
+| Suite type change rejected | `PUT /api/v1/test-suites/{id}` with a `suiteType` different from the existing suite | SHALL respond with HTTP 400 with error code `VALIDATION_ERROR` |
+| Rebind to different dataset | PUT with a `datasetId` differing from the stored value, the current suite is unbound or PUBLIC-bound, and the new dataset exists and allows the binding | SHALL update `datasetId`, re-run synchronous suite validation against the new dataset's schema, recalculate `isValid` and `validationWarnings`, and return the updated suite |
+| Update MCP suite toolRef | client updates `toolRef` of an MCP_TOOL suite (different inputSchema) | SHALL recalculate suite-level `isValid` and `validationWarnings` synchronously; test case validity is not affected (test case validity is driven by dataset schema, not MCP tool schema) |
+| Update MCP suite argumentTemplate | client updates `argumentTemplate` of an MCP_TOOL suite | SHALL recalculate suite-level `isValid` and `validationWarnings` synchronously (argument variables re-extracted, bindings re-checked) |
+| Update embedded refs (DEPLOYMENT only) | client updates `deploymentRef` and/or `endpointRef` of an existing DEPLOYMENT TestSuite | SHALL persist the updated embedded objects and recalculate `isValid` and `validationWarnings` |
+| Update a ROUTE suite's routesRef | `PUT /api/v1/test-suites/{id}` on a ROUTE suite with a different valid `routesRef` and/or updated `endpointRef` / `requestTemplate` | SHALL persist the updated values, recalculate `isValid` and `validationWarnings`, and return the updated entity with the new `routesRef`; the hard-validation rules of "Type-specific field validation" apply to the PUT body |
+| Update inputBindings | client updates `inputBindings` of an existing TestSuite (any type) | SHALL recalculate `isValid` and `validationWarnings` synchronously (bindings re-checked against the dataset's schema and the suite's template variables) |
+| Suite PUT does not create a dataset revalidation task | any suite PUT completes (including binding-relevant changes) | SHALL NOT create a `RevalidationTask`; suite-side validation is synchronous, and dataset schema updates create and execute their tasks synchronously |
+| Successful update with correct version | PUT with If-Match matching current version | SHALL update and increment version; response SHALL include ETag and version field |
+| Version conflict | client updates a suite with If-Match that does not match the current suite version | SHALL respond with HTTP 409 Conflict and error code VERSION_CONFLICT |
+| Update endpointRef triggers synchronous suite-level re-validation | client updates `endpointRef` schema on an existing suite | SHALL re-run synchronous suite-level validation (`SuiteValidationService`) against the referenced dataset's schema, update `isValid`/`validationWarnings`, and return HTTP 200 with the updated suite; SHALL NOT create a dataset-rooted `RevalidationTask` or return HTTP 202 |
+
+### Requirement: Delete a TestSuite
+The service SHALL allow deleting a TestSuite by id. The deletion SHALL cascade to suite-owned meta children (TSMDs, runs and snapshots). If the referenced dataset is PRIVATE, it and its test cases SHALL be deleted in the same meta transaction. A PUBLIC dataset and its test cases SHALL be preserved; an unbound suite touches no dataset. Run-scoped analytics rows SHALL be excluded by tombstones, not physically cascade-deleted. The delete response SHALL NOT include a `deletedTestCases` count. Before the suite row is deleted (and its runs cascade via the meta-DB foreign key), the system SHALL write an analytics tombstone (see `run-analytics-deletion`) for every run owned by the suite, so those runs' analytics rows become excluded from reads the same as a run deleted individually via `DELETE /api/v1/test-suite-runs/{id}`.
 Status: **Implemented**
 
 #### Scenario: Existing id
-- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with a valid body
-- **THEN** system SHALL update the existing TestSuite, recalculate suite-level `isValid` and `validationWarnings` against the referenced dataset's schema, and return the updated entity
-
-#### Scenario: Missing id
-- **WHEN** client calls `PUT /api/v1/test-suites/{id}` for a non-existent TestSuite
-- **THEN** system SHALL respond with HTTP 404
-
-#### Scenario: Suite type change rejected
-- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with a `suiteType` different from the existing suite
-- **THEN** system SHALL respond with HTTP 400 with error code `VALIDATION_ERROR`
-
-#### Scenario: Rebind to different dataset
-- **WHEN** client calls PUT with a `datasetId` differing from the stored value, and the new dataset exists
-- **THEN** system SHALL update `datasetId`, re-run synchronous suite validation against the new dataset's schema, recalculate `isValid` and `validationWarnings`, and return the updated suite
-
-#### Scenario: Update MCP suite toolRef
-- **WHEN** client updates `toolRef` of an MCP_TOOL suite (different inputSchema)
-- **THEN** system SHALL recalculate suite-level `isValid` and `validationWarnings` synchronously; test case validity is not affected (test case validity is driven by dataset schema, not MCP tool schema)
-
-#### Scenario: Update MCP suite argumentTemplate
-- **WHEN** client updates `argumentTemplate` of an MCP_TOOL suite
-- **THEN** system SHALL recalculate suite-level `isValid` and `validationWarnings` synchronously (argument variables re-extracted, bindings re-checked)
-
-#### Scenario: Update embedded refs (DEPLOYMENT only)
-- **WHEN** client updates `deploymentRef` and/or `endpointRef` of an existing DEPLOYMENT TestSuite
-- **THEN** system SHALL persist the updated embedded objects and recalculate `isValid` and `validationWarnings`
-
-#### Scenario: Update a ROUTE suite's routesRef
-- **WHEN** client calls `PUT /api/v1/test-suites/{id}` on a ROUTE suite with a different valid `routesRef` and/or updated `endpointRef` / `requestTemplate`
-- **THEN** system SHALL persist the updated values, recalculate `isValid` and `validationWarnings`, and return the updated entity with the new `routesRef`; the hard-validation rules of "Type-specific field validation" apply to the PUT body
-
-#### Scenario: Update inputBindings
-- **WHEN** client updates `inputBindings` of an existing TestSuite (any type)
-- **THEN** system SHALL recalculate `isValid` and `validationWarnings` synchronously (bindings re-checked against the dataset's schema and the suite's template variables)
-
-#### Scenario: Suite PUT does not spawn async task
-- **WHEN** any suite PUT completes (including binding-relevant changes)
-- **THEN** system SHALL NOT spawn an async `RevalidationTask`; suite-side validation is synchronous; async tasks are only spawned by dataset PUTs that mutate `testCaseSchema`
-
-### Requirement: Delete a TestSuite
-The service SHALL allow deleting a TestSuite by id. The deletion SHALL cascade only to suite-owned children (TSMDs, runs, etc.). The referenced `Dataset` SHALL NOT be deleted (it may be shared with other suites). Test cases SHALL NOT be deleted (they live in the dataset and are reachable from any other suite referencing the same dataset). The delete response SHALL NOT include a `deletedTestCases` count. Before the suite row is deleted (and its runs cascade via the meta-DB foreign key), the system SHALL write an analytics tombstone (see `run-analytics-deletion`) for every run owned by the suite, so those runs' analytics rows become excluded from reads the same as a run deleted individually via `DELETE /api/v1/test-suite-runs/{id}`.
-Status: **Planned**
-
-#### Scenario: Existing id
 - **WHEN** client calls `DELETE /api/v1/test-suites/{id}` for an existing TestSuite
-- **THEN** system SHALL delete the suite and its owned children (TSMDs, runs); the response SHALL be HTTP 204 (or HTTP 200 with a delete-response body per project convention) and SHALL NOT carry `deletedTestCases`
+- **THEN** system SHALL delete the suite and its owned children (TSMDs, runs); the response SHALL be HTTP 200 with `{"deleted": true}` and SHALL NOT carry `deletedTestCases`
 
-#### Scenario: Cascade delete suite-owned children only
-- **WHEN** system deletes a TestSuite
-- **THEN** it SHALL delete suite-owned children (TSMDs, runs, eval-summaries) but SHALL NOT delete test cases under the dataset nor the dataset itself
+#### Scenario: Deleting a PUBLIC-bound suite preserves dataset test cases
+- **WHEN** system deletes a TestSuite bound to a PUBLIC dataset
+- **THEN** it SHALL delete suite-owned meta children, tombstone the owned runs for analytics reads, and preserve the dataset and its test cases
 
 #### Scenario: Missing id
 - **WHEN** client calls `DELETE /api/v1/test-suites/{id}` for a non-existent TestSuite
@@ -282,23 +271,24 @@ The service SHALL enforce that TestSuite `name` is unique across all suites (cas
 - **THEN** system SHALL respond with HTTP 409, error code `UNIQUE_CONSTRAINT_VIOLATION`
 
 ### Requirement: Valid JSON Schema for endpoint schemas
+
+Status: **Implemented**
+
 The service SHALL reject create/update requests when `endpointRef.requestBodySchema`, `endpointRef.responseBodySchema`, or any `endpointRef.parameters[i].schema` contains invalid JSON Schema (e.g. invalid `type` value). Validation SHALL be against JSON Schema Draft-07 rules (meta-schema or equivalent).
 
-#### Scenario: Invalid type in requestBodySchema
-- **WHEN** client calls POST or PUT with `endpointRef.requestBodySchema` containing a property with invalid `type` (e.g. `"type": "abc"`)
-- **THEN** system SHALL respond with HTTP 400 and a clear validation error message
+These schema checks SHALL apply to the suite's own endpoint and each `additionalRequests` endpoint; `testCasesDefinition` is not a test-case schema validation surface.
 
-#### Scenario: Invalid type in responseBodySchema
-- **WHEN** client calls POST or PUT with `endpointRef.responseBodySchema` containing invalid `type` (e.g. root or property `"type": "abc"`)
-- **THEN** system SHALL respond with HTTP 400 and a clear validation error message
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: Invalid type in parameter schema
-- **WHEN** client calls POST or PUT with `endpointRef.parameters[i].schema` containing invalid `type`
-- **THEN** system SHALL respond with HTTP 400 and a clear validation error message
-
-#### Scenario: Schema with $ref rejected (v1)
-- **WHEN** client calls POST or PUT with any schema (requestBodySchema, responseBodySchema, parameters[i].schema) containing `$ref` keyword
-- **THEN** system SHALL respond with HTTP 400 and indicate `$ref` is not supported in v1
+| Case | When | Expected |
+|---|---|---|
+| Invalid type in requestBodySchema | POST or PUT with `endpointRef.requestBodySchema` containing a property with invalid `type` (e.g. `"type": "abc"`) | SHALL respond with HTTP 400 and a clear validation error message |
+| Invalid type in responseBodySchema | POST or PUT with `endpointRef.responseBodySchema` containing invalid `type` (e.g. root or property `"type": "abc"`) | SHALL respond with HTTP 400 and a clear validation error message |
+| Invalid type in parameter schema | POST or PUT with `endpointRef.parameters[i].schema` containing invalid `type` | SHALL respond with HTTP 400 and a clear validation error message |
+| Schema with $ref rejected (v1) | POST or PUT with any schema (requestBodySchema, responseBodySchema, parameters[i].schema) containing `$ref` keyword | SHALL respond with HTTP 400 and indicate `$ref` is not supported in v1 |
+| Invalid schema prevents TestSuite save | client creates/updates TestSuite with malformed JSON Schema | SHALL respond HTTP 400 and NOT persist |
 
 ### Requirement: EndpointContractDto schemas are optional
 The `endpointRef.requestBodySchema` and `endpointRef.responseBodySchema` fields SHALL be optional (nullable). It SHALL be possible to define a TestSuite with only a `requestTemplate` and no endpoint schemas. Schemas improve usability via validation but are not required.
@@ -312,45 +302,31 @@ The `endpointRef.requestBodySchema` and `endpointRef.responseBodySchema` fields 
 - **THEN** system SHALL skip template-vs-schema validation (no schema warnings generated)
 
 ### Requirement: Suite-level soft validation (`isValid` + `validationWarnings`)
-The TestSuite response SHALL include `isValid` (boolean) and `validationWarnings` (structured list, same format as TestCase validation warnings). Suite-level validation covers **configuration correctness only**. Test-case presence is **not** a component of stored suite validity and does not affect `isValid` or `validationWarnings` in the suite GET response. A bound suite with zero runnable test cases MAY be `isValid = true`; the run path enforces the presence requirement at run-creation time (see `test-suite-runs` spec).
-
-Suite-level configuration correctness covers: template + bindings, cross-checked against the **referenced dataset's** `testCaseSchema` (resolved via `DatasetSchemaProvider`) and the suite's `responseColumns` / `endpointRef`. This dimension is **independent of test case data**.
-
-`isValid` SHALL be `true` only when the configuration dimension produces no warnings. `isValid` SHALL be recalculated on every suite create or update, and on dataset bind/detach and dataset schema revalidation (Phase 2). TestCase `isValid` (test-case **data** validation) is owned by the test-case domain and is never triggered by suite validation — the configuration and data layers remain independent.
 
 Status: **Implemented**
 
-#### Scenario: Create returns suite validation result
-- **WHEN** client creates a TestSuite with `requestTemplate` and `inputBindings`
-- **THEN** the response SHALL include `isValid` and `validationWarnings` reflecting suite-level configuration checks (urlTemplate, binding coverage, binding references against the dataset's schema, template conformance to endpoint schema)
+The TestSuite response SHALL include `isValid` (boolean) and `validationWarnings` (structured list, same format as TestCase validation warnings). Suite-level validation covers **configuration correctness only**. Test-case presence is **not** a component of stored suite validity and does not affect `isValid` or `validationWarnings` in the suite GET response. A bound suite with zero runnable test cases MAY be `isValid = true`; the run path enforces the presence requirement at run-creation time (see `test-suite-runs` spec).
 
-#### Scenario: Update recalculates suite validation
-- **WHEN** client updates `requestTemplate`, `inputBindings`, `endpointRef`, `responseColumns`, or `datasetId`
-- **THEN** system SHALL recalculate `isValid` and `validationWarnings` for the suite against the (possibly newly-bound) dataset's schema
+Suite-level configuration correctness covers: template + bindings, cross-checked against the **referenced dataset's** `testCaseSchema` (resolved via `DatasetSchemaProvider`) and the suite's `responseColumns` / `endpointRef`, plus score metric references in `overallScore` / `testCaseOverallScore` checked against the suite's metric definition names (see "Score metric reference validation"). This dimension is **independent of test case data**.
 
-#### Scenario: Suite valid — no warnings
-- **WHEN** all suite-level configuration checks pass (urlTemplate valid, all required variables bound, all bindings reference fields in the dataset's schema and template variables, template conforms to endpoint schema)
-- **THEN** `isValid` SHALL be `true` and `validationWarnings` SHALL be empty
+`isValid` SHALL be `true` only when the configuration dimension produces no warnings. `isValid` SHALL be recalculated on every suite create, update or clone, and on dataset bind/detach and dataset schema revalidation (Phase 2); score-reference warnings are additionally refreshed on metric definition create/update/delete. TestCase `isValid` (test-case **data** validation) is owned by the test-case domain and is never triggered by suite validation — the configuration and data layers remain independent.
 
-#### Scenario: Suite invalid — configuration warnings produced
-- **WHEN** any suite-level configuration check fails (e.g., urlTemplate null, required variable unbound, binding references field not in dataset schema)
-- **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL contain structured warning objects (`fieldName`, `path`, `message`, optional `code`)
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: Suite with no request template produces warning
-- **WHEN** TestSuite has `requestTemplate: null`
-- **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a warning ("urlTemplate is required for request assembly") — same as when `requestTemplate` is non-null but `urlTemplate` is null
-
-#### Scenario: Bound suite with no test cases is still config-valid
-- **WHEN** a bound suite's configuration is valid but the referenced dataset has no test cases, or all are invalid, or none match the suite's `testCaseFilter`
-- **THEN** `isValid` SHALL be `true` and `validationWarnings` SHALL be empty (test-case presence is not a suite-validity concern; the run path enforces it separately)
-
-#### Scenario: Unbound suite is not subject to the runnable-test-case rule
-- **WHEN** a suite has `datasetId == null`
-- **THEN** `isValid` SHALL reflect configuration checks only and SHALL NOT carry a `NO_TEST_CASES` warning
-
-#### Scenario: Suite revalidated when dataset schema changes
-- **WHEN** the referenced dataset's `testCaseSchema` is updated (via dataset PUT) and the dataset-rooted `RevalidationTask` runs Phase 2
-- **THEN** the suite's `isValid` and `validationWarnings` SHALL be refreshed by the task's per-suite handler, reflecting configuration correctness against the new schema (see `datasets` spec for Phase 2 semantics)
+| Case | When | Expected |
+|---|---|---|
+| Create returns suite validation result | client creates a TestSuite with `requestTemplate` and `inputBindings` | the response SHALL include `isValid` and `validationWarnings` reflecting suite-level configuration checks (urlTemplate, binding coverage, binding references against the dataset's schema, template conformance to endpoint schema) |
+| Update recalculates suite validation | client updates `requestTemplate`, `inputBindings`, `endpointRef`, `responseColumns`, or `datasetId` | SHALL recalculate `isValid` and `validationWarnings` for the suite against the (possibly newly-bound) dataset's schema |
+| Suite valid — no warnings | all suite-level configuration checks pass (urlTemplate valid, all required variables bound, all bindings reference fields in the dataset's schema and template variables, template conforms to endpoint schema) | `isValid` SHALL be `true` and `validationWarnings` SHALL be empty |
+| Suite invalid — configuration warnings produced | any suite-level configuration check fails (e.g., urlTemplate null, required variable unbound, binding references field not in dataset schema) | `isValid` SHALL be `false` and `validationWarnings` SHALL contain structured warning objects (`fieldName`, `path`, `message`, optional `code`) |
+| Suite with no request template produces warning | TestSuite has `requestTemplate: null` | `isValid` SHALL be `false` and `validationWarnings` SHALL include a warning ("urlTemplate is required for request assembly") — same as when `requestTemplate` is non-null but `urlTemplate` is null |
+| Bound suite with no test cases is still config-valid | a bound suite's configuration is valid but the referenced dataset has no test cases, or all are invalid, or none match the suite's `testCaseFilter` | `isValid` SHALL be `true` and `validationWarnings` SHALL be empty (test-case presence is not a suite-validity concern; the run path enforces it separately) |
+| Unbound suite is not subject to the runnable-test-case rule | a suite has `datasetId == null` | `isValid` SHALL reflect configuration checks only and SHALL NOT carry a `NO_TEST_CASES` warning |
+| Suite revalidated when dataset schema changes | the referenced dataset's `testCaseSchema` is updated (via dataset PUT) and the dataset-rooted `RevalidationTask` runs Phase 2 | the suite's `isValid` and `validationWarnings` SHALL be refreshed by the task's per-suite handler, reflecting configuration correctness against the new schema (see `datasets` spec for Phase 2 semantics) |
+| Creating a test case does not change suite validity | a test case is created in a dataset | the `isValid` and `validationWarnings` of any suite bound to that dataset SHALL remain unchanged |
+| Deleting a test case does not change suite validity | a test case is deleted from a dataset | the `isValid` and `validationWarnings` of any suite bound to that dataset SHALL remain unchanged |
 
 ### Requirement: No stored roles in field definitions
 The service SHALL NOT store role annotations (INPUT, FACT) on field definitions. Field roles are emergent — derived by clients from `inputBindings` (fields referenced by bindings = inputs, fields without bindings = fact candidates).
@@ -746,7 +722,7 @@ The system SHALL expose a `detach-dataset` action endpoint on the test-suite res
 - **THEN** the system processes the request according to the `detach-dataset` capability spec and returns `TestSuiteResponseDto`
 
 ### Requirement: Per-suite `overallScore` on the suite API
-The suite create and update request bodies SHALL accept an optional `overallScore` field — a JSON object holding a structured-query `StructuredQuery` expression that defines the run-level `overall` metric score for the suite. The system SHALL persist it verbatim to `test_suites.overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL, preserving the built-in default behavior (see `metric-score-statistics`). `overallScore` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. The expression SHALL be stored opaquely and SHALL NOT be validated as a runnable query at write time (a malformed or non-runnable expression surfaces at run-level computation, not at suite persistence).
+The suite create and update request bodies SHALL accept an optional `overallScore` field — a JSON object holding a structured-query `StructuredQuery` expression that defines the run-level `overall` metric score for the suite. The system SHALL persist it verbatim to `test_suites.overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL, preserving the built-in default behavior (see `metric-score-statistics`). `overallScore` SHALL affect suite validity only through score metric reference validation (see "Score metric reference validation"). The expression SHALL be stored opaquely and SHALL NOT be validated as a runnable query at write time (a malformed or non-runnable expression surfaces at run-level computation, not at suite persistence).
 Status: **Implemented**
 
 #### Scenario: Set overallScore on update and read it back
@@ -762,8 +738,8 @@ Status: **Implemented**
 - **THEN** system SHALL store `overall_score` as NULL and the suite response SHALL omit `overallScore` (or return it as null)
 
 #### Scenario: overallScore does not affect suite validity
-- **WHEN** client sets `overallScore` on an otherwise valid suite
-- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or content of `overallScore`
+- **WHEN** client sets an `overallScore` whose metric references all resolve, on an otherwise valid suite
+- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence of `overallScore`
 
 ### Requirement: Per-suite `overallScoreThreshold` on the suite API
 The suite create and update request bodies SHALL accept an optional `overallScoreThreshold` field — a numeric value (same type as the computed run-level `overall` metric score result) that a client can compare a run's `overall` score against, and that the system uses to derive a per-row `passed` value on each run's `EvalSummary` rows (see `eval-summary-scoring`). The system SHALL persist it verbatim to `test_suites.overall_score_threshold` (`DOUBLE PRECISION`) and SHALL return it on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `overallScoreThreshold` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. The system SHALL reject a value outside the inclusive range `0.0`–`1.0` with HTTP 400 `VALIDATION_ERROR` at write time and SHALL NOT persist it. At snapshot time (run start), the suite's current `overallScoreThreshold` SHALL be captured into the run's `SuiteSnapshotDto` (see `suite-run-snapshot`) and used thereafter to compute each row's `passed`; the system SHALL NOT perform any comparison against the run-level computed `overall` metric score result itself — evaluating the threshold against that run-level aggregate remains a client-side concern.
@@ -802,7 +778,7 @@ Status: **Implemented**
 - **THEN** the run's `SuiteSnapshotDto.overallScoreThreshold` SHALL equal the suite's current value at that moment, and subsequent edits to the suite's `overallScoreThreshold` SHALL NOT affect that run's already-computed or future `passed` values
 
 ### Requirement: Per-suite `testCaseOverallScore` on the suite API
-The suite create and update request bodies SHALL accept an optional `testCaseOverallScore` field — a JSON object holding an `OverallScoreDefinition` shape, but restricted to `Mean` or `WeightedMean` only (a `CustomFunction` `testCaseOverallScore` SHALL be rejected with HTTP 400 `ValidationException`). When present, `testCaseOverallScore` SHALL be used instead of `overallScore` to drive per-test-case `score`/`passed` computation on a run's `EvalSummary` rows (see `eval-summary-scoring`); when absent, per-test-case scoring SHALL fall back to `overallScore` unless `overallScore` is a `CustomFunction` (in which case there is no effective per-test-case definition — see `eval-summary-scoring`). The system SHALL persist it verbatim to `test_suites.test_case_overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `testCaseOverallScore` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. `testCaseOverallScore` SHALL NOT affect Phase 3's run-level `overall` metric-score result, which SHALL always be computed from `overallScore` regardless of whether `testCaseOverallScore` is configured.
+The suite create and update request bodies SHALL accept an optional `testCaseOverallScore` field — a JSON object holding an `OverallScoreDefinition` shape, but restricted to `Mean` or `WeightedMean` only (a `CustomFunction` `testCaseOverallScore` SHALL be rejected with HTTP 400 `ValidationException`). When present, `testCaseOverallScore` SHALL be used instead of `overallScore` to drive per-test-case `score`/`passed` computation on a run's `EvalSummary` rows (see `eval-summary-scoring`); when absent, per-test-case scoring SHALL fall back to `overallScore` unless `overallScore` is a `CustomFunction` (in which case there is no effective per-test-case definition — see `eval-summary-scoring`). The system SHALL persist it verbatim to `test_suites.test_case_overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `testCaseOverallScore` SHALL affect suite validity only through score metric reference validation (see "Score metric reference validation"). `testCaseOverallScore` SHALL NOT affect Phase 3's run-level `overall` metric-score result, which SHALL always be computed from `overallScore` regardless of whether `testCaseOverallScore` is configured.
 Status: **Implemented**
 
 #### Scenario: Set testCaseOverallScore independently of overallScore
@@ -818,8 +794,8 @@ Status: **Implemented**
 - **THEN** system SHALL store `test_case_overall_score` as NULL and the suite response SHALL omit `testCaseOverallScore` (or return it as null)
 
 #### Scenario: testCaseOverallScore does not affect suite validity
-- **WHEN** client sets `testCaseOverallScore` on an otherwise valid suite
-- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or content of `testCaseOverallScore`
+- **WHEN** client sets a `testCaseOverallScore` whose metric references all resolve, on an otherwise valid suite
+- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence of `testCaseOverallScore`
 
 #### Scenario: Clone inherits the source testCaseOverallScore
 - **WHEN** a suite carrying a `testCaseOverallScore` is cloned
@@ -991,7 +967,57 @@ Status: **Implemented**
 - **WHEN** a ROUTE suite's `routesRef.name` is changed without changing its `requestTemplate.urlTemplate`
 - **THEN** the path DIAL Core receives for a run or try-it-out of that suite SHALL be unchanged
 
+### Requirement: Score metric reference validation
+Suite configuration validation SHALL check the metric references in `overallScore` and `testCaseOverallScore` against the names of the suite's metric definitions (exact, case-sensitive; disabled and invalid definitions count as present). Findings SHALL be reported as suite `validationWarnings` and SHALL make `isValid = false`; they SHALL NOT cause HTTP 400.
+
+- `weighted_mean`: every `weights[i].metricName` without a matching definition SHALL produce an `UNRESOLVED_REFERENCE` warning with `fieldName` = the metric name and `path` = `$.<overallScore|testCaseOverallScore>.weights[i].metricName`.
+- `custom_function` in `overallScore`: the only supported shape is an expression with exactly one select item whose expression is `roc_auc(field, field)`. Each argument whose name starts with `metric::` names the TSMD as the text after `metric::` up to the last `::` (or the whole remainder when there is no further `::`); a TSMD name without a matching definition SHALL produce an `UNRESOLVED_REFERENCE` warning with `fieldName` = that name and `path` = `$.overallScore.expression.select[0].expr.args[i].name`. Other arguments (e.g. `data::`, `metricInfo::`) and the filter SHALL be ignored.
+- Any other `custom_function` expression, and a stored `overallScore` that cannot be read as a score definition, SHALL produce one `UNSUPPORTED_SCORE_FUNCTION` warning with `path` = `$.overallScore.expression`. Validation SHALL NOT fail because of score content.
+- `mean`, absent definitions, a (legacy) `custom_function` stored in `testCaseOverallScore`, and a stored `testCaseOverallScore` that cannot be read SHALL produce no warnings.
+
+Score-reference warnings are those whose `path` starts with `$.overallScore.` or `$.testCaseOverallScore.`. They SHALL be recomputed whenever suite validation runs (create, update, clone, dataset revalidation) and on metric definition create/update/delete (see `test-suite-metric-definitions`). On clone they SHALL be computed against the metric definition names the clone receives (the source suite's names).
+
+Status: **Implemented**
+
+#### Scenario: Weighted mean references a missing metric
+- **WHEN** a suite with no metric definition named `Accuracy` is created with `overallScore = weighted_mean` containing `metricName = "Accuracy"` at index 0
+- **THEN** the response SHALL have `valid = false` and a warning `{code: UNRESOLVED_REFERENCE, fieldName: "Accuracy", path: "$.overallScore.weights[0].metricName"}`
+
+#### Scenario: Weighted mean in testCaseOverallScore references a missing metric
+- **WHEN** a suite's `testCaseOverallScore` is `weighted_mean` with an unmatched `metricName` at index 1
+- **THEN** the suite SHALL carry an `UNRESOLVED_REFERENCE` warning at `$.testCaseOverallScore.weights[1].metricName`
+
+#### Scenario: Name match is case-sensitive
+- **WHEN** the suite has a metric definition `accuracy` and the score references `Accuracy`
+- **THEN** an `UNRESOLVED_REFERENCE` warning SHALL be produced
+
+#### Scenario: Disabled metric definition counts as present
+- **WHEN** the referenced metric definition exists but is disabled or invalid
+- **THEN** no score-reference warning SHALL be produced for it
+
+#### Scenario: roc_auc references a missing metric
+- **WHEN** `overallScore` is `custom_function` `roc_auc(data::label, metric::Classifier::probability)` and the suite has no `Classifier` metric definition
+- **THEN** the suite SHALL carry an `UNRESOLVED_REFERENCE` warning with `fieldName = "Classifier"` at `$.overallScore.expression.select[0].expr.args[1].name`, and no warning for `data::label`
+
+#### Scenario: Unsupported custom function
+- **WHEN** `overallScore` is a `custom_function` whose single select is `avg(metric::Relevancy::score)`, or that has more than one select item
+- **THEN** the request SHALL succeed and the suite SHALL carry one `UNSUPPORTED_SCORE_FUNCTION` warning at `$.overallScore.expression` with `valid = false`
+
+#### Scenario: All references resolved
+- **WHEN** every score reference matches a suite metric definition and the rest of the configuration is valid
+- **THEN** the suite SHALL be `valid = true` with no score-reference warnings
+
+#### Scenario: metric:: argument without output field
+- **WHEN** a `roc_auc` argument is named `metric::Classifier` and the suite has no `Classifier` metric definition
+- **THEN** the suite SHALL carry an `UNRESOLVED_REFERENCE` warning with `fieldName = "Classifier"`
+
+#### Scenario: Clone validates against copied metric definitions
+- **WHEN** a suite whose score references only its own metric definitions is cloned
+- **THEN** the clone response and a subsequent GET SHALL NOT carry score-reference warnings
+
 ## Implementation Notes
+
+- [TestSuiteController.java](../../../src/main/java/com/epam/aidial/evaluation/web/controller/TestSuiteController.java), [TestSuiteService.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestSuiteService.java) and [AuthorResolver.java](../../../src/main/java/com/epam/aidial/evaluation/service/domain/AuthorResolver.java): optional dataset binding, PUT updates, visibility-conditional deletion with analytics tombstones, and current attribution rules.
 
 - ROUTE persistence and mapping use `TestSuite`, `TestSuiteRecordMapper`, `PostgresTestSuiteRepository`, `JsonbMapper`, and `TestSuiteMapper`; `RouteReferenceDto` owns API-boundary canonical-name validation.
 - `TestSuiteRequestValidator` enforces ROUTE type-specific fields; `SuiteValidationService` reuses the HTTP soft-validation path while skipping deployment-model checks when no `deploymentRef` exists.
@@ -1014,6 +1040,7 @@ Status: **Implemented**
 - `testCaseOverallScore` (per-suite): DTO field `TestSuiteRequestDto.testCaseOverallScore` (`OverallScoreDefinition`, `@Valid`, no `example`/response-DTO split noted beyond the discriminated-type shape shared with `overallScore`), per the JSONB-as-object convention; conversion via `JsonbMapper.mapTestCaseOverallScore(OverallScoreDefinition)` (write) / `mapTestCaseOverallScore(String)` (read). Mapping in `TestSuiteMapper` `toEntity` / `toDto` / `toRequestDto` / `toCloneEntity` (raw JSONB string copied verbatim, same as `overallScore`). Model field: `TestSuite.testCaseOverallScore` (`String`, raw JSON); record mapping in `TestSuiteRecordMapper`. New column: `V1.31__AddTestCaseOverallScoreToTestSuites.sql` (`test_case_overall_score JSONB`), then `./gradlew generateJooq`. Not referenced anywhere in `SuiteValidationService` — exempt from `isValid`/`validationWarnings` exactly like `overallScore`.
 - Now captured into `SuiteSnapshotDto.testCaseOverallScore` by `SuiteSnapshotBuilder` at run-start (see `suite-run-snapshot`); `TestSuiteEvaluationJob.buildMetricEvaluationContext` resolves the fallback once, per run, before Phase 2 starts: `snapshot.getTestCaseOverallScore() != null ? ... : snapshot.getOverallScore()`. Phase 3's `MetricScoreComputationContext` always uses `snapshot.getOverallScore()` directly — the fallback is a Phase-2-only concern (see `eval-summary-scoring`).
 - Fixed-path request-model validation: `SuiteValidationService.validateFixedPathRequestModel` delegates to `RequestModelValidator` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service`) for requests whose `endpointRef.relativeUrlPattern` is exactly `ModelSelectingEndpointPaths.OPENAI_RESPONSES` or `ANTHROPIC_MESSAGES` and whose body is a plain `JsonRequestBodyDto.content`; failures become `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR` warnings. `jsonataContent` bodies are deferred to the run-time check in `TurnLoopExecutor` (see `request-template`).
+- Validator: `service.domain.ScoreReferenceValidator`; wired into `SuiteValidationService` (clone passes the source suite's metric names).
 
 ## Open Questions / TODO
 - Add explicit validation rules for `name`/`description` in DTOs (current behavior depends on DTO constraints).

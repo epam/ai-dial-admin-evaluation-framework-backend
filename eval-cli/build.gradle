@@ -5,7 +5,7 @@ plugins {
     id 'checkstyle'
     id 'io.freefair.lombok' version '9.8.2'
     id 'org.springframework.boot' version '4.1.2'
-    id 'com.diffplug.spotless' version '8.10.2'
+    id 'com.diffplug.spotless' version '8.10.4'
 }
 
 group = 'com.epam.aidial'
@@ -51,7 +51,6 @@ spotless {
     java {
         target 'src/*/java/**/*.java'
 
-        palantirJavaFormat('2.102.0')
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()
@@ -63,7 +62,7 @@ repositories {
 }
 
 dependencies {
-    implementation platform("io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:${open_tel_version}")
+    implementation platform("io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:${otel_instrumentation_version}-alpha")
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
     implementation platform('com.fasterxml.jackson:jackson-bom:2.22.4')
     implementation platform('tools.jackson:jackson-bom:3.2.4')

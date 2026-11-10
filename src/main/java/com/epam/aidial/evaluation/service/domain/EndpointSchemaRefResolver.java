@@ -145,22 +145,25 @@ public class EndpointSchemaRefResolver {
             throw new ValidationException("Circular $ref detected: " + ref);
         }
 
-        String[] parts = ref.substring(2).split("/");
-        Object current = root;
-        for (String rawPart : parts) {
-            String part = unescapePointer(rawPart);
-            if (!(current instanceof Map<?, ?> map)) {
-                throw new ValidationException("Unresolvable $ref: " + ref);
+        try {
+            final String[] parts = ref.substring(2).split("/");
+            Object current = root;
+            for (String rawPart : parts) {
+                final String part = unescapePointer(rawPart);
+                if (!(current instanceof Map<?, ?> map)) {
+                    throw new ValidationException("Unresolvable $ref: " + ref);
+                }
+                final Object next = map.get(part);
+                if (next == null) {
+                    throw new ValidationException("Unresolvable $ref: " + ref);
+                }
+                current = next;
             }
-            Object next = map.get(part);
-            if (next == null) {
-                throw new ValidationException("Unresolvable $ref: " + ref);
-            }
-            current = next;
-        }
 
-        refStack.remove(ref);
-        return resolveNode(current, root, refStack);
+            return resolveNode(current, root, refStack);
+        } finally {
+            refStack.remove(ref);
+        }
     }
 
     private static String unescapePointer(String value) {

@@ -44,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -151,7 +152,8 @@ public class TestSuiteService {
         validateTestCaseFilter(testSuiteRequestDto.getDatasetId(), normalized.getTestCaseFilter());
         TestSuite testSuite = testSuiteMapper.toEntity(normalized, createdBy);
 
-        ValidationResult suiteValidation = suiteValidationService.validateSuite(normalized, null, datasetSchema);
+        ValidationResult suiteValidation = suiteValidationService.withScoreReferences(
+                suiteValidationService.validateSuite(normalized, null, datasetSchema), testSuite, Set.of());
         testSuite.setValid(suiteValidation.isValid());
         testSuite.setValidationWarnings(warningsSerializer.serializeWarnings(suiteValidation.getWarnings()));
 
@@ -202,7 +204,10 @@ public class TestSuiteService {
             existing.setCreatedBy(normalized.getCreatedBy());
         }
 
-        ValidationResult suiteValidation = suiteValidationService.validateSuite(normalized, id, datasetSchema);
+        ValidationResult suiteValidation = suiteValidationService.withScoreReferences(
+                suiteValidationService.validateSuite(normalized, id, datasetSchema),
+                existing,
+                testSuiteMetricDefinitionService.findNamesByTestSuiteId(id));
         existing.setValid(suiteValidation.isValid());
         existing.setValidationWarnings(warningsSerializer.serializeWarnings(suiteValidation.getWarnings()));
 

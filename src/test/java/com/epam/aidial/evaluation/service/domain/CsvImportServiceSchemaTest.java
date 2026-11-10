@@ -15,10 +15,14 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
+import com.epam.aidial.evaluation.runner.client.dialcore.SkillRefResolver;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
+import com.epam.aidial.evaluation.service.domain.csv.CsvColumnTypeInferrer;
 import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
 import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
 import com.epam.aidial.evaluation.service.domain.csv.MultiTurnRunAssembler;
@@ -26,6 +30,7 @@ import com.epam.aidial.evaluation.service.domain.csv.SchemaTypeCoercer;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
+import com.epam.aidial.evaluation.service.domain.dto.csv.CsvColumnInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
@@ -92,7 +97,8 @@ class CsvImportServiceSchemaTest {
                 new CsvSchemaFieldBuilder(),
                 new CsvTestCaseGrouper(),
                 new MultiTurnRunAssembler(new TestCaseFieldScopeResolver()),
-                new DurableWarningMerger(warningsSerializer));
+                new DurableWarningMerger(warningsSerializer),
+                new CsvColumnTypeInferrer(objectMapper, new SkillRefResolver(new BindingTypeResolver())));
         datasetId = UUID.randomUUID();
 
         when(csvImportProperties.getMaxFileSize()).thenReturn(DataSize.ofMegabytes(10));
@@ -885,8 +891,135 @@ class CsvImportServiceSchemaTest {
     }
 
     // -------------------------------------------------------------------------
+    // SKILL inference (fix-skill-type-csv-round-trip)
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("OVERRIDE into empty schema: a column of well-formed skill references is persisted as SKILL, values"
+            + " stored verbatim")
+    void overrideEmptySchemaInfersSkill() throws Exception {
+        datasetWithSchema("[]");
+
+        importCsv(
+                "testCaseName,skillField\nRow1,skills/b/x\nRow2,skills/b/team/y/",
+                CsvImportMode.OVERRIDE,
+                CsvConflictStrategy.FAIL);
+
+        assertThat(persistedField("skillField").getType()).isEqualTo(SchemaFieldType.SKILL);
+        ArgumentCaptor<Map<String, Object>> mapCaptor = ArgumentCaptor.captor();
+        verify(warningsSerializer, atLeastOnce()).serializeMap(mapCaptor.capture());
+        assertThat(mapCaptor.getAllValues())
+                .extracting(data -> data.get("skillField"))
+                .contains("skills/b/x", "skills/b/team/y/");
+    }
+
+    @Test
+    @DisplayName("OVERRIDE into empty schema: blank cells between skill references do not demote the column from SKILL")
+    void blankCellsDoNotDemoteSkill() throws Exception {
+        datasetWithSchema("[]");
+
+        importCsv(
+                "testCaseName,skillField\nRow1,skills/b/x\nRow2,\nRow3,skills/b/y",
+                CsvImportMode.OVERRIDE,
+                CsvConflictStrategy.FAIL);
+
+        assertThat(persistedField("skillField").getType()).isEqualTo(SchemaFieldType.SKILL);
+    }
+
+    @Test
+    @DisplayName("OVERRIDE into empty schema: a column blank on every row defaults to STRING, not SKILL")
+    void allBlankColumnDefaultsToString() throws Exception {
+        datasetWithSchema("[]");
+
+        importCsv("testCaseName,col\nRow1,\nRow2,", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        assertThat(persistedField("col").getType()).isEqualTo(SchemaFieldType.STRING);
+    }
+
+    @Test
+    @DisplayName("OVERRIDE into empty schema: a column mixing a skill reference with free text widens to STRING")
+    void mixedSkillAndTextColumnIsString() throws Exception {
+        datasetWithSchema("[]");
+
+        importCsv("testCaseName,col\nRow1,skills/b/x\nRow2,hello", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        assertThat(persistedField("col").getType()).isEqualTo(SchemaFieldType.STRING);
+    }
+
+    @Test
+    @DisplayName("OVERRIDE into empty schema: a column of bucket-only references (skills/b) is STRING, not SKILL")
+    void malformedSkillReferenceColumnIsString() throws Exception {
+        datasetWithSchema("[]");
+
+        importCsv("testCaseName,col\nRow1,skills/b\nRow2,skills/c", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        assertThat(persistedField("col").getType()).isEqualTo(SchemaFieldType.STRING);
+    }
+
+    @Test
+    @DisplayName("MERGE: a new column of skill references is appended as SKILL; the existing column keeps its type")
+    void mergeNewSkillColumnIsSkill() throws Exception {
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
+
+        importCsv("testCaseName,prompt,skill\nRow1,hi,skills/b/x", CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
+
+        assertThat(persistedField("skill").getType()).isEqualTo(SchemaFieldType.SKILL);
+        assertThat(persistedField("prompt").getType()).isEqualTo(SchemaFieldType.STRING);
+    }
+
+    @Test
+    @DisplayName("APPEND into a schema declaring the column STRING: skill references do not retype it (no schema update)")
+    void appendDeclaredStringColumnIsNotRetyped() throws Exception {
+        datasetWithSchema("[{\"name\":\"note\",\"type\":\"STRING\",\"required\":false}]");
+
+        importCsv("testCaseName,note\nRow1,skills/b/x", CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
+
+        verify(datasetService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("OVERRIDE into a schema declaring the column STRING: skill references re-derive it as SKILL")
+    void overrideDeclaredStringColumnIsRederivedAsSkill() throws Exception {
+        datasetWithSchema("[{\"name\":\"note\",\"type\":\"STRING\",\"required\":false}]");
+
+        importCsv("testCaseName,note\nRow1,skills/b/x", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        assertThat(persistedField("note").getType()).isEqualTo(SchemaFieldType.SKILL);
+    }
+
+    @Test
+    @DisplayName("Preview: autoDetectedSchema and detectedColumns report SKILL for a column of skill references")
+    void previewReportsInferredSkill() throws Exception {
+        datasetWithSchema("[]");
+
+        String csv = "testCaseName,skillField\nRow1,skills/b/x";
+        InputStream is = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
+        CsvImportPreviewDto preview =
+                service.preview(datasetId, is, csv.length(), ',', CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        assertThat(preview.getAutoDetectedSchema())
+                .filteredOn(f -> "skillField".equals(f.getName()))
+                .singleElement()
+                .extracting(FieldDefinitionDto::getType)
+                .isEqualTo(SchemaFieldType.SKILL);
+        assertThat(preview.getDetectedColumns())
+                .filteredOn(c -> "skillField".equals(c.getFieldName()))
+                .singleElement()
+                .extracting(CsvColumnInfoDto::getInferredType)
+                .isEqualTo("SKILL");
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private FieldDefinitionDto persistedField(String name) throws Exception {
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(persistedSchemaJson(), new TypeReference<>() {});
+        return persisted.stream()
+                .filter(f -> name.equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+    }
 
     private CsvImportResultDto importCsv(String csv, CsvImportMode mode, CsvConflictStrategy strategy) {
         InputStream is = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));

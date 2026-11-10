@@ -1,3 +1,10 @@
+# Aggregated Metric Definitions
+
+## Purpose
+Describe the suite-scoped read endpoints that enrich metric definitions with declaration and version details, and their current response contract.
+
+## Requirements
+
 ### Requirement: Aggregated metric definition endpoint
 The system SHALL provide a `GET /api/v1/test-suites/{testSuiteId}/metric-definitions/{id}/aggregated` endpoint that returns a test suite metric definition enriched with its referenced metric declaration and metric declaration version in a single response.
 
@@ -51,14 +58,14 @@ Status: Implemented
 #### Scenario: List endpoint is documented
 - **WHEN** a developer views the OpenAPI document
 - **THEN** the aggregated list operation SHALL expose an array schema for aggregated metric definitions and minimal and full examples.
-### Requirement: Aggregated response preserves base metric definition fields
-The aggregated response DTO SHALL include the same top-level fields as `TestSuiteMetricDefinitionResponseDto` (`id`, `testSuiteId`, `name`, `metricDeclarationName`, `configBindings`, `inputBindings`, `createdAt`, `updatedAt`) plus `metricDeclarationId` and `metricDeclarationVersionId` for backward compatibility.
+### Requirement: Aggregated response fields
+The aggregated response DTO SHALL expose `id`, `testSuiteId`, `name`, `metricDeclarationName`, `metricDeclarationId`, `metricDeclarationVersionId`, `configBindings`, `inputBindings`, `createdAt`, `updatedAt`, `metricDeclaration`, and `metricDeclarationVersion`. It SHALL NOT expose the standard management response's `enabled`, `condition`, `valid`, or `validationWarnings` fields; it is an enriched projection, not a superset of that response.
 
 Status: Implemented
 
-#### Scenario: All base fields present in aggregated response
+#### Scenario: Enriched projection rather than management superset
 - **WHEN** a client retrieves an aggregated metric definition
-- **THEN** the response SHALL contain all fields from the standard metric definition response, ensuring clients can use the aggregated endpoint as a superset of the standard `GET /{id}` response
+- **THEN** the response SHALL contain the listed enrichment fields but not `enabled`, `condition`, `valid`, or `validationWarnings`
 
 ### Requirement: JSONB schema fields exposed as JSON objects
 The `configSchema`, `inputSchema`, and `outputSchema` fields in the nested `metricDeclarationVersion` object SHALL be returned as JSON objects (not raw strings), consistent with the existing `MetricDeclarationVersionResponseDto` convention.
@@ -71,7 +78,7 @@ Status: Implemented
 
 #### Scenario: Null schema fields
 - **WHEN** a client retrieves an aggregated metric definition where the referenced version has null schemas
-- **THEN** the corresponding schema fields SHALL be `null` in the response
+- **THEN** the corresponding schema fields SHALL be omitted by the configured non-null JSON serialization
 
 ### Requirement: OpenAPI documentation for aggregated endpoint
 The aggregated endpoint SHALL have OpenAPI annotations including operation summary, description, response schema, and example responses.
@@ -81,3 +88,9 @@ Status: Implemented
 #### Scenario: Endpoint visible in Swagger UI
 - **WHEN** a developer opens Swagger UI
 - **THEN** the `GET /{id}/aggregated` endpoint SHALL appear under the "Test Suite Metric Definitions" tag with a clear description of its purpose
+
+## Implementation Notes
+
+- [Controller](../../../src/main/java/com/epam/aidial/evaluation/web/controller/TestSuiteMetricDefinitionController.java) registers both aggregated reads and their OpenAPI schemas.
+- [Service](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestSuiteMetricDefinitionService.java) delegates suite-scoped lookup/list to the repository without a separate suite-existence check.
+- [Aggregated DTO](../../../src/main/java/com/epam/aidial/evaluation/service/domain/dto/AggregatedMetricDefinitionResponseDto.java) and [mapper](../../../src/main/java/com/epam/aidial/evaluation/service/domain/mapper/TestSuiteMetricDefinitionMapper.java) define the projection; [version DTO](../../../src/main/java/com/epam/aidial/evaluation/service/domain/dto/MetricDeclarationVersionResponseDto.java) exposes object schemas.

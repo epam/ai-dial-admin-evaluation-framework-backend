@@ -28,6 +28,8 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
+import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.service.domain.dto.AggregatedMetricDefinitionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseBindingSourceDto;
@@ -37,6 +39,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionRe
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -1220,7 +1223,122 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     // moved to DatasetService after task group 4 of introduce-dataset-entity. Suite PUT no longer
     // observes schema changes, so the original premise of these two tests is gone.
 
+    // --- Suite score-reference warning refresh ---
+
+    @Test
+    @DisplayName("Creating the referenced TSMD resolves the suite's score-reference warning")
+    void shouldResolveScoreWarning_whenReferencedMetricCreated() {
+        TestSuiteResponseDto suite = createSuiteWithWeightedScore("Accuracy", true);
+
+        createTsmdForSuite(suite.getId(), "Accuracy");
+
+        TestSuiteResponseDto refreshed = getSuite(suite.getId());
+        assertThat(refreshed.isValid()).isTrue();
+        assertThat(refreshed.getValidationWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Deleting the referenced TSMD adds an UNRESOLVED_REFERENCE warning to the suite")
+    void shouldAddScoreWarning_whenReferencedMetricDeleted() {
+        TestSuiteResponseDto suite = createSuiteWithWeightedScore("Accuracy", true);
+        UUID tsmdId = createTsmdForSuite(suite.getId(), "Accuracy");
+
+        ResponseEntity<Void> deleteResponse = restTemplate.exchange(
+                apiUrl("/test-suites/" + suite.getId() + "/metric-definitions/" + tsmdId),
+                HttpMethod.DELETE,
+                null,
+                Void.class);
+
+        assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        TestSuiteResponseDto refreshed = getSuite(suite.getId());
+        assertThat(refreshed.isValid()).isFalse();
+        assertThat(refreshed.getValidationWarnings())
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.UNRESOLVED_REFERENCE
+                        && "Accuracy".equals(w.getFieldName()));
+    }
+
+    @Test
+    @DisplayName("Renaming the referenced TSMD adds an UNRESOLVED_REFERENCE warning for the old name")
+    void shouldAddScoreWarning_whenReferencedMetricRenamed() {
+        TestSuiteResponseDto suite = createSuiteWithWeightedScore("Accuracy", true);
+        UUID tsmdId = createTsmdForSuite(suite.getId(), "Accuracy");
+
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + suite.getId() + "/metric-definitions/" + tsmdId),
+                HttpMethod.PUT,
+                jsonEntity(validRequest("Precision")),
+                TestSuiteMetricDefinitionResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TestSuiteResponseDto refreshed = getSuite(suite.getId());
+        assertThat(refreshed.isValid()).isFalse();
+        assertThat(refreshed.getValidationWarnings())
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.UNRESOLVED_REFERENCE
+                        && "Accuracy".equals(w.getFieldName()));
+    }
+
+    @Test
+    @DisplayName("Unrelated suite warnings are kept when a TSMD mutation resolves the score reference")
+    void shouldKeepUnrelatedWarnings_whenScoreReferenceResolved() {
+        TestSuiteResponseDto suite = createSuiteWithWeightedScore("Accuracy", false);
+
+        createTsmdForSuite(suite.getId(), "Accuracy");
+
+        TestSuiteResponseDto refreshed = getSuite(suite.getId());
+        assertThat(refreshed.isValid()).isFalse();
+        assertThat(refreshed.getValidationWarnings())
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUIRED
+                        && w.getMessage() != null
+                        && w.getMessage().contains("requestTemplate"));
+        assertThat(refreshed.getValidationWarnings())
+                .noneMatch(w -> w.getCode() == ValidationWarningCode.UNRESOLVED_REFERENCE
+                        && w.getPath() != null
+                        && w.getPath().startsWith("$.overallScore."));
+    }
+
+    @Test
+    @DisplayName("Creating an unreferenced TSMD leaves the suite's updatedAt unchanged")
+    void shouldNotTouchSuite_whenScoreWarningsUnchanged() {
+        TestSuiteResponseDto suite = createSuiteWithWeightedScore("Accuracy", true);
+        createTsmdForSuite(suite.getId(), "Accuracy");
+        Long updatedAtBefore = getSuite(suite.getId()).getUpdatedAt();
+
+        createTsmdForSuite(suite.getId(), "Unreferenced");
+
+        assertThat(getSuite(suite.getId()).getUpdatedAt()).isEqualTo(updatedAtBefore);
+    }
+
     // --- Helper Methods ---
+
+    private TestSuiteResponseDto createSuiteWithWeightedScore(String metricName, boolean withRequestTemplate) {
+        TestSuiteRequestDto request =
+                buildSuiteRequest("score-suite-" + UUID.randomUUID(), List.of(), List.of());
+        request.setOverallScore(new WeightedMean(List.of(new WeightedMetric(metricName, "score", BigDecimal.ONE))));
+        if (!withRequestTemplate) {
+            request.setRequestTemplate(null);
+        }
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    private UUID createTsmdForSuite(UUID suiteId, String name) {
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suiteId + "/metric-definitions"),
+                jsonEntity(validRequest(name)),
+                TestSuiteMetricDefinitionResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody().getId();
+    }
+
+    private TestSuiteResponseDto getSuite(UUID suiteId) {
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.getForEntity(apiUrl("/test-suites/" + suiteId), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return response.getBody();
+    }
+
 
     private TestSuiteResponseDto createSuiteViaApi(
             String name, List<FieldDefinitionDto> testCaseSchema, List<ResponseColumnDefinitionDto> responseColumns) {

@@ -59,34 +59,23 @@ Status: **Implemented**
 - **THEN** the system SHALL respond with HTTP 401
 
 ### Requirement: PRIVATE-dataset clone copies the dataset and its test cases
-When the source suite is bound to a dataset whose `visibility` is `PRIVATE` and the clone request supplies no `datasetId` override, the system SHALL create a new PRIVATE dataset that is an independent copy of the source dataset, copy all of the source dataset's test cases into it with new identifiers, copy dataset-scoped files, and bind the cloned suite to the new dataset. The dataset row, copied test cases, cloned suite, and cloned TSMDs SHALL all be persisted within a single transaction; DIAL file copies SHALL occur before the transaction and SHALL be cleaned up best-effort on failure. No suite-level state references individual test-case identifiers, so the clone SHALL NOT retain an old → new test-case id mapping and SHALL NOT rewrite any suite column other than `dataset_id`.
+
 Status: **Implemented**
 
-#### Scenario: New PRIVATE dataset is created and bound to the clone
-- **WHEN** client clones a suite bound to a PRIVATE dataset named "My Data" with no `datasetId` override
-- **THEN** system SHALL create a new dataset with `visibility = PRIVATE`, `name = "My Data (clone)"`, and the source dataset's `testCaseSchema`, `valid`, and `validationWarnings` copied verbatim
-- **AND** the cloned suite's `datasetId` SHALL reference the new dataset
-- **AND** the source dataset SHALL be left unchanged and SHALL remain bound only to the source suite
-- **AND** the request SHALL succeed with HTTP 201 (no `PRIVATE_DATASET_ALREADY_BOUND` error)
+When the source suite is bound to a dataset whose `visibility` is `PRIVATE` and the clone request supplies no `datasetId` override, the system SHALL create a new PRIVATE dataset that is an independent copy of the source dataset, copy all of the source dataset's test cases into it with new identifiers, copy dataset-scoped files, and bind the cloned suite to the new dataset. The dataset row, copied test cases, cloned suite, and cloned TSMDs SHALL all be persisted within a single transaction; DIAL file copies SHALL occur before the transaction and SHALL be cleaned up best-effort on failure. No suite-level state references individual test-case identifiers, so the clone SHALL NOT retain an old → new test-case id mapping and SHALL NOT rewrite any suite column other than `dataset_id`.
 
-#### Scenario: Test cases are copied with new identifiers
-- **WHEN** the source PRIVATE dataset has N test cases and the clone proceeds
-- **THEN** the new dataset SHALL contain N test cases, each with a new UUID, `datasetId` set to the new dataset, and `testCaseName`, `data`, `valid`, and `validationWarnings` copied from the corresponding source test case
-- **AND** test cases SHALL be read and inserted in paginated batches
-- **AND** the copy SHALL NOT accumulate an in-memory id map across batches
+#### Scenario: Contract cases
+- **WHEN** an input or operation matches a case below
+- **THEN** its expected result SHALL hold, including the stated failure and rollback behavior
 
-#### Scenario: Dataset-scoped file references are copied and rewritten
-- **WHEN** a source test case's `data` contains a dataset-scoped file reference `@ef/datasets/{sourceDatasetId}/file.csv`
-- **THEN** system SHALL copy the file to the new dataset's folder and the cloned test case's `data` SHALL reference `@ef/datasets/{newDatasetId}/file.csv`
-
-#### Scenario: Clone dataset name collision is deduplicated
-- **WHEN** a dataset named "My Data (clone)" already exists at clone time
-- **THEN** system SHALL derive a unique name by appending a numeric suffix (e.g. "My Data (clone 2)") within the dataset name length limit
-
-#### Scenario: Failure rolls back rows and cleans up copied files
-- **WHEN** the clone transaction fails after dataset files were copied
-- **THEN** the new dataset row and copied test-case rows SHALL NOT be persisted (transaction rollback)
-- **AND** system SHALL attempt best-effort deletion of the files copied to the new dataset's folder
+| Case | When | Expected |
+|---|---|---|
+| New PRIVATE dataset is created and bound to the clone | client clones a suite bound to a PRIVATE dataset named "My Data" with no `datasetId` override | SHALL create a new dataset with `visibility = PRIVATE`, `name = "My Data (clone)"`, and the source dataset's `testCaseSchema`, `valid`, and `validationWarnings` copied verbatim; the cloned suite's `datasetId` SHALL reference the new dataset; the source dataset SHALL be left unchanged and SHALL remain bound only to the source suite; the request SHALL succeed with HTTP 201 (no `PRIVATE_DATASET_ALREADY_BOUND` error) |
+| Test cases are copied with new identifiers | the source PRIVATE dataset has N test cases and the clone proceeds | the new dataset SHALL contain N test cases, each with a new UUID, `datasetId` set to the new dataset, and `testCaseName`, `data`, `valid`, and `validationWarnings` copied from the corresponding source test case; test cases SHALL be read and inserted in paginated batches; the copy SHALL NOT accumulate an in-memory id map across batches |
+| Dataset-scoped file references are copied and rewritten | a source test case's `data` contains a dataset-scoped file reference `@ef/datasets/{sourceDatasetId}/file.csv` | SHALL copy the file to the new dataset's folder and the cloned test case's `data` SHALL reference `@ef/datasets/{newDatasetId}/file.csv` |
+| Clone dataset name collision is deduplicated | a dataset named "My Data (clone)" already exists at clone time | SHALL derive a unique name by appending a numeric suffix (e.g. "My Data (clone 2)") within the dataset name length limit |
+| Failure rolls back rows and cleans up copied files | the clone transaction fails after dataset files were copied | the new dataset row and copied test-case rows SHALL NOT be persisted (transaction rollback); SHALL attempt best-effort deletion of the files copied to the new dataset's folder |
+| SKILL column survives clone | a suite or dataset with a `SKILL` column and values is cloned | the clone SHALL have the same `SKILL` column type and the same string values, and no file copy SHALL be attempted for them |
 
 ### Requirement: Clone request DTO
 The system SHALL use a dedicated `TestSuiteCloneRequestDto` with `name` as `@NotBlank @Size(max = 255)` and all other suite-level fields as optional (nullable). Null fields SHALL mean "inherit from source." The DTO SHALL NOT include `suiteType` (always inherited), SHALL NOT include `routesRef` (always inherited from the source suite), SHALL NOT include `testCaseSchema` (schema lives on the dataset; suite has no schema field), and SHALL NOT include any test-case exclusion list. The DTO SHALL include an optional `datasetId` field; when supplied, the cloned suite SHALL reference the supplied dataset; when null/absent, it SHALL inherit the source suite's `datasetId`.

@@ -58,6 +58,7 @@ public class TestSuiteMetricDefinitionService {
     private final JsonbMapper jsonbMapper;
     private final ConditionExpressionEvaluator conditionExpressionEvaluator;
     private final ResponseColumnUnionResolver responseColumnUnionResolver;
+    private final SuiteScoreWarningsRefresher suiteScoreWarningsRefresher;
 
     @Transactional("metaTransactionManager")
     public TestSuiteMetricDefinitionResponseDto create(UUID testSuiteId, TestSuiteMetricDefinitionRequestDto dto) {
@@ -91,12 +92,9 @@ public class TestSuiteMetricDefinitionService {
         entity.setValid(result.isValid());
         entity.setValidationWarnings(warningsSerializer.serializeWarnings(result.getWarnings()));
 
+        final TestSuiteMetricDefinition saved;
         try {
-            TestSuiteMetricDefinition saved = repository.save(entity);
-            TestSuiteMetricDefinition fetched = repository
-                    .findByIdAndTestSuiteId(saved.getId(), testSuiteId)
-                    .orElseThrow();
-            return mapper.toDto(fetched);
+            saved = repository.save(entity);
         } catch (DataIntegrityViolationException ex) {
             UniqueConstraintViolationDetector.rethrowIfUniqueViolation(
                     ex,
@@ -104,6 +102,10 @@ public class TestSuiteMetricDefinitionService {
                     dto.getName());
             throw ex;
         }
+        refreshScoreWarnings(suite);
+        return mapper.toDto(repository
+                .findByIdAndTestSuiteId(saved.getId(), testSuiteId)
+                .orElseThrow());
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
@@ -191,9 +193,6 @@ public class TestSuiteMetricDefinitionService {
 
         try {
             repository.update(existing);
-            TestSuiteMetricDefinition fetched =
-                    repository.findByIdAndTestSuiteId(id, testSuiteId).orElseThrow();
-            return mapper.toDto(fetched);
         } catch (DataIntegrityViolationException ex) {
             UniqueConstraintViolationDetector.rethrowIfUniqueViolation(
                     ex,
@@ -201,6 +200,9 @@ public class TestSuiteMetricDefinitionService {
                     dto.getName());
             throw ex;
         }
+        refreshScoreWarnings(suite);
+        return mapper.toDto(
+                repository.findByIdAndTestSuiteId(id, testSuiteId).orElseThrow());
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
@@ -211,6 +213,11 @@ public class TestSuiteMetricDefinitionService {
     @Transactional(value = "metaTransactionManager", readOnly = true)
     public List<AggregatedMetricDefinition> findAllEnabledAndValidAggregatedByTestSuiteId(UUID testSuiteId) {
         return repository.findAllEnabledAndValidAggregatedByTestSuiteId(testSuiteId);
+    }
+
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public Set<String> findNamesByTestSuiteId(UUID testSuiteId) {
+        return repository.findNamesByTestSuiteId(testSuiteId);
     }
 
     /**
@@ -242,11 +249,19 @@ public class TestSuiteMetricDefinitionService {
     public void delete(UUID testSuiteId, UUID id) {
         log.info("Deleting TSMD with id: {} for suite: {}", id, testSuiteId);
 
+        final TestSuite suite = testSuiteRepository
+                .findById(testSuiteId)
+                .orElseThrow(() -> new EntityNotFoundException("Test suite not found with id: " + testSuiteId));
         repository
                 .findByIdAndTestSuiteId(id, testSuiteId)
                 .orElseThrow(() -> new EntityNotFoundException("Metric definition not found with id: " + id));
 
         repository.deleteById(id);
+        refreshScoreWarnings(suite);
+    }
+
+    private void refreshScoreWarnings(TestSuite suite) {
+        suiteScoreWarningsRefresher.refresh(suite, repository.findNamesByTestSuiteId(suite.getId()));
     }
 
     private void checkNoDuplicateProperties(List<MetricParameterBindingDto> bindings, String fieldName) {

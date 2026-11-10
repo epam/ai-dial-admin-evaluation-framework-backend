@@ -8,7 +8,7 @@ Status: **Implemented**
 
 ## Key Terms
 
-- **SseEventParser**: Injectable `@Component` in `service.domain.job` that parses an SSE `InputStream` into structured events. Takes `ObjectMapper` and `Clock` as constructor dependencies.
+- **SseEventParser**: Injectable `@Component` in `runner.job` that parses an SSE `InputStream` into structured events. Takes `ObjectMapper` and `Clock` as constructor dependencies.
 - **SseEvent**: Immutable record with `String event` (type name, defaults to `"message"`) and `Object data` (parsed `JsonNode` if valid JSON, raw `String` otherwise).
 - **SseParseResult**: Immutable record with `List<SseEvent> events`, `ExecutionStatus status` (`SUCCESS`, `TIMEOUT`, `ERROR`), and `String truncationWarning` (nullable).
 
@@ -28,7 +28,7 @@ Status: **Implemented**
 
 ### Requirement: SSE event parser component
 
-The system SHALL provide an injectable `SseEventParser` component in `service.domain.job` package that parses an SSE `InputStream` into a list of structured `SseEvent` records.
+The system SHALL provide an injectable `SseEventParser` component in `runner.job` package that parses an SSE `InputStream` into a list of structured `SseEvent` records.
 
 Status: **Implemented**
 
@@ -98,7 +98,7 @@ Status: **Implemented**
 
 #### Scenario: Stream never terminates (no DONE, no EOF)
 - **WHEN** SSE stream keeps sending events without `[DONE]` and without EOF
-- **THEN** parser SHALL rely on the idle timeout and the absolute max-total cap to stop reading and return the events accumulated so far with `status = TIMEOUT`
+- **THEN** parser SHALL check the idle timeout and absolute cap after each completed line read and return accumulated events with `status = TIMEOUT` when either is exceeded. These checks do not independently unblock a stalled `readLine()`; underlying transport timeout or interruption is required for a blocked read
 
 ### Requirement: Deadline enforcement
 
@@ -148,11 +148,21 @@ Status: **Implemented**
 
 ### Requirement: IOException handling
 
-If the underlying `InputStream` throws an `IOException` during reading, the parser SHALL log a warning and return `ExecutionStatus.ERROR` with the events accumulated before the error.
+If the underlying `InputStream` throws an `IOException` during reading, the parser SHALL log at DEBUG and return `ExecutionStatus.ERROR` with the events accumulated before the error.
 
 Status: **Implemented**
 
+#### Scenario: Read failure preserves dispatched events
+- **WHEN** a stream throws `IOException` after one complete blank-line-delimited event
+- **THEN** the parser SHALL return that event with status `ERROR` and no truncation warning
+
+#### Scenario: EOF discards an unfinished event block
+- **WHEN** EOF arrives after `data: value` without a blank-line boundary
+- **THEN** the parser SHALL return `SUCCESS` without emitting that unfinished block
+
 ## Implementation Notes
+
+- Code: `evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/job/SseEventParser.java`; tests: the matching `SseEventParserTest` in runner-core.
 
 - **Parsing algorithm**: `BufferedReader` line-by-line over `InputStreamReader(UTF-8)`. State: `currentEventType` (String), `dataLines` (List).
 - **JSON parsing**: `objectMapper.readTree(rawData)`. If result is `null` or `MissingNode`, returns raw string (handles empty/whitespace-only payloads in Jackson 2.20+).

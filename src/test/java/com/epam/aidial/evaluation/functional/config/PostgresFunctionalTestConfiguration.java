@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.functional.config.persistence.TestPersistenceS
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
+import com.epam.aidial.evaluation.service.domain.SuiteScoreWarningsRefresher;
 import org.jooq.DSLContext;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -42,14 +43,16 @@ public class PostgresFunctionalTestConfiguration {
             TestSuiteMetricDefinitionRepository tsmdRepository,
             TestCaseRepository testCaseRepository,
             DatasetRepository datasetRepository,
-            @Qualifier("metaDsl") DSLContext metaDsl) {
+            @Qualifier("metaDsl") DSLContext metaDsl,
+            SuiteScoreWarningsRefresher suiteScoreWarningsRefresher) {
         return new MetaTestDataHelper(
                 testSuiteRepository,
                 testSuiteRunRepository,
                 tsmdRepository,
                 testCaseRepository,
                 datasetRepository,
-                metaDsl);
+                metaDsl,
+                suiteScoreWarningsRefresher);
     }
 
     @Bean

@@ -1,12 +1,12 @@
 # Eval Execution Engine
 
 ## Purpose
-This spec defines the in-process evaluation execution engine that replaces the mock evaluation job. The engine resolves requests from templates, calls target deployment endpoints via DIAL Core, handles both streaming (SSE) and non-streaming HTTP responses, extracts response columns via JSONata, tracks retry attempts, and writes results to the analytics DB in batches. Supports configurable concurrency, retry policies, rate limiting (via Bucket4j), response size limits, and immediate cancellation.
+This spec defines the in-process evaluation execution engine for current deployment, ROUTE and MCP execution. The engine resolves requests from templates, calls target deployment endpoints via DIAL Core, handles both streaming (SSE) and non-streaming HTTP responses, extracts response columns via JSONata, tracks retry attempts, and writes results to the analytics DB in batches. Supports configurable concurrency, retry policies, rate limiting (via Bucket4j), response size limits, and immediate cancellation.
 
 Status: **Implemented**
 
 ## Key Terms
-- **EvaluationExecutor**: Interface for execution strategies (`execute(EvaluationContext)`). Currently implemented by `InProcessEvaluationExecutor`; designed for future K8s Job extraction.
+- **EvaluationExecutor**: Interface for execution strategies (`execute(EvaluationContext)`). Currently implemented by `InProcessEvaluationExecutor`.
 - **EvaluationContext**: Immutable context carrier for a run — carries runId, suiteId, execution settings, retry policy, the run's shared `ExecutorService`, and the caller's `CallerCredential` (bearer JWT or API key, with kind).
 - **EvaluationWorker**: Single test case execution logic — resolves request, calls endpoint, captures response, tracks retries, extracts columns, builds `TestCaseRunResult`.
 - **StreamingResponseAccumulator**: Four-mode SSE accumulator — OpenAI chat-completions assembly, OpenAI Responses assembly, Anthropic Messages format assembly, or `{"events":[...]}` envelope for custom SSE formats. Delegates SSE wire format parsing to `SseEventParser`.
@@ -15,7 +15,7 @@ Status: **Implemented**
 ## Requirements
 
 ### Requirement: Evaluation executor interface
-The system SHALL define an `EvaluationExecutor` interface with a single `execute(EvaluationContext)` method. The `EvaluationContext` SHALL carry: `runId`, `testSuiteId`, execution settings (concurrency, timeout, retry, rate limit), the run's worker executor (owned and shut down by the run owner, never by the executor implementation), a progress callback, a result sink, and a `credential` (`CallerCredential`, carrying either a bearer JWT or an API key — including a DIAL Core per-request key, which is simply an `API_KEY`-kind credential). This interface enables swapping in-process execution with K8s Job submission without changing orchestration code.
+The system SHALL define an `EvaluationExecutor` interface with a single `execute(EvaluationContext)` method. The `EvaluationContext` SHALL carry: `runId`, `suiteId`, execution settings (concurrency, timeout, retry, rate limit), the run's worker executor (owned and shut down by the run owner, never by the executor implementation), the suite definition, frozen dataset schema, dataset ID, and a `credential` (`CallerCredential`, carrying either a bearer JWT or an API key — including a DIAL Core per-request key, which is simply an `API_KEY`-kind credential).
 Status: **Implemented**
 
 #### Scenario: In-process executor is the default
@@ -32,16 +32,16 @@ Status: **Implemented**
 - **AND** deployment invocations SHALL use that credential's `headerName()`/`headerValue()` exactly as they already do for a `BEARER`-kind credential — no branching logic is added to `DialCoreDeploymentInvoker`, `EvaluationWorker`, `DeploymentTurnInvoker`, or `McpToolInvoker`
 
 ### Requirement: In-process evaluation execution
-The `InProcessEvaluationExecutor` SHALL read test inputs from the `test_case_run_inputs` table (populated at snapshot phase) in pages, dispatch execution tasks (one per test case per run index) bounded by the configured concurrency level, collect results, and flush them to analytics DB in batches. For legacy runs without a snapshot (no `test_case_run_inputs` rows), it SHALL fall back to reading live test cases from the suite. When `dial-app-proxy.enabled=true`, the executor is started from `EvalExecuteInternalController` (triggered by the DIAL Core Application Route, with an `API_KEY`-kind credential) via the existing `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` method; when `dial-app-proxy.enabled=false`, the executor is started by the legacy dispatch from `TestSuiteRunService.dispatchEvaluation` with a `BEARER`-kind credential. Both paths call the same `dispatch` method — only the caller and the credential's kind differ.
+The `InProcessEvaluationExecutor` SHALL read test inputs from the `test_case_run_inputs` table (populated at snapshot phase) in pages, dispatch execution tasks (one per test case per run index) bounded by the configured concurrency level, collect results, and flush them to analytics DB in batches. When no input rows exist, the executor itself falls back to paginated valid cases from the snapshot-referenced dataset (ignoring `testCaseFilter`); this is a legacy path that `TestSuiteEvaluationJob` does not reach, because the snapshot phase always stores a snapshot and a snapshot without input rows fails with `SNAPSHOT_STATE_INCONSISTENT` before Phase 1. When `dial-app-proxy.enabled=true`, the executor is started from `EvalExecuteInternalController` (triggered by the DIAL Core Application Route, with an `API_KEY`-kind credential) via the existing `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` method; otherwise (`dial-app-proxy.enabled=false`, or the flag is on but there is no caller credential or no `DialRouteTriggerClient`), the executor is started by direct dispatch from `TestSuiteRunService.dispatchEvaluation` with the initiating caller's credential (bearer or API key, or none). Both paths call the same `dispatch` method — only the caller and the credential's kind differ.
 Status: **Implemented**
 
 #### Scenario: Snapshot path — pages from inputs table
 - **WHEN** `test_case_run_inputs` rows exist for the run (snapshot phase committed)
-- **THEN** the executor SHALL page through `testCaseRunInputRepository.findByRunId()` instead of `testCaseRepository.findEnabledValidByTestSuiteId()`. The `testCaseRepository` SHALL NOT be called.
+- **THEN** the executor SHALL page through `testCaseRunInputRepository.findByRunId()` instead of `testCaseRepository.findValidByDatasetId()`. The `testCaseRepository` SHALL NOT be called.
 
-#### Scenario: Legacy path — falls back to live test cases
-- **WHEN** `test_case_run_inputs` rows do NOT exist for the run (legacy run without snapshot)
-- **THEN** the executor SHALL fall back to paging through live test cases from `testCaseRepository.findEnabledValidByTestSuiteId()`, wrapping each `TestCase` as a `TestCaseRunInput` struct for uniform worker interface.
+#### Scenario: No input rows — reads current dataset cases (legacy, not reached by the job)
+- **WHEN** the executor is invoked for a run with no `test_case_run_inputs` rows
+- **THEN** the executor SHALL fall back to paging through live test cases from `testCaseRepository.findValidByDatasetId()`, wrapping each `TestCase` as a `TestCaseRunInput` struct for uniform worker interface.
 
 #### Scenario: DIAL App mode — executor started from internal endpoint
 - **WHEN** `dial-app-proxy.enabled=true`
@@ -49,9 +49,9 @@ Status: **Implemented**
 - **THEN** `TestSuiteEvaluationJob.dispatch(runId, credential, false)` SHALL be called directly from the controller, with `credential` sourced from `AuthorizationTokenHolder.getCredential()`
 - **AND** `DialRouteTriggerClient` (not `TokenPropagationHelper`/`AuthorizationTokenHolder`-based in-process dispatch) SHALL have been the mechanism that caused DIAL Core to call this endpoint
 
-#### Scenario: Legacy mode — executor started with JWT propagation
+#### Scenario: Direct mode — executor started with caller credential propagation
 - **WHEN** `dial-app-proxy.enabled=false`
-- **THEN** eval execution SHALL be started via `TestSuiteRunService.dispatchEvaluation`'s existing direct call to `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` with a `BEARER`-kind credential (existing behavior, unchanged)
+- **THEN** eval execution SHALL be started via `TestSuiteRunService.dispatchEvaluation`'s existing direct call to `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` with the initiating caller's credential
 
 #### Scenario: Sequential execution (default)
 - **WHEN** `concurrencyLevel` is 1 (default)
@@ -61,58 +61,47 @@ Status: **Implemented**
 - **WHEN** `concurrencyLevel` is greater than 1 (e.g., 10)
 - **THEN** the executor SHALL process up to `concurrencyLevel` test case calls concurrently using a semaphore-bounded, thread-per-task worker executor supplied by the run owner — virtual threads when `spring.threads.virtual.enabled` is `true` (default), platform daemon threads when it is `false`; the executor SHALL NOT be created by the execution engine itself
 
-#### Scenario: All enabled and valid test cases are executed
-- **WHEN** the executor runs for a suite with N enabled+valid test cases and `numberOfRuns = M`
+#### Scenario: All selected valid test cases are executed
+- **WHEN** the executor runs for a suite with N selected valid test cases and `numberOfRuns = M`
 - **THEN** the executor SHALL dispatch exactly N * M evaluation tasks (one per case per run index 0..M-1)
 
-#### Scenario: Disabled and invalid test cases are skipped
-- **WHEN** the suite contains test cases with `enabled = false` or `isValid = false`
-- **THEN** those test cases SHALL NOT be dispatched for execution (they are excluded at snapshot phase)
+#### Scenario: Invalid and filtered-out test cases are skipped
+- **WHEN** the dataset contains invalid test cases or cases excluded by the suite's `testCaseFilter`
+- **THEN** they SHALL be excluded when capturing run inputs; test cases have no enabled flag
 
 #### Scenario: Test cases read in pages
-- **WHEN** the suite has more enabled+valid test cases than fit in a single page
+- **WHEN** the suite has more selected valid test cases than fit in a single page
 - **THEN** the executor SHALL read inputs using paginated queries
 
 ### Requirement: Single test case evaluation (worker)
-The `EvaluationWorker` SHALL accept a `TestCaseRunInput` (carrying frozen test case data and optional overrides) plus an `EvaluationContext` (carrying snapshot fields). It SHALL resolve the request body using snapshot fields from context + test case data + per-case overrides (no DB read), call the target deployment endpoint, capture the response (including streaming), extract response columns, and build a `TestCaseRunResult`. Resolution SHALL be performed by injecting `RequestResolver` (from `evaluation-runner-core`) — not `ResolvedRequestService` (which remains in the EF backend and carries DB dependencies for the Try-It-Out path). `EvaluationWorker` itself now resides in the shared module, under package `com.epam.aidial.evaluation.runner.job`.
+The `EvaluationWorker` SHALL accept a `TestCaseRunInput` (carrying frozen test case data and optional overrides) plus an `EvaluationContext` (carrying snapshot fields). It SHALL resolve the request body using snapshot fields from context + test case data + per-case overrides (no DB read), call the target deployment endpoint, capture the response (including streaming), extract response columns, and build a `TestCaseRunResult`. HTTP resolution SHALL be performed by `RequestChainExecutor`/`TurnLoopExecutor` using `RequestResolver` (from `evaluation-runner-core`) — not `ResolvedRequestService` (which remains in the EF backend and carries DB dependencies for the Try-It-Out path). `EvaluationWorker` itself now resides in the shared module, under package `com.epam.aidial.evaluation.runner.job`.
 Status: **Implemented**
 
 #### Scenario: Snapshot-based request resolution via RequestResolver
 - **WHEN** a test case is dispatched for execution
-- **THEN** the worker SHALL resolve the full request using `requestResolver.resolve(effectiveTemplate, effectiveBindings, testCaseData)` where:
+- **THEN** the worker SHALL resolve the full request using `requestResolver.resolveForRun(effectiveTemplate, effectiveBindings, turnData, accumulatedFrame, snapshotSchema)` where:
   - `effectiveTemplate` = `input.getRequestTemplateOverride()` if non-null, else the request's `RequestExecutionSpec.requestTemplate()` from the `HttpSuite` chain on `context.getSuite()`
   - `effectiveBindings` = `input.getInputBindingsOverride()` if non-null, else the request's `RequestExecutionSpec.inputBindings()`
   - `testCaseData` = deserialized from `input.getTestCaseData()`
   - `deploymentRef` and `endpointRef` are read from the `DeploymentTarget` ref in the `HttpTarget` of `context.getSuite()` and the request's `RequestExecutionSpec.endpointRef()`
   - The worker SHALL NOT call `resolveRequest(suiteId, tcId)` (no DB reads during execution) and SHALL NOT call `ResolvedRequestService.resolve(...)` — that method no longer exists; the equivalent logic lives on the injected `RequestResolver`
 
-#### Scenario: EvaluationWorker injects RequestResolver, not ResolvedRequestService
+#### Scenario: HTTP execution delegates to the runner-owned resolver
 - **WHEN** the shared module's `EvaluationWorker` bean is created
-- **THEN** its constructor SHALL accept `RequestResolver` (from `runner.service`) as the resolution dependency — not `ResolvedRequestService` (which is an EF backend class)
+- **THEN** its HTTP path SHALL use `RequestChainExecutor` and `TurnLoopExecutor`, with `RequestResolver` (from `runner.service`) injected into the turn executor — not `ResolvedRequestService` (which is an EF backend class)
 
-#### Scenario: Package paths corrected for evaluation-runner-core move
-- **WHEN** locating the classes referenced by this spec's "Implementation Notes" section (baseline `eval-execution-engine/spec.md`)
-- **THEN** the following corrected fully-qualified names apply (superseding the baseline's now-stale paths):
-  - `EvaluationWorker`: `com.epam.aidial.evaluation.runner.job.EvaluationWorker` (was `com.epam.aidial.evaluation.service.domain.job.EvaluationWorker`)
-  - `EvaluationContext`: `com.epam.aidial.evaluation.runner.job.EvaluationContext` (was `com.epam.aidial.evaluation.service.domain.job.EvaluationContext`)
-  - `StreamingResponseAccumulator`: `com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulator` (was `com.epam.aidial.evaluation.service.domain.job.StreamingResponseAccumulator`)
-  - `TestCaseRunResultFactory`: `com.epam.aidial.evaluation.runner.job.TestCaseRunResultFactory` (was `com.epam.aidial.evaluation.service.domain.job.TestCaseRunResultFactory`)
-  - `ResultBatchWriter`: the name now denotes an interface at `com.epam.aidial.evaluation.runner.job.ResultBatchWriter` (`addResults(List<TestCaseRunResult>)`, `flush()`). The baseline's concrete `com.epam.aidial.evaluation.service.domain.job.ResultBatchWriter` class and its `ResultBatchWriterTransactional` collaborator no longer exist; they are replaced by `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriterFactory` (Spring bean, creates one writer per run) and `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriter` (plain per-run instance, not a Spring bean), both in the EF backend, implementing the shared interface
-  - `EvaluationRunProperties`: `com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties` (was `com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties`)
-  - `DeploymentInvocationResult`: `com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult` (was `com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult`)
-  - `EvaluationExecutor`, `InProcessEvaluationExecutor`, `ExecutionSettingsValidator` remain unmoved, in `com.epam.aidial.evaluation.service.domain.job` (EF backend) — these classes have DB dependencies and were not part of the shared-module extraction
 
 ### Requirement: Multi-turn dispatch and per-turn result emission
-The worker that executes one run input SHALL return a list of results. When the input carries `multi_turn_data`, execution is delegated to the multi-turn turn loop, which emits one result per executed turn; otherwise the existing single-turn path is used and returns a single result. MCP inputs are unchanged. Each result carries `turn_index` and `total_turns` (single-turn = `0/1`).
+The worker that executes one HTTP run input SHALL execute the request chain and return one result per executed request/turn. Readable multi-turn input expands a request only when that request binds a perTurn schema field; otherwise it collapses to shared data. MCP execution returns a singleton. Request/turn identity fields are stamped for multi-request/multi-turn plans; a plain single-turn/single-request path keeps the defaults `turnIndex=0`, `totalTurns=1`, `requestIndex=0`, `totalRequests=1` (the result fields are non-null and the analytics columns are `NOT NULL`).
 Status: **Implemented**
 
 #### Scenario: Multi-turn input yields per-turn results
-- **WHEN** a run input has `multi_turn_data`
+- **WHEN** a run input has readable `multi_turn_data` and the request has an effective perTurn binding
 - **THEN** execution runs the turn loop and returns one `TestCaseRunResult` per executed turn
 
 #### Scenario: Single-turn input is unchanged
 - **WHEN** a run input has no `multi_turn_data`
-- **THEN** the existing single-turn path runs and returns exactly one result with `turn_index=0, total_turns=1`
+- **THEN** the existing single-turn path runs and returns one result per chain request, with turn identity at the defaults `turnIndex=0`, `totalTurns=1` for a single-turn request
 
 ### Requirement: One concurrency permit per test-case run
 The execution unit SHALL be the whole test-case run: turns of one multi-turn case run sequentially under a single concurrency permit, and progress is counted one unit per test-case run regardless of how many turn rows it writes.
@@ -132,15 +121,15 @@ Status: **Implemented**
 
 #### Scenario: Snapshot phase builds SuiteSnapshotDto
 - **WHEN** the snapshot phase executes
-- **THEN** `SuiteSnapshotBuilder.build(liveSuite)` SHALL produce a `SuiteSnapshotDto` with `snapshotVersion = "1"`, `suiteType`, and all execution-relevant fields. DEPLOYMENT suites: `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`. MCP_TOOL suites: `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`.
+- **THEN** `SuiteSnapshotBuilder.build(liveSuite, liveDataset)` SHALL produce a `SuiteSnapshotDto` with `snapshotVersion = "2"`, `suiteType`, and all execution-relevant fields. DEPLOYMENT suites: `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`. MCP_TOOL suites: `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`.
 
 #### Scenario: Snapshot phase inserts test case inputs
 - **WHEN** the snapshot phase executes
-- **THEN** all enabled+valid test cases SHALL be read in pages and inserted as rows in `test_case_run_inputs`, preserving `testCaseId`, `testCaseName`, `testCaseData`, and per-case overrides (`requestTemplateOverride`, `inputBindingsOverride`)
+- **THEN** valid dataset cases selected by testCaseFilter SHALL be read in pages and inserted as rows in `test_case_run_inputs`, preserving `testCaseId`, `testCaseName`, `testCaseData`, `multiTurnData` and position; new snapshot rows carry no case overrides
 
 #### Scenario: Snapshot failure marks run FAILED
 - **WHEN** the snapshot phase throws an exception
-- **THEN** the run SHALL be marked FAILED with an appropriate error code (`SNAPSHOT_FAILED`, `SNAPSHOT_SERIALIZATION_CONFLICT`, or `SNAPSHOT_SUITE_MISSING`)
+- **THEN** the run SHALL be marked FAILED with an appropriate error code (`SNAPSHOT_FAILED`, `SNAPSHOT_SERIALIZATION_CONFLICT`, `SNAPSHOT_SUITE_MISSING`, or `SNAPSHOT_DATASET_MISSING`)
 
 #### Scenario: Snapshot serialization conflict retried
 - **WHEN** the snapshot phase transaction fails with PostgreSQL `40001` (serialization failure)
@@ -150,9 +139,9 @@ Status: **Implemented**
 - **WHEN** run transitions to RUNNING and exactly one of `suite_snapshot` / `test_case_run_inputs` rows is present
 - **THEN** the run SHALL be immediately marked FAILED with `SNAPSHOT_STATE_INCONSISTENT`
 
-#### Scenario: Legacy run — synthesized snapshot
-- **WHEN** a legacy run (created before snapshot feature; `suite_snapshot = null`) is executed
-- **THEN** `TestSuiteEvaluationJob.buildContext()` SHALL call `SuiteSnapshotBuilder.build(liveSuite)` to synthesize a transient snapshot; if the live suite no longer exists, the run SHALL fail with `SNAPSHOT_SUITE_MISSING`
+#### Scenario: Missing stored snapshot — synthesized current snapshot
+- **WHEN** a run with no stored snapshot is executed
+- **THEN** `TestSuiteEvaluationJob.resolveSnapshot()` SHALL load the live suite and its dataset and call `SuiteSnapshotBuilder.build(liveSuite, liveDataset)` to synthesize a transient snapshot; if the live suite or dataset no longer exists, the run SHALL fail with `UNEXPECTED_ERROR` (the lazy resolution runs inside the job's generic failure handler). This path is legacy: the snapshot phase always stores a snapshot, and `SNAPSHOT_SUITE_MISSING`/`SNAPSHOT_DATASET_MISSING` are produced only by the snapshot phase
 
 #### Scenario: Endpoint invocation (non-streaming)
 - **WHEN** the resolved request is sent and the response `Content-Type` is NOT `text/event-stream`
@@ -162,9 +151,10 @@ Status: **Implemented**
 - **WHEN** the resolved request is sent and the response `Content-Type` is `text/event-stream`
 - **THEN** the worker SHALL accumulate SSE chunks via `StreamingResponseAccumulator`, assemble them into a complete response body (OpenAI chat-completions format), and record the assembled response
 
-#### Scenario: Request timeout
-- **WHEN** the endpoint does not respond within `requestTimeoutMs`
-- **THEN** the worker SHALL abort the call, set `executionStatus = TIMEOUT`, record `responseBody = null`, `responseStatusCode = null`, and the elapsed time as `execDurationMs`
+#### Scenario: Classified HTTP transport timeout
+- **WHEN** the HTTP invocation throws an exception whose cause chain is classified as a timeout by `DeploymentInvocationSupport.isTimeoutException`
+- **THEN** the worker SHALL set `executionStatus = TIMEOUT`, record `responseBody` as an `INVOCATION_ERROR` JSON envelope, `responseStatusCode = null`, and the elapsed time as `execDurationMs`
+- **AND** `requestTimeoutMs` SHALL NOT imply an independently enforced end-to-end invocation deadline; checked SSE parser timeouts follow the streaming-duration contract
 
 #### Scenario: Network error
 - **WHEN** the endpoint call fails with a network-level error (connection refused, DNS failure, etc.)
@@ -172,7 +162,7 @@ Status: **Implemented**
 
 #### Scenario: HTTP error from target (4xx/5xx)
 - **WHEN** the endpoint returns an HTTP 4xx or 5xx status
-- **THEN** the worker SHALL set `executionStatus = FAILED`, store the response body and status code as-is, and proceed (not retry unless retry is configured)
+- **THEN** the worker SHALL set `executionStatus = FAILED` except 401/403, which map to ERROR, store the response body and status code as-is, and proceed (not retry unless retry is configured)
 
 #### Scenario: Response column extraction
 - **WHEN** a response body is captured (streaming or non-streaming)
@@ -180,7 +170,7 @@ Status: **Implemented**
 
 #### Scenario: Request body stored in results
 - **WHEN** the worker builds a `TestCaseRunResult`
-- **THEN** the worker SHALL serialize and store the resolved request body in `requestBody` (JSONB). The serialization SHALL use the existing `serializeBody()` method. `requestBody` SHALL be null only when request resolution itself fails (ERROR status before HTTP call).
+- **THEN** the worker SHALL serialize and store the resolved request body in `requestBody` (JSONB). On the HTTP path the body SHALL be serialized as JSON, falling back to its `toString()` form on a serialization failure (never failing the row); the MCP path serializes the resolved arguments via `EvaluationWorker.serializeBody()`. `requestBody` SHALL be null when the resolved body is absent.
 
 #### Scenario: Retry count tracked in results
 - **WHEN** the worker completes execution of a test case (with or without retries)
@@ -212,11 +202,11 @@ Status: **Implemented**
 - **AND** it SHALL have tags for `testcase.id` (UUID string) and `run.index` (int)
 
 ### Requirement: Streaming response accumulation
-`StreamingResponseAccumulator` parses SSE event streams and assembles complete response bodies. It delegates SSE wire format parsing to `SseEventParser` and operates in four modes, evaluated in this order:
+`StreamingResponseAccumulator` SHALL parse SSE event streams and assembles complete response bodies. It delegates SSE wire format parsing to `SseEventParser` and operates in four modes, evaluated in this order:
 
 1. **OpenAI chat-completions mode** — auto-detected when the first event has no named `event:` type (type is `"message"`) AND its data contains a `choices[]` array. Extracts `choices[0].delta.content` from each chunk, concatenates, and assembles a complete non-streaming chat-completions response.
 2. **OpenAI Responses mode** — auto-detected when the first event's data is a JSON object whose `type` is a string starting with `"response."`. Assembly is delegated to `ResponsesApiAccumulator` and yields exactly the document a non-streaming Responses call returns (see "Responses API streaming assembly" below).
-3. **Anthropic mode** — auto-detected when the first event's named `event:` type is `message_start` AND its data contains a `message` object. Reassembles `content_block_start`/`content_block_delta`/`message_delta` events into a complete Anthropic Messages response: a `content` array (text and tool_use blocks merged from deltas, other block types passed through unchanged) plus the base message's `stop_reason`/`stop_sequence`/`usage` merged from `message_delta`.
+3. **Anthropic mode** — auto-detected when the first event's named `event:` type is `message_start` AND its data contains a `message` field. Reassembles `content_block_start`/`content_block_delta`/`message_delta` events into a complete Anthropic Messages response: a `content` array (text and tool_use blocks merged from deltas, other block types passed through unchanged) plus the base message's `stop_reason`/`stop_sequence`/`usage` merged from `message_delta`.
 4. **Structured SSE mode** — for all other streams. Wraps parsed events in a `{"events": [{"event": "<type>", "data": <payload>}, ...]}` envelope. Named events force this mode regardless of data payload structure, **except** when they match Anthropic mode's detection, and **except** for Responses events, which are detected from the payload and never fall through to this mode.
 
 Status: **Implemented**
@@ -231,7 +221,7 @@ Status: **Implemented**
 
 #### Scenario: Stream error mid-accumulation
 - **WHEN** the SSE stream is interrupted (connection drop, timeout) after receiving partial data
-- **THEN** the accumulator SHALL set `executionStatus = ERROR` and store whatever was accumulated as `responseBody`
+- **THEN** the accumulator SHALL preserve the parser status (`TIMEOUT` for exceeded checked deadline, `ERROR` for read failure) and store partial text as a JSON string for chat/Responses/Anthropic modes, or partial events envelope for structured mode
 
 #### Scenario: Non-OpenAI streaming format fallback
 - **WHEN** the response has `Content-Type: text/event-stream` but events do NOT follow OpenAI format (either named `event:` types are present, or data lacks `choices[].delta.content` structure), AND the stream does NOT match Responses mode's detection (first event's data being an object whose `type` starts with `"response."`) or Anthropic mode's detection (first event named `message_start` carrying a `message` object)
@@ -308,20 +298,20 @@ Status: **Implemented**
 - **THEN** the accumulator SHALL pass that block through unchanged, exactly as captured from `content_block_start`, into the final `content` array at its index — without reconstructing it from subsequent delta events
 
 ### Requirement: Response size limiting
-The system SHALL enforce a configurable maximum response body size. Responses exceeding the limit SHALL be truncated with a warning recorded. Because `response_body` is a JSONB column, truncation MUST produce valid JSON — raw byte-level truncation is NOT allowed.
+The system SHALL enforce a configurable maximum response body size. Responses exceeding the limit SHALL be truncated into JSONB-safe content and marked ERROR; dedicated truncation warnings are not propagated by the HTTP/MCP result path. Because `response_body` is a JSONB column, truncation MUST produce valid JSON — raw byte-level truncation is NOT allowed.
 Status: **Implemented**
 
 #### Scenario: Response within limit
-- **WHEN** the response body is within `max-response-size-bytes` (default 5MB)
+- **WHEN** the response body is within `max-response-size-bytes` (default 50MB)
 - **THEN** the full response body SHALL be stored
 
 #### Scenario: Response exceeds limit (non-streaming)
 - **WHEN** the non-streaming response body exceeds `max-response-size-bytes`
-- **THEN** the worker SHALL store the response body as a JSON string containing the raw response text truncated at the byte limit (e.g., `"<truncated text>"`). This guarantees JSONB validity since a JSON string is always valid JSONB. `extractionWarnings` SHALL include a truncation warning with the original and truncated sizes. The `executionStatus` SHALL be set to `ERROR` (truncated response is incomplete data). Note: JSONata extraction on truncated content may produce partial/incorrect results — this is expected and communicated via the truncation warning.
+- **THEN** the worker SHALL store the response body as a JSON string containing the serialized response text truncated at the byte limit (e.g., `"<truncated text>"`). This guarantees JSONB validity since a JSON string is always valid JSONB. No dedicated truncation warning SHALL be appended by the HTTP invocation path; ordinary extraction warnings depend on the JSON-string document. The `executionStatus` SHALL be set to `ERROR` (truncated response is incomplete data). Note: JSONata extraction on truncated content may produce partial/incorrect results — the ERROR status identifies incomplete content.
 
 #### Scenario: Streaming response exceeds limit
 - **WHEN** accumulated SSE event data bytes exceed `max-response-size-bytes` during streaming (size tracked by `SseEventParser`)
-- **THEN** the accumulator SHALL stop accumulating and set `executionStatus = ERROR`. For OpenAI chat-completions mode: store the accumulated content as a truncated JSON string. For Responses mode: store the text concatenated from `response.output_text.delta` events as a truncated JSON string. For Anthropic mode: store the concatenation of all `text`-block accumulated text (in ascending block-index order) as a truncated JSON string. For structured SSE mode: store the `{"events": [...]}` envelope with events accumulated before the limit was hit. A truncation warning SHALL be recorded in all cases.
+- **THEN** the accumulator SHALL stop accumulating and set `executionStatus = ERROR`. For OpenAI chat-completions mode: store the accumulated content as a truncated JSON string. For Responses mode: store the text concatenated from `response.output_text.delta` events as a truncated JSON string. For Anthropic mode: store the concatenation of all `text`-block accumulated text (in ascending block-index order) as a truncated JSON string. For structured SSE mode: store the `{"events": [...]}` envelope with events accumulated before the limit was hit. The accumulator SHALL expose its truncation warning, but the HTTP TurnOutcome/result path SHALL not append it as a dedicated extraction warning.
 
 ### Requirement: Retry policy execution
 When a `RetryPolicyDto` is configured with `maxRetries > 0`, the worker SHALL retry failed calls according to the policy.
@@ -352,51 +342,46 @@ Status: **Implemented**
 - **THEN** the worker thread SHALL be interrupted, the backoff sleep SHALL end immediately, the worker SHALL NOT issue another attempt, and the interrupted case SHALL NOT produce a result row (see "Immediate cancellation")
 
 ### Requirement: Rate limiting
-When `rateLimitRps` is configured, the executor SHALL limit the rate of outgoing HTTP calls to the specified requests-per-second across all concurrent workers in the same run, using Bucket4j token bucket algorithm.
+The runner SHALL pace initial test-case-run submissions with a run-wide Bucket4j bucket when `rateLimitRps` is positive. It SHALL consume one token per test-case run, not per request, turn or retry. The bucket SHALL have capacity and greedy one-second refill of `max(1, round(rateLimitRps))` tokens; an initial burst up to capacity is possible.
 Status: **Implemented**
 
-#### Scenario: No rate limit (default)
-- **WHEN** `rateLimitRps` is null
-- **THEN** the executor SHALL NOT apply rate limiting — calls are dispatched as fast as concurrency allows
+#### Scenario: No rate limit
+- **WHEN** rateLimitRps is null or non-positive
+- **THEN** submissions SHALL not consume bucket tokens
 
-#### Scenario: Rate limit applied via Bucket4j
-- **WHEN** `rateLimitRps` is configured (e.g., 5.0)
-- **THEN** the executor SHALL create a Bucket4j `Bucket` with `Bandwidth.builder().capacity(tokens).refillGreedy(tokens, Duration.ofSeconds(1)).build()` (Bucket4j 8.x API) matching the configured RPS, and workers SHALL call `bucket.asBlocking().consume(1)` before each HTTP call
+#### Scenario: Configured rate paces submissions
+- **WHEN** rateLimitRps is 2.4
+- **THEN** the shared bucket SHALL have capacity 2 and refill 2 tokens per second
+- **AND** each test-case-run submission SHALL consume one token
 
-#### Scenario: Rate limit interacts with concurrency
-- **WHEN** `concurrencyLevel = 10` and `rateLimitRps = 2.0`
-- **THEN** even though 10 workers are available, new calls SHALL be throttled to 2 per second (most workers will be idle waiting for rate limit tokens)
-
-#### Scenario: Retries acquire rate limit tokens
-- **WHEN** a worker retries a failed call and `rateLimitRps` is configured
-- **THEN** the retry attempt SHALL acquire a rate limit token before making the HTTP call, same as a first attempt. This prevents retry storms from bypassing the rate limiter after a burst of failures (e.g., 429 responses).
+#### Scenario: Turns and retries share the submitted task
+- **WHEN** one submitted case performs several turns, requests or retries
+- **THEN** those calls SHALL not acquire additional bucket tokens
 
 ### Requirement: Batch result writing
-The executor SHALL buffer completed `TestCaseRunResult` records and flush them to the analytics database in configurable batches. The executor SHALL perform exactly one final flush at the end of execution, after all dispatched worker tasks have terminated (normally or via interruption) — eliminating the race where late-arriving worker writes land in a buffer already drained by the final flush.
+The Postgres writer SHALL buffer rows per test-case run and flush them in an analytics transaction when the row threshold is reached. Normal execution SHALL await workers and then attempt a final flush. Dispatch-loop failure SHALL attempt a catch-path flush and rethrow, followed by another finally-path flush attempt. This code does not guarantee one flush attempt on every path or durable recovery of failed batches.
 Status: **Implemented**
 
-#### Scenario: Batch flush on size
-- **WHEN** the result buffer reaches `result-batch-size` (system config, default 100)
-- **THEN** the executor SHALL flush the buffer to the analytics DB via `TestCaseRunResultRepository.saveAll()` in an analytics transaction
+#### Scenario: Threshold flush
+- **WHEN** adding a case's result rows brings the buffer to at least result-batch-size (default 100)
+- **THEN** the writer SHALL detach and clear the buffer under its lock and save the detached rows in an analytics transaction
 
-#### Scenario: Final flush on completion
-- **WHEN** all test cases have been executed (run completes)
-- **THEN** the executor SHALL flush any remaining buffered results — exactly once, AFTER all worker tasks have completed
+#### Scenario: Normal completion and cancellation
+- **WHEN** submitted workers finish normally or after interruption
+- **THEN** the executor SHALL attempt to flush remaining buffered rows in finally
 
-#### Scenario: Flush on cancellation
-- **WHEN** the run is cancelled and the interrupted workers have terminated
-- **THEN** the single final flush SHALL persist all accumulated results — real rows from workers that completed before the interrupt plus any synthetic ERROR rows from non-cancellation worker exceptions — before `execute()` returns to the job, which then marks the run CANCELLED. There is NO separate cancellation-specific flush; cancellation reuses the same final-flush invocation as normal completion.
+#### Scenario: Worker-side batch failure
+- **WHEN** addResults throws during a threshold flush
+- **THEN** TestCaseRunner SHALL handle it as an unexpected per-case failure and attempt one synthetic ERROR row
+- **AND** detached failed rows SHALL not be restored automatically
 
-#### Scenario: No flush during shutdown ordering window
-- **WHEN** the executor reaches its `finally` block
-- **THEN** the single final flush SHALL run only after the wait on all dispatched worker futures has returned (normally, or because the run's executor was shut down and the workers were interrupted). Flushing earlier is forbidden — it re-introduces the race where a late `addResult` lands in a buffer that was already drained.
-
-#### Scenario: Batch write failure
-- **WHEN** a batch write to analytics DB fails
-- **THEN** the executor SHALL stop dispatching new calls, let the failure propagate to the job, log the error, and the job SHALL mark the run as FAILED with error category `INTERNAL` and code `ANALYTICS_WRITE_FAILED`. The failure SHALL NOT be expressed as a cancellation: an analytics write failure is never reported as `CANCELLED`.
+#### Scenario: Final flush failure
+- **WHEN** the finally-path flush throws
+- **THEN** the executor SHALL log the exception without rethrowing it
+- **AND** this failure alone SHALL not guarantee a FAILED run
 
 ### Requirement: Immediate cancellation
-When a run is cancelled, the run's worker executor SHALL be shut down immediately: no new test case tasks are accepted, every in-flight worker task is interrupted, and the executor SHALL wait for the interrupted tasks to terminate before its single final flush. There is no grace period and no configurable drain window. Cancellation SHALL be deliverable before the async job thread has started (the run's executor is registered before dispatch — see test-suite-runs "Evaluation job orchestration"). The executor SHALL NOT synthesize result rows for cases interrupted by cancellation — see "Diagnostic logging for unfinished cases on cancel". Only the worker tasks are interrupted; the job/executor thread that orchestrates a run SHALL NOT be interrupted, so its final flush and status writes are unaffected.
+When a run is cancelled, the run's worker executor SHALL be shut down immediately: no new test case tasks are accepted, every in-flight worker task is interrupted, and the executor SHALL wait for the interrupted tasks to terminate before its finally-path flush attempt. There is no grace period and no configurable drain window. Cancellation SHALL be deliverable before the async job thread has started (the run's executor is registered before dispatch — see test-suite-runs "Evaluation job orchestration"). The executor SHALL NOT synthesize result rows for cases interrupted by cancellation — see "Diagnostic logging for unfinished cases on cancel". A user cancellation SHALL interrupt worker tasks, not the orchestrating job thread. Application-context shutdown can interrupt the job thread separately; the job clears that stray interrupt before its terminal status write. Flush attempts retain the failure behavior documented under Batch result writing.
 Status: **Implemented**
 
 #### Scenario: Cancellation stops new dispatches
@@ -405,19 +390,21 @@ Status: **Implemented**
 
 #### Scenario: In-flight calls are interrupted immediately
 - **WHEN** cancellation is requested while HTTP or MCP calls are in flight
-- **THEN** the worker threads SHALL be interrupted at once — a retry backoff sleep, the HTTP send, or the streaming response read all end with an interruption — and the executor SHALL wait for those tasks to terminate before flushing. The dispatching thread is not interrupted: its pacing waits (concurrency semaphore, rate limiter) end because interrupted workers release their permits, and its next submission is rejected
+- **THEN** the run executor SHALL interrupt its worker threads and the orchestrator SHALL await their termination before its normal finally-path flush attempt
+- **AND** semaphore waits can proceed when workers release their permits, but the separate Bucket4j pacing wait resumes through timed token refill, not semaphore release; this can delay the next rejected submission because user cancellation does not interrupt the dispatching thread
 
 #### Scenario: Long-running uncancelled run does NOT time out
 - **WHEN** a run executes for a long time and is never cancelled
-- **THEN** the executor SHALL wait for all dispatched futures without any overall timeout. Per-call wall-clock bounds remain the responsibility of `requestTimeoutMs` per test case.
+- **THEN** the executor SHALL wait for all dispatched futures without any overall timeout. This does not imply an end-to-end per-call deadline; HTTP transport settings and SSE checked durations apply separately.
 
-#### Scenario: Interrupted cases produce no rows
-- **WHEN** a worker task is interrupted by cancellation (before, during or after its call)
-- **THEN** the executor SHALL NOT write any result row for that case — neither a real row from a partially received response nor a synthetic ERROR row — the case remains absent from `test_case_run_results`
+#### Scenario: Worker wrapper suppresses results when interruption is observed
+- **WHEN** the worker wrapper observes its interrupt flag after `EvaluationWorker.execute` returns and before `resultsWriter.addResults`, or handles an exception classified as interrupted
+- **THEN** it SHALL omit the returned result rows and SHALL NOT synthesize an ERROR row for that interruption
+- **AND** interruption arriving after the pre-write check does not retroactively remove rows already buffered or persisted; already persisted results SHALL survive cancellation
 
 #### Scenario: Partial results preserved
 - **WHEN** a run is cancelled at any point
-- **THEN** all results that completed and were written to analytics DB before cancellation SHALL be preserved (not deleted), and results of workers that completed before the interrupt but were still buffered SHALL be persisted by the final flush
+- **THEN** all results that completed and were written to analytics DB before cancellation SHALL be preserved (not deleted), and results of workers that completed before the interrupt but were still buffered SHALL be included in the final flush attempt; persistence remains subject to batch-write failures
 
 #### Scenario: Run registration cleanup
 - **WHEN** the async run task completes (success, failure, or cancellation)
@@ -428,9 +415,9 @@ When a test case worker throws an unexpected exception (an exception that escape
 Status: **Implemented**
 
 #### Scenario: Worker throws unexpected exception
-- **WHEN** the runnable inside `InProcessEvaluationExecutor` catches an exception escaping `evaluationWorker.execute(...)`
+- **WHEN** the runnable inside `TestCaseRunner` catches an exception escaping `evaluationWorker.execute(...)`
 - **THEN** the executor SHALL build a synthetic `TestCaseRunResult` via `TestCaseRunResultFactory.errorResult(...)` with `executionStatus = ERROR`, `responseBody` set to a JSON error envelope `{"error":{"type":"<exception class name>","message":"<exception message>","origin":"executor"}}`, `responseStatusCode = null`, `execStartedAtMs = execCompletedAtMs = clock.millis()`, `execDurationMs = 0`, `retryCount = 0`, `logDetails = null`
-- **AND** the executor SHALL pass that result to `resultBatchWriter.addResult(buffer, synthetic)` so it is persisted alongside other results
+- **AND** the executor SHALL pass that result to `resultsWriter.addResults(List.of(synthetic))` so it is persisted alongside other results
 
 #### Scenario: Per-case error does not fail the run
 - **WHEN** one or more synthetic `ERROR` rows are produced for a run because workers threw unexpected exceptions
@@ -441,7 +428,7 @@ Status: **Implemented**
 - **THEN** the factory SHALL build the synthetic row from the input, the run index, the caught exception, and the current clock millis via fixed-shape construction — no template resolution, no JSON parsing of test case data, no DB access — guaranteeing it cannot throw and double-drop the case
 
 #### Scenario: Buffer append failure is logged, not retried
-- **WHEN** the inner `resultBatchWriter.addResult(buffer, synthetic)` call itself throws (e.g., the buffer's downstream batch flush triggered by reaching `result-batch-size` threshold fails)
+- **WHEN** the inner `resultsWriter.addResults(List.of(synthetic))` call itself throws (e.g., the buffer's downstream batch flush triggered by reaching `result-batch-size` threshold fails)
 - **THEN** the executor SHALL log the secondary failure at `ERROR` level (with the exception as last SLF4J argument) and continue. It SHALL NOT raise, SHALL NOT retry, and SHALL NOT make a second synthesis attempt.
 
 #### Scenario: Broad catch is intentional
@@ -449,36 +436,37 @@ Status: **Implemented**
 - **THEN** the catch IS intentional and documented as the deliberate exception to AGENTS.md's "catch specific exceptions" rule. The contract of this catch is "any unexpected runtime failure escaping the worker" — narrowing it would re-introduce the silent-drop bug that this requirement exists to prevent. The catch SHALL remain `catch (Exception e)`.
 
 ### Requirement: Diagnostic logging for unfinished cases on cancel
-When a run is cancelled with dispatched worker tasks still incomplete, the executor SHALL emit a single WARN log line naming the count of dispatched test case tasks whose futures had not completed normally. This count is the authoritative diagnostic signal for "how many cases were interrupted by cancellation." The executor SHALL NOT synthesize result rows for these cases — absence of rows in `test_case_run_results`, combined with the run's `status = CANCELLED`, IS the signal.
+After all submitted futures terminate, `TestCaseRunner.awaitCompletion` SHALL emit one WARN log line when its `interruptedTasks` counter is positive. The counter SHALL count worker-wrapper observations of interruption, not incomplete futures or every case affected by cancellation. It SHALL exclude rejected/not-submitted tasks and interruption arriving after the wrapper's pre-write check. The wrapper SHALL NOT synthesize rows for observations classified as interrupted.
 Status: **Implemented**
 
-#### Scenario: Unfinished count logged on cancel
-- **WHEN** the executor's wait for worker futures returns after the run's executor was shut down and some tasks were interrupted
-- **THEN** the executor SHALL emit one log line at WARN level: `"Run {runId} cancelled with {unfinishedCount} test case(s) interrupted before completion"`
+#### Scenario: Observed interruption count is logged after completion
+- **WHEN** the wait on all submitted futures returns and `interruptedTasks` is positive
+- **THEN** the runner SHALL emit one WARN line: `"Run {runId} cancelled with {interruptedTasks} test case(s) interrupted before completion"`
+- **AND** a zero counter SHALL produce no such line
 
-#### Scenario: No synthetic rows for unfinished cases
-- **WHEN** worker tasks are interrupted by cancellation
-- **THEN** the executor SHALL NOT iterate the futures list to write synthetic `CANCELLED`, `INTERRUPTED`, or any other status row for those cases. The cases simply do not appear in `test_case_run_results`.
+#### Scenario: No synthetic cancellation rows
+- **WHEN** the worker wrapper classifies a returned result or exception as interrupted
+- **THEN** it SHALL increment `interruptedTasks` and omit result/synthetic row writing for that observation
+- **AND** the runner SHALL NOT iterate futures to synthesize cancellation rows
 
-#### Scenario: Absence + run status carries the signal
-- **WHEN** an operator inspects a run with `status = CANCELLED` and finds `count(test_case_run_results WHERE run_id = X)` < `numberOfTestCases × numberOfRuns`
-- **THEN** the missing rows correspond to test cases that were either never dispatched (executor already shut down) or interrupted mid-flight. The run's `status = CANCELLED` and the WARN log line are the authoritative explanation; no per-case row is required to convey this.
+#### Scenario: Rejected submissions are not counted as interrupted workers
+- **WHEN** cancellation prevents a case from being submitted or the executor rejects its submission
+- **THEN** that case SHALL not increment the worker interruption counter
+- **AND** the WARN counter SHALL not be treated as a complete missing-result count; row counts also vary with turns/requests and failed batch writes
 
 ### Requirement: Catastrophic executor failures are rethrown
-If an exception escapes the dispatch loop itself (e.g., `findByRunId` throws because the meta DB connection died, an OOM in path-resolution code), the executor SHALL best-effort flush the buffer and re-throw the original exception so the evaluation job marks the run `FAILED` via its outer catch. Rejection of a task by the run's executor is NOT a catastrophic failure: it is the cancellation signal and is handled inside the dispatch loop (`submit` reports it and the loop ends), so it never reaches this path. The current code swallows such exceptions — that behaviour is removed.
+An Exception escaping the dispatch/wait loop SHALL trigger a best-effort flush and be rethrown (runtime exceptions unchanged, checked exceptions wrapped), followed by the finally flush attempt. Errors are not caught by this Exception handler.
 Status: **Implemented**
 
-#### Scenario: Dispatch-loop exception rethrown
-- **WHEN** an exception escapes the dispatch loop (e.g., from `testCaseRunInputRepository.findByRunId`)
-- **THEN** the executor's `catch (Exception e)` SHALL log the failure with the exception as last SLF4J argument, attempt one final `resultBatchWriter.flush(buffer)` inside a `try/catch` that logs and continues on failure, and then **re-throw** the original exception (unwrapped, no new exception class introduced)
+#### Scenario: Dispatch failure reaches the job
+- **WHEN** page fetching or dispatch/wait throws RuntimeException
+- **THEN** the executor SHALL log, attempt a catch-path flush and rethrow that exception
+- **AND** the job SHALL mark an uncancelled run FAILED with INTERNAL/UNEXPECTED_ERROR
 
-#### Scenario: Run marked FAILED by outer catch
-- **WHEN** the executor rethrows a catastrophic failure and the run has not been cancelled
-- **THEN** the evaluation job's outer `catch (Exception e)` SHALL log it and call `repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now)` with `code = "UNEXPECTED_ERROR"` and `category = INTERNAL` — preserving the existing error path
-
-#### Scenario: Catastrophic failure during cancellation ends CANCELLED
-- **WHEN** the executor rethrows a dispatch-loop exception while the run's executor has already been shut down by a cancel request
-- **THEN** the evaluation job SHALL record the run as CANCELLED, not FAILED — the user's cancellation takes precedence over an incidental failure of the aborting run (an analytics batch-write failure is the one exception and still yields FAILED / `ANALYTICS_WRITE_FAILED`)
+#### Scenario: Cancellation takes precedence
+- **WHEN** an ordinary dispatch failure reaches the job after cancellation
+- **THEN** the job SHALL attempt CANCELLED instead of FAILED
+- **AND** an AnalyticsWriteException escaping a phase SHALL take the separate FAILED/ANALYTICS_WRITE_FAILED handler
 
 ### Requirement: Progress reporting
 The executor SHALL report execution progress at batch-flush boundaries via the existing SSE infrastructure.
@@ -486,7 +474,7 @@ Status: **Implemented**
 
 #### Scenario: Progress event on batch flush
 - **WHEN** a batch of results is flushed to analytics DB
-- **THEN** the executor SHALL emit a progress notification via `TestSuiteRunSseService` containing: `completedCases` (number of results written so far), `totalCases` (total expected: numberOfTestCases * numberOfRuns)
+- **THEN** the executor SHALL emit a progress notification via `TestSuiteRunSseService` containing: `completedCases` (number of nonempty test-case-run additions to the writer so far, not row count or a durability guarantee), `totalCases` (total expected: numberOfTestCases * numberOfRuns)
 
 #### Scenario: No progress events for empty batches
 - **WHEN** a batch flush contains zero results (e.g., all calls pending)
@@ -498,7 +486,7 @@ Status: **Implemented**
 
 #### Scenario: Credential available in workers
 - **WHEN** workers make HTTP calls to DIAL Core deployments
-- **THEN** the caller's credential SHALL be available via `AuthorizationTokenHolder.getCredential()` in the worker thread, propagated via `TokenPropagationHelper`
+- **THEN** the caller's credential SHALL be available from EvaluationContext.getCredential() for MCP and via the propagated AuthorizationTokenHolder for HTTP
 
 #### Scenario: Credential captured before async dispatch
 - **WHEN** the run is dispatched to the `@Async` executor
@@ -510,7 +498,7 @@ Status: **Implemented**
 
 #### Scenario: System defaults applied when execution settings omitted
 - **WHEN** `RunConfigDto.execution` is null
-- **THEN** the executor SHALL use system defaults: `concurrencyLevel = 1`, `requestTimeoutMs = 30000`, `rateLimitRps = null`
+- **THEN** the executor SHALL use system defaults: `concurrencyLevel = 1`, `requestTimeoutMs = 600000`, `rateLimitRps = null`
 
 #### Scenario: System defaults applied when retry omitted
 - **WHEN** `RunConfigDto.retry` is null
@@ -573,29 +561,17 @@ Status: **Implemented**
 - **WHEN** the worker makes a deployment call
 - **THEN** the header the credential's kind requires (`Authorization: Bearer <jwt>` or `Api-Key`) SHALL be set automatically via the token propagation mechanism (not from user-provided headers)
 
-### Requirement: Mock job replacement
-The `TestSuiteEvaluationJob` SHALL delegate to `EvaluationExecutor` instead of performing mock sleep and fake result generation. All mock-specific components (`MockResultsGenerator`, `MockResponseBodyBuilder`, `MockResultsBatchWriter`, `MockRequestBodyBuilder`) SHALL be removed. The worker uses `ResolvedRequestService` directly for full request resolution. Custom utility methods (`resolveInt`, `resolveLong`, `resolveDouble`) SHALL be replaced with `ObjectUtils.defaultIfNull` from Apache Commons Lang.
+### Requirement: Evaluation job delegates execution
+TestSuiteEvaluationJob SHALL build a frozen execution context and delegate Phase 1 to EvaluationExecutor. Request resolution SHALL remain DB-free in runner-core; the job SHALL orchestrate snapshot, deployment, metrics and score-statistics phases rather than fabricate results.
 Status: **Implemented**
 
 #### Scenario: Job delegates to executor
-- **WHEN** `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` runs
-- **THEN** it SHALL construct an `EvaluationContext` from the run's configuration and call `evaluationExecutor.execute(context)`
+- **WHEN** dispatch runs with deployment execution enabled after a successful snapshot
+- **THEN** it SHALL build EvaluationContext and call evaluationExecutor.execute(context)
 
-#### Scenario: Mock components removed
-- **WHEN** the real executor is implemented
-- **THEN** `MockResultsGenerator`, `MockResultsBatchWriter`, `MockResponseBodyBuilder`, and `MockRequestBodyBuilder` SHALL be removed from the codebase
-
-#### Scenario: Request resolution via ResolvedRequestService
-- **WHEN** the worker resolves a test case request
-- **THEN** it SHALL use `ResolvedRequestService.resolveRequest()` for full request resolution (URL, headers, query params, body). `MockRequestBodyBuilder` (which only resolves the body string) is deleted. Suites without a request template are prevented at validation time (`isValid = false`), so no runtime fallback is needed.
-
-#### Scenario: Mock job configuration properties removed
-- **WHEN** the real executor is implemented
-- **THEN** `test-suite-run.mock-job.*` properties SHALL be removed and replaced by `test-suite-run.execution.*` properties
-
-#### Scenario: Utility methods use established libraries
-- **WHEN** the job resolves configuration values with defaults
-- **THEN** it SHALL use `ObjectUtils.defaultIfNull(value, default)` from Apache Commons Lang instead of custom `resolveInt`/`resolveLong`/`resolveDouble` static methods
+#### Scenario: Request resolution remains runner-owned
+- **WHEN** an HTTP worker executes a case
+- **THEN** RequestChainExecutor and TurnLoopExecutor SHALL resolve through runner.service.RequestResolver
 
 ### Requirement: HTTP client factory for streaming support
 The `DialCoreDeploymentInvokerConfiguration` SHALL use `JdkClientHttpRequestFactory` (backed by `java.net.http.HttpClient`) with HTTP/1.1 protocol version pinned, instead of relying on default HTTP/2 ALPN negotiation.
@@ -614,7 +590,7 @@ Status: **Implemented**
 - **THEN** it MAY continue using `SimpleClientHttpRequestFactory` since it does not need streaming support
 
 ### Requirement: Streaming-aware deployment invocation
-The `DialCoreDeploymentInvoker` SHALL expose an `invokeWithStreaming()` method that returns a `DeploymentInvocationResult` with streaming detection and raw `InputStream` access for SSE consumption. The method SHALL NOT accept a `Duration timeout` parameter (timeout is enforced at the worker level).
+The `DialCoreDeploymentInvoker` SHALL expose an `invokeWithStreaming()` method that returns a `DeploymentInvocationResult` with streaming detection and raw `InputStream` access for SSE consumption. The method SHALL NOT accept a `Duration timeout` parameter (HTTP transport settings and SSE parse-duration checks apply separately).
 Status: **Implemented**
 
 #### Scenario: invokeWithStreaming returns non-streaming result
@@ -625,9 +601,11 @@ Status: **Implemented**
 - **WHEN** the endpoint returns a response with `Content-Type: text/event-stream`
 - **THEN** `DeploymentInvocationResult.streaming` SHALL be `true`, `eventStream` SHALL contain the raw SSE `InputStream` for the caller to consume, and `body` SHALL be `null`
 
-#### Scenario: Streaming consumption timeout
-- **WHEN** the worker consumes a streaming response via `StreamingResponseAccumulator`
-- **THEN** the worker SHALL enforce `requestTimeoutMs` as the **total elapsed time** from request start (including both header reception and stream consumption). If the total elapsed time exceeds `requestTimeoutMs`, the worker SHALL close the stream, set `executionStatus = TIMEOUT`, and store whatever was accumulated up to that point. This prevents slow-dripping SSE streams from occupying worker threads indefinitely. The `StreamingResponseAccumulator` SHALL accept a `deadlineMs` (absolute timestamp) and check it after each SSE event is read. To handle **stalled streams** (connection open but no data arriving), the accumulator SHALL wrap the blocking `InputStream` read in a mechanism that respects the deadline — e.g., running the accumulation inside `CompletableFuture.supplyAsync().get(remainingTimeout)` or setting a socket-level read timeout on the stream. This ensures the deadline is enforced even when `InputStream.read()` blocks indefinitely between events.
+#### Scenario: Streaming parser duration bounds
+- **WHEN** the worker consumes SSE
+- **THEN** it SHALL pass requestTimeoutMs as the parser's idle duration and sse-event-processing.max-total-duration-ms as the absolute parse duration
+- **AND** parsing deadlines SHALL start at parse entry, not HTTP request start, and be checked after completed line reads
+- **AND** no timed future SHALL independently bound the whole invocation; blocking reads depend on transport timeout/interruption
 
 #### Scenario: DeploymentInvocationResult structure
 - **WHEN** a deployment invocation completes
@@ -639,7 +617,7 @@ Status: **Implemented**
 
 #### Scenario: Method signature without timeout
 - **WHEN** `invokeWithStreaming()` is defined
-- **THEN** it SHALL use parameters: `HttpMethod method`, `String path` (relative), `HttpHeaders headers`, `MultiValueMap<String, String> queryParams`, `Object body`. The `Duration timeout` parameter is removed — timeout enforcement is the worker's responsibility via `CompletableFuture.get(remainingTimeout)`.
+- **THEN** it SHALL use parameters: `HttpMethod method`, `String path` (relative), `HttpHeaders headers`, `MultiValueMap<String, String> queryParams`, `Object body`. The `Duration timeout` parameter is removed — the invoker uses the configured dialCoreTryOutRestClient; the worker has no independent timed-future invocation bound.
 
 ### Requirement: X-Correlation-Id removed from eval execution header blacklist
 The `X-Correlation-Id` header SHALL be removed from the evaluation run header blacklist. It is no longer generated by the eval worker; `traceparent` and `tracestate` SHALL be added to the blacklist instead.
@@ -660,7 +638,7 @@ When the worker fails to resolve the request for a test case (e.g., binding vari
 Status: **Implemented**
 
 #### Scenario: Resolution failure recorded as ERROR
-- **WHEN** `ResolvedRequestService.resolveRequest()` throws an exception for a specific test case
+- **WHEN** `RequestResolver.resolveForRun()` throws an exception for a specific test case
 - **THEN** the worker SHALL set `executionStatus = ERROR`, store the error message in `responseBody` as a JSON error envelope, set `responseStatusCode = null`, and continue to the next test case (consistent with "continue on failure" policy)
 
 ### Requirement: MCP tool evaluation in EvaluationWorker
@@ -674,7 +652,7 @@ Status: **Implemented**
 
 #### Scenario: DEPLOYMENT suite unchanged
 - **WHEN** the `EvaluationContext` references a DEPLOYMENT suite
-- **THEN** the worker SHALL use the existing HTTP execution flow: `ResolvedRequestService` → `RequestBodySerializer` → `DialCoreDeploymentInvoker` → `StreamingResponseAccumulator` → `ResponseColumnExtractor`
+- **THEN** the worker SHALL use the existing HTTP execution flow: `RequestResolver` → `RequestBodySerializerRegistry` → `DialCoreDeploymentInvoker` → `StreamingResponseAccumulator` → `ResponseColumnExtractor`
 
 ### Requirement: MCP argument resolution in worker
 
@@ -684,7 +662,7 @@ Status: **Implemented**
 #### Scenario: Full argument resolution with effective bindings
 - **WHEN** an MCP test case is dispatched for execution
 - **THEN** the worker SHALL determine effective bindings: test case `inputBindingsOverride` (if non-null) takes priority over suite-level `McpSuite.inputBindings()` of `context.getSuite()` (same override semantics as HTTP suites)
-- **AND** resolve tool arguments using `McpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData)` where `argumentTemplate` is pre-loaded from `EvaluationContext` and `testCaseData` is parsed from the current test case
+- **AND** resolve tool arguments using `McpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData, context.snapshotTestCaseSchema)` where `argumentTemplate` is pre-loaded from `EvaluationContext` and `testCaseData` is parsed from the current test case
 
 #### Scenario: Argument resolution failure
 - **WHEN** `McpRequestResolver` fails to resolve arguments for a test case
@@ -700,18 +678,18 @@ Status: **Implemented**
 - **THEN** the worker SHALL serialize the `CallToolResult` via `McpResponseSerializer`
 - **AND** set `executionStatus = SUCCESS`
 - **AND** store the serialized JSON in `responseBody`
-- **AND** set `responseStatusCode = 200`
+- **AND** set `responseStatusCode = null`
 
 #### Scenario: Tool-level error (isError = true)
 - **WHEN** the MCP tool call completes with `isError = true`
 - **THEN** the worker SHALL serialize the `CallToolResult` via `McpResponseSerializer`
 - **AND** set `executionStatus = FAILED`
 - **AND** store the serialized JSON in `responseBody`
-- **AND** set `responseStatusCode = 200` (transport succeeded, tool reported error)
+- **AND** set `responseStatusCode = null` (MCP rows do not carry an HTTP status)
 
 #### Scenario: MCP transport timeout
-- **WHEN** the MCP tool call times out (exceeds `requestTimeoutMs`)
-- **THEN** the worker SHALL set `executionStatus = TIMEOUT`, `responseBody = null`, `responseStatusCode = null`
+- **WHEN** the MCP tool call times out (as classified from an SDK/transport exception)
+- **THEN** the worker SHALL set `executionStatus = TIMEOUT`, `responseBody` as an `MCP_INVOCATION_ERROR` JSON envelope, `responseStatusCode = null`
 
 #### Scenario: MCP transport error
 - **WHEN** the MCP tool call fails with a network-level error
@@ -719,7 +697,7 @@ Status: **Implemented**
 
 #### Scenario: JSON-RPC error from DIAL Core
 - **WHEN** DIAL Core returns a JSON-RPC error (e.g., tool not found, invalid arguments)
-- **THEN** the worker SHALL set `executionStatus = ERROR`, store the JSON-RPC error details in `responseBody`
+- **THEN** the worker SHALL set `executionStatus = ERROR`, store the mapped exception message in an `MCP_INVOCATION_ERROR` JSON envelope in `responseBody`; no separate numeric JSON-RPC code is retained
 
 ### Requirement: MCP request body stored in results
 
@@ -729,11 +707,11 @@ Status: **Implemented**
 #### Scenario: MCP requestBody content
 - **WHEN** the worker builds a `TestCaseRunResult` for an MCP test case
 - **THEN** `requestBody` SHALL contain a JSON object with the resolved tool arguments (e.g., `{"query": "What is MCP?", "limit": 10}`)
-- **AND** `requestBody` SHALL be null only when argument resolution itself fails
+- **AND** `requestBody` SHALL retain serialized resolved arguments; errors before that resolution may leave it null
 
 ### Requirement: MCP retry policy
 
-The existing retry policy SHALL apply to MCP tool calls with MCP-specific retryable conditions.
+The existing retry policy SHALL apply to MCP tool calls with status-based retry conditions; JSON-RPC numeric error codes are not separately classified.
 Status: **Implemented**
 
 #### Scenario: Retry on MCP transport failure
@@ -742,15 +720,15 @@ Status: **Implemented**
 
 #### Scenario: Retry on JSON-RPC server error
 - **WHEN** an MCP tool call fails with a JSON-RPC server error (error code -32000 to -32099) and `maxRetries > 0`
-- **THEN** the worker SHALL retry (server errors are transient, similar to HTTP 5xx)
+- **THEN** the mapped ERROR outcome SHALL be retried while attempts remain, without a numeric-code-specific classification
 
 #### Scenario: No retry on tool-level isError
 - **WHEN** an MCP tool call returns `isError = true` (tool completed but reported an error)
 - **THEN** the worker SHALL NOT retry (tool-level errors are semantic, not transient)
 
-#### Scenario: No retry on JSON-RPC invalid params
+#### Scenario: JSON-RPC invalid params follows generic ERROR retry
 - **WHEN** an MCP tool call fails with JSON-RPC `InvalidParams` error (-32602)
-- **THEN** the worker SHALL NOT retry (client error, similar to HTTP 4xx)
+- **THEN** the SDK error SHALL map to ERROR and the worker SHALL retry when retries remain; the worker does not distinguish JSON-RPC numeric codes
 
 ### Requirement: MCP rate limiting
 
@@ -759,7 +737,7 @@ Status: **Implemented**
 
 #### Scenario: MCP calls throttled by rate limiter
 - **WHEN** `rateLimitRps` is configured and the suite is MCP_TOOL
-- **THEN** each MCP tool call (including retries) SHALL acquire a rate limit token before execution
+- **THEN** each test-case-run submission SHALL acquire one rate-limit token; tool retries within it SHALL not acquire another
 
 ### Requirement: MCP response column extraction
 
@@ -904,30 +882,9 @@ Status: **Implemented**
 
 ## Implementation Notes
 
-- ROUTE URL validation lives in `evaluation-runner-core` `DialCoreUrlBuilder`; `TurnLoopExecutor` skips deployment-model validation for ROUTE and maps URL-builder validation failures to `REQUEST_RESOLUTION_ERROR` turn outcomes.
-- Executor interface: `com.epam.aidial.evaluation.service.domain.job.EvaluationExecutor` (unmoved — EF backend)
-- In-process executor: `com.epam.aidial.evaluation.service.domain.job.InProcessEvaluationExecutor` (unmoved — EF backend)
-- Worker: `com.epam.aidial.evaluation.runner.job.EvaluationWorker` (moved to `evaluation-runner-core`)
-- Context: `com.epam.aidial.evaluation.runner.job.EvaluationContext` carries the run's `ExecutorService` (`executor`)
-  instead of an `AtomicBoolean` signal and a grace period; `TestCaseRunner` no longer creates or shuts down an
-  executor — the owner (`TestSuiteEvaluationJob` via `RunHandle`, or the CLI's `RunOrchestrationService`) does.
-  `awaitCompletion()` is an interruptible wait on all dispatched futures. The only remaining cancellation-related
-  check in the runner is the interrupt-status test in `TestCaseRunner`'s worker wrapper (drop the case's results
-  when the worker was interrupted). Retry loops in `EvaluationWorker` (MCP) and `DeploymentTurnInvoker` (HTTP) keep
-  their existing `InterruptedException → re-interrupt` handling and no longer poll a flag; `TurnLoopExecutor` no
-  longer special-cases a cancelled turn. `EvaluationRunProperties.Execution.cancellationGracePeriodMs` and the
-  `test-suite-run.execution.cancellation-grace-period-ms` key are removed.
-- Streaming accumulator: `com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulator` (moved to `evaluation-runner-core`)
-- Anthropic content accumulator: `com.epam.aidial.evaluation.runner.job.AnthropicContentAccumulator` (package-private, `evaluation-runner-core`; mirrors `CustomContentAccumulator`'s per-run lifecycle)
-- Result factory: `com.epam.aidial.evaluation.runner.job.TestCaseRunResultFactory` (moved to `evaluation-runner-core`)
-- Batch writer interface: `com.epam.aidial.evaluation.runner.job.ResultBatchWriter` (`addResults(List<TestCaseRunResult>)`, `flush()` — moved to `evaluation-runner-core` as a DB-free interface)
-- Postgres batch writer: `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriter` (plain per-run instance) and `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriterFactory` (Spring bean) — EF backend, implement the shared `ResultBatchWriter` interface; supersede the baseline's `ResultBatchWriter`/`ResultBatchWriterTransactional` classes, which no longer exist
-- Settings validator: `com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator` (unmoved — EF backend)
-- Config properties: `com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties` (moved to `evaluation-runner-core`)
-- Deployment invoker result: `com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult` (moved to `evaluation-runner-core`)
-- Request resolution: `com.epam.aidial.evaluation.runner.service.RequestResolver` (`evaluation-runner-core`) — `TurnLoopExecutor` injects it directly; the EF backend's `com.epam.aidial.evaluation.service.domain.ResolvedRequestService` retains only the DB-backed Try-It-Out overload (`resolveRequest(UUID, UUID)`) and delegates to the injected `RequestResolver`
-- Modified: `EvaluationWorker` — add suite type branching at `execute()` entry point. MCP retry logic reuses the existing `invokeWithRetries()` method by extracting the inner execution logic into a strategy function. MCP transport propagation: reads `mcpDeploymentRef.transport`, defaults to `STREAMABLE_HTTP` when null, passes to `McpToolInvoker.callTool()`.
-- Modified: `EvaluationContext` — carries one `SuiteDefinition`, built unconditionally by `SuiteDefinitions.fromSnapshot(snapshot)` in `TestSuiteEvaluationJob.buildContext`. For `MCP_TOOL` suites it is an `McpSuite` (target with `mcpDeploymentRef`/`toolRef`, plus `argumentTemplate`, `inputBindings`, `responseColumns`).
-- MCP effective bindings: `EvaluationWorker.invokeMcpSingle()` determines effective bindings per test case — `testCase.inputBindingsOverride` (if non-null) takes priority over `McpSuite.inputBindings()` of `context.getSuite()`. Effective bindings are passed to `McpRequestResolver.resolve()`.
-- DTOs: `ExecutionSettingsDto`, `RetryPolicyDto` (in `service.domain.dto`)
-- Resolved request-model validation: `TurnLoopExecutor.runOneTurn` calls `RequestModelValidator.validateForExecution(resolved.getUrl(), resolvedBody, deploymentId)` after `RequestResolver.resolveForRun` and before URL construction / header assembly / serialization, with `deploymentId` taken from the `DeploymentTarget` ref of `EvaluationContext.getTarget()` (derived from `EvaluationContext.suite`) (the frozen backend deployment or the CLI-selected target). A `RequestBodyValidationException` becomes `buildBodyValidationErrorOutcome` — an `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` envelope returned via `TurnStepResult.abortBeforeRequest` with the resolved body retained in `requestBody`, so the existing fail-fast path aborts the rest of the turn loop and the request chain.
+- Orchestration/snapshots/defaults: `src/main/java/com/epam/aidial/evaluation/service/domain/job/TestSuiteEvaluationJob.java`, `InProcessEvaluationExecutor.java`, `PostgresResultBatchWriter.java`; `src/main/resources/application.yml`.
+- Shared engine: `evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/job/EvaluationWorker.java`, `TestCaseRunner.java`, `RequestChainExecutor.java`, `TurnLoopExecutor.java`, `DeploymentTurnInvoker.java`, `StreamingResponseAccumulator.java`, `SseEventParser.java`, `TestCaseRunResultFactory.java`.
+- Shared transforms: runner-core `runner.service.RequestResolver`, `RequestModelValidator`, `DialCoreUrlBuilder`, `ResponseColumnExtractor`, `McpRequestResolver`; transport `runner.client.dialcore.DialCoreDeploymentInvoker` and `runner.client.mcp.McpToolInvoker`.
+- Worker schemas come from the snapshot dataset schema. Override carrier fields remain supported in run inputs, but current dataset cases/new snapshots do not author them.
+- Read/response timeout defaults are not end-to-end request deadlines: HTTP uses the shared try-out RestClient; SSE checks occur only after completed line reads. Byte limits gate event dispatch or already-read nonstreaming/MCP content, not all allocation.
+- Tests: runner-core `EvaluationWorkerTest`, `TestCaseRunnerTest`, `TurnLoopExecutorTest`, `DeploymentTurnInvokerTest`, `StreamingResponseAccumulatorTest`, `SseEventParserTest`; backend `InProcessEvaluationExecutorTest`, `PostgresResultBatchWriterTest`, `TestSuiteEvaluationJobTest`.

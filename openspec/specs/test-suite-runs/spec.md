@@ -8,7 +8,7 @@ Status: **Implemented**
 ## Key Terms
 - **TestSuiteRun**: A single execution of a test suite, created asynchronously with a run configuration. Progresses through a status lifecycle: PENDING, RUNNING, CANCELLING, COMPLETED, FAILED, CANCELLED.
 - **RunConfig**: Configuration for a run; contains `numberOfRuns`, optional `testRunName`, optional `execution` (ExecutionSettingsDto), and optional `retry` (RetryPolicyDto). Stored as JSONB for extensibility.
-- **Evaluation execution engine**: The real evaluation engine that calls target deployment endpoints per test case, captures responses (including streaming SSE), and writes results to analytics DB. Replaced the former mock evaluation job. See `eval-execution-engine` spec.
+- **Evaluation execution engine**: Invokes HTTP or MCP suite targets per test case, captures responses, and writes results to analytics. See `eval-execution-engine`.
 - **SSE status stream**: A Server-Sent Events endpoint that pushes run status updates to connected clients, with optional filtering.
 - **Cancellation**: Interrupt-driven, via a per-run worker `ExecutorService` (a `RunHandle` tracked in the per-JVM `ActiveRunRegistry`). Cancelling a RUNNING run shuts that executor down immediately — interrupting in-flight workers and rejecting new dispatch — rather than interrupting the job/orchestration thread itself. The run is observable as CANCELLING from the moment the cancel request commits until the async job finalizes it as CANCELLED.
 - **Startup reconciliation**: A process that runs on application startup to recover orphaned runs (PENDING/RUNNING/CANCELLING) that were lost due to a crash or restart, since the in-memory `ActiveRunRegistry` and SSE emitters do not survive a restart. Orphaned PENDING/RUNNING runs are marked FAILED; orphaned CANCELLING runs are finalized as CANCELLED.
@@ -18,17 +18,19 @@ Status: **Implemented**
 ### Requirement: Trigger a test suite run
 The service SHALL provide `POST /api/v1/test-suites/{testSuiteId}/runs` to create and trigger a new test suite run. The endpoint SHALL validate the request, verify the suite is bound to a dataset, persist a run record with status PENDING (including `testRunName` and `numberOfTestCases` snapshot), dispatch an async job, and return the run details immediately (without waiting for job completion). The unbound-suite guard (`datasetId IS NULL`) SHALL run before the `valid = false` check, so unbound suites SHALL surface as HTTP 409 with error code `SUITE_HAS_NO_DATASET` regardless of their validation state. An additional **run-time presence check** SHALL be performed after the `valid = false` guard: the service SHALL count the runnable test cases for the bound dataset — those that are valid and (when the suite has a `testCaseFilter`) match that filter — and if the count is zero, SHALL respond with HTTP 409 `INVALID_OPERATION` with message "Suite has no valid and enabled test cases". No run record SHALL be persisted and no async job SHALL be dispatched when this check fails. The count SHALL NOT consider any other exclusion source; `test_suites.disabled_test_case_ids` is not read.
 
-Guard order:
+Service guard order (after controller request binding/Bean Validation):
 1. Suite not found → 404 `NOT_FOUND`
 2. Unbound (`datasetId == null`) → 409 `SUITE_HAS_NO_DATASET`
 3. Config-invalid (`isValid == false`) → 409 `INVALID_OPERATION`
-4. Zero runnable test cases → 409 `INVALID_OPERATION`
-5. Concurrent run limits → 429 `TOO_MANY_REQUESTS`
+4. MCP suite whose bound dataset contains any multi-turn case → 409 `INVALID_OPERATION`
+5. Zero runnable test cases → 409 `INVALID_OPERATION`
+6. Configured run-count/execution/retry ceilings → 400 `VALIDATION_ERROR`
+7. Concurrent run limits → 429 `TOO_MANY_REQUESTS`
 
 Status: **Implemented**
 
 #### Scenario: Successful run trigger
-- **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` with a valid `RunConfigDto` body and the test suite exists and is bound to a dataset
+- **WHEN** a client calls `POST /api/v1/test-suites/{testSuiteId}/runs` with a valid run configuration for a config-valid, bound suite with runnable cases and all admission guards pass
 - **THEN** system SHALL create a `test_suite_runs` record with status `PENDING`, populate `testRunName` (from config or auto-generated), snapshot `numberOfTestCases` from the bound dataset's runnable test case count (valid, and matching `testCaseFilter` when set), dispatch an async evaluation job on the dedicated executor, and return HTTP 202 Accepted with the `TestSuiteRunResponseDto`
 
 #### Scenario: Test suite not found
@@ -59,10 +61,9 @@ Status: **Implemented**
 - **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` for a config-valid, bound suite whose dataset has zero runnable test cases — because none are valid, or none match the suite's `testCaseFilter`
 - **THEN** system SHALL respond with HTTP 409 Conflict and error code `INVALID_OPERATION` with message "Suite has no valid and enabled test cases"; no run record SHALL be persisted and no async job SHALL be dispatched
 
-#### Scenario: Runnable count ignores legacy stored exclusions
-- **WHEN** a config-valid, bound suite carries a non-empty `test_suites.disabled_test_case_ids` value stored by an earlier version of the product
-- **THEN** the runnable count and the persisted `numberOfTestCases` SHALL equal the number of valid, `testCaseFilter`-matching test cases in the dataset, as if the stored value were empty
-- **AND** a `testCaseFilter` matching only test cases named in that stored value SHALL still produce a successful run (no 409)
+#### Scenario: MCP multi-turn guard precedes runnable count
+- **WHEN** a config-valid MCP suite's dataset contains any multi-turn case, even if that case is invalid or excluded by `testCaseFilter`
+- **THEN** run creation SHALL return HTTP 409 `INVALID_OPERATION` before counting runnable cases, without persisting a run
 
 #### Scenario: Runnable count honors testCaseFilter
 - **WHEN** a config-valid, bound suite has valid test cases but its `testCaseFilter` matches a non-empty subset of them
@@ -102,7 +103,7 @@ Status: **Implemented**
 
 #### Scenario: Minimal runConfig (90% of users)
 - **WHEN** client sends `runConfig: { "numberOfRuns": 3 }` without `execution` or `retry`
-- **THEN** system SHALL accept the configuration, apply system default execution settings (sequential, 30s timeout, no retry, no rate limit), and persist as JSONB
+- **THEN** system SHALL accept and persist the configuration; execution SHALL resolve configured defaults (sequential, 600000 ms timeout, no retry, no rate limit with the shipped configuration)
 
 #### Scenario: Full runConfig with execution settings
 - **WHEN** client sends:
@@ -131,7 +132,7 @@ Status: **Implemented**
 
 #### Scenario: Execution settings validation — requestTimeoutMs
 - **WHEN** `execution.requestTimeoutMs` is provided
-- **THEN** it SHALL be >= 1000 and <= system max (configurable, default 600000). Values outside range SHALL result in HTTP 400
+- **THEN** it SHALL be >= 1000 and <= system max (configurable, default 1200000). Values outside range SHALL result in HTTP 400
 
 #### Scenario: Execution settings validation — rateLimitRps
 - **WHEN** `execution.rateLimitRps` is provided
@@ -162,8 +163,8 @@ Status: **Implemented**
 - **THEN** the status SHALL transition: PENDING -> RUNNING -> COMPLETED
 
 #### Scenario: Failed lifecycle
-- **WHEN** a run is created and the async job encounters a fatal error (unhandled exception, analytics write failure)
-- **THEN** the status SHALL transition: PENDING -> RUNNING -> FAILED, and `error_message` and `error_details` SHALL be populated
+- **WHEN** a run encounters a fatal error
+- **THEN** it SHALL become FAILED with error information, either directly from PENDING for a pre-execution/snapshot failure or from RUNNING/CANCELLING for an execution failure allowed by the terminal-write guards
 
 #### Scenario: Cancelled from PENDING
 - **WHEN** a run with status PENDING is cancelled before the async job starts
@@ -247,7 +248,7 @@ Status: **Implemented**
 
 #### Scenario: Sortable fields
 - **WHEN** client calls `GET /api/v1/test-suite-runs?sort=<field>,<dir>`
-- **THEN** system SHALL support sorting by: `createdAt`, `startedAt`, `completedAt`, `status`, `testRunName`
+- **THEN** system SHALL support sorting by: `id`, `createdAt`, `startedAt`, `completedAt`, `status`, `testRunName`
 
 #### Scenario: Include total count
 - **WHEN** client calls `GET /api/v1/test-suite-runs?includeTotalCount=true`
@@ -411,16 +412,16 @@ The service SHALL implement a scheduled cleanup mechanism to remove stale or bro
 Status: **Implemented**
 
 #### Scenario: Scheduled cleanup runs periodically
-- **WHEN** the configured cleanup interval elapses (default 5 minutes)
-- **THEN** system SHALL iterate active SSE emitters, attempt a heartbeat ping, and remove any that fail
+- **WHEN** the fixed 5000 ms heartbeat sweep runs
+- **THEN** the system SHALL ping emitters whose last activity is at least their heartbeat interval ago (the public default uses `test-suite-run.sse.cleanup-interval-ms`, 300000 ms), and remove those whose sends fail
 
 #### Scenario: Broken connection detected
 - **WHEN** a heartbeat ping to an SSE emitter throws an IOException
 - **THEN** system SHALL remove the emitter from the active connection pool
 
 #### Scenario: Cleanup logging
-- **WHEN** the cleanup task completes
-- **THEN** system SHALL log the number of removed stale emitters and the count of remaining active emitters
+- **WHEN** the heartbeat sweep removes any emitter or debug logging is enabled
+- **THEN** the system SHALL log removed and remaining emitter counts at INFO; an unchanged sweep with debug disabled SHALL emit no count log
 
 ### Requirement: Concurrent run limits
 The service SHALL enforce configurable limits on the number of concurrent active runs (PENDING + RUNNING + CANCELLING), both globally and per test suite. A CANCELLING run still holds execution resources until the job finalizes it and therefore counts as active.
@@ -443,7 +444,7 @@ Status: **Implemented**
 - **THEN** system SHALL reject the run creation with HTTP 429 and include `activeRunsForSuite` and `maxRunsPerSuite` in error `details`
 
 ### Requirement: Evaluation job orchestration
-The `TestSuiteEvaluationJob` SHALL delegate to `EvaluationExecutor.execute()` for deployment evaluation (Phase 1) and `MetricEvaluationExecutor.execute()` for metric evaluation (Phase 2), following a consistent pattern: build context, then call execute. Both executors are interfaces with in-process implementations (`InProcessEvaluationExecutor`, `InProcessMetricEvaluationExecutor`). Every run SHALL own exactly one worker executor for its whole lifetime, registered in a per-JVM registry before the job is submitted and removed when the job finishes; cancellation SHALL be delivered by shutting that executor down, not by a flag that phases poll. The job's own thread SHALL never be interrupted. Configuration value resolution SHALL use `ObjectUtils.defaultIfNull` from Apache Commons Lang.
+The `TestSuiteEvaluationJob` SHALL delegate Phase 1 to `EvaluationExecutor.execute()`, Phase 2 to `MetricEvaluationExecutor.execute()`, and Phase 3 to metric-score computation. It SHALL build each phase's context before invocation and reuse one worker executor registered before local async submission and removed after final notification. User cancellation SHALL shut down that worker executor without interrupting the orchestration thread; application-context shutdown MAY interrupt the job thread. Omitted execution/retry settings SHALL resolve from configured defaults.
 Status: **Implemented**
 
 #### Scenario: Job delegates to executor
@@ -456,7 +457,7 @@ Status: **Implemented**
 
 #### Scenario: Job start is guarded against a prior PENDING cancel
 - **WHEN** the job starts and attempts `PENDING -> RUNNING` with an optimistic update
-- **THEN** if zero rows are affected (the run was cancelled while PENDING) the job SHALL exit without executing any phase and without writing any status
+- **THEN** if zero rows are affected (the run was cancelled while PENDING) the job SHALL exit without executing an evaluation phase or writing another status; the snapshot transaction may already have run before that guarded transition
 
 #### Scenario: Status notifications
 - **WHEN** the evaluation job transitions between statuses (PENDING->RUNNING, RUNNING->COMPLETED/FAILED, CANCELLING->CANCELLED)
@@ -464,15 +465,15 @@ Status: **Implemented**
 
 #### Scenario: Cancellation during execution
 - **WHEN** the run is cancelled while the evaluation job is running
-- **THEN** the run's worker executor SHALL be shut down immediately (in-flight workers interrupted, new dispatches rejected); the current phase SHALL end promptly, the job SHALL NOT start any further phase, and the job SHALL write CANCELLED (see eval-execution-engine and metric-evaluation specs for per-phase behavior)
+- **THEN** the run's worker executor SHALL be shut down immediately (in-flight workers interrupted, new dispatches rejected); the job SHALL check cancellation before each subsequent phase and attempt CANCELLED unless an analytics write failure takes FAILED precedence (see the terminal-write scenario)
 
 #### Scenario: Terminal write is guarded
 - **WHEN** all phases finish and the job writes the terminal status
-- **THEN** `COMPLETED` SHALL be written only with an optimistic `WHERE status = 'RUNNING'`; if zero rows are affected the status is CANCELLING and the job SHALL write CANCELLED instead. When a phase fails with an exception while the run is CANCELLING (or its executor has been shut down), the job SHALL write CANCELLED rather than FAILED.
+- **THEN** `COMPLETED` SHALL be written only with `WHERE status = 'RUNNING'`; if zero rows are affected the job SHALL attempt a guarded CANCELLED write. Cancellation/rejected-worker-dispatch exceptions SHALL map to CANCELLED. Other exceptions SHALL map to CANCELLED only when the handle is cancelled, except `AnalyticsWriteException`, which SHALL take FAILED precedence even after cancellation. Existing terminal rows SHALL not be overwritten.
 
-#### Scenario: Configuration resolution uses ObjectUtils
+#### Scenario: Configuration resolution uses configured defaults
 - **WHEN** the job resolves run configuration values with system defaults
-- **THEN** it SHALL use `ObjectUtils.defaultIfNull(value, default)` from Apache Commons Lang instead of custom `resolveInt`/`resolveLong`/`resolveDouble` static methods
+- **THEN** omitted concurrency, timeout and retry fields SHALL use the configured defaults from runner-core's `EvaluationRunProperties` (applied via `ObjectUtils.getIfNull` in the root app's `TestSuiteEvaluationJob.buildContext`)
 
 #### Scenario: Metric evaluation chained after deployment evaluation
 - **WHEN** the deployment evaluation phase completes (all test cases executed) and the run is not cancelled
@@ -487,9 +488,13 @@ Status: **Implemented**
 - **WHEN** a phase completes and the run's executor has been shut down before the next phase starts
 - **THEN** the job SHALL skip all remaining phases and transition to CANCELLED status
 
-#### Scenario: Metric evaluation failure does not fail the run
-- **WHEN** the metric evaluation phase encounters errors (provider unavailable, individual metric errors)
-- **THEN** the run SHALL still transition to COMPLETED. Individual metric errors are captured per-EvalSummary row (`executionStatus = FAILED` with error details in `metricInfos`).
+#### Scenario: Individual metric failures do not fail the run
+- **WHEN** a SUCCESS execution row encounters a metric/provider failure or an error-typed metric output and summary persistence succeeds
+- **THEN** its summary SHALL have execution status FAILED with metric error information; these individual errors alone SHALL not fail the overall run
+
+#### Scenario: Condition errors preserve successful execution status
+- **WHEN** a SUCCESS execution row has only a metric condition error, with no dispatched-metric failure
+- **THEN** its summary SHALL retain execution status SUCCESS and record the condition error in `metricInfos`
 
 ### Requirement: Dedicated run job executor
 The service SHALL execute each test suite run job on a dedicated executor (bean `testSuiteRunExecutor`), separate from the default Spring async executor. The executor SHALL start one new thread per run for the run's whole lifetime — no thread pool, no queue, no executor-level concurrency limit — so that the number of concurrently executing runs is governed solely by the concurrent run limits (`test-suite-run.limits.*`). The threads SHALL be virtual when `spring.threads.virtual.enabled` is `true` (default) and platform threads when it is `false`, so that a single switch moves the whole JVM to platform threads for sampling/profiling.
@@ -517,7 +522,7 @@ Status: **Implemented**
 
 #### Scenario: Rejected execution after shutdown
 - **WHEN** the executor rejects a run job at dispatch time (e.g. it has been closed because the application context is shutting down)
-- **THEN** the service SHALL treat the `RejectedExecutionException` by marking the run as FAILED with error category `RESOURCE_LIMIT` and code `EXECUTOR_REJECTED` and notify SSE clients
+- **THEN** ordinary create-run dispatch compensation SHALL attempt to mark the run FAILED with error category `RESOURCE_LIMIT` and code `EXECUTOR_REJECTED`; this compensation path does not itself send an SSE notification
 
 #### Scenario: Context close interrupts in-flight jobs
 - **WHEN** the application context is closed while run jobs are executing
@@ -528,15 +533,15 @@ The service SHALL create a `test_suite_runs` table via Flyway migration to persi
 Status: **Implemented**
 
 #### Scenario: Table structure
-- **WHEN** the Flyway migration is applied
+- **WHEN** the installed meta schema is inspected
 - **THEN** the `test_suite_runs` table SHALL be created with columns: `id` (VARCHAR(36), PK), `test_suite_id` (VARCHAR(36), NOT NULL, FK to test_suites.id ON DELETE CASCADE), `test_run_name` (VARCHAR(255), NOT NULL), `status` (VARCHAR(20), NOT NULL), `run_config` (JSONB, NOT NULL), `number_of_test_cases` (INTEGER, NOT NULL), `started_at_ms` (BIGINT, nullable — epoch ms), `completed_at_ms` (BIGINT, nullable — epoch ms), `error_message` (TEXT, nullable), `error_details` (JSONB, nullable), `created_at_ms` (BIGINT, NOT NULL — epoch ms), `updated_at_ms` (BIGINT, NOT NULL — epoch ms). Column names follow the project `_ms` suffix convention for epoch millisecond columns.
 
 #### Scenario: Indexes and constraints
-- **WHEN** the migration is applied
+- **WHEN** the installed database schema is inspected
 - **THEN** indexes SHALL be created on: `test_suite_id`, `status`, and `created_at_ms DESC`. A UNIQUE constraint SHALL be created on `(test_suite_id, test_run_name)`.
 
 #### Scenario: Sequence for auto-generated names
-- **WHEN** the migration is applied
+- **WHEN** the installed database schema is inspected
 - **THEN** a PostgreSQL sequence `test_suite_run_name_seq` SHALL be created for generating monotonically increasing run numbers used in auto-generated names
 
 #### Scenario: Foreign key cascade
@@ -546,10 +551,6 @@ Status: **Implemented**
 ### Requirement: Configuration properties
 The service SHALL expose configurable properties for SSE, execution settings, retry defaults, and concurrent run limits under the `test-suite-run` prefix, and SHALL honour Spring Boot's `spring.threads.virtual.enabled` as the thread mode of the run job executor and of every run's worker executor.
 Status: **Implemented**
-
-#### Scenario: Executor properties
-- **WHEN** a deployment YAML still contains `test-suite-run.executor.core-pool-size`, `test-suite-run.executor.max-pool-size` or `test-suite-run.executor.queue-capacity`
-- **THEN** the application SHALL start normally and the properties SHALL have no effect (the run job executor is thread-per-run with no pool or queue)
 
 #### Scenario: Thread mode property
 - **WHEN** the application starts
@@ -561,11 +562,7 @@ Status: **Implemented**
 
 #### Scenario: Execution defaults and limits
 - **WHEN** the application starts
-- **THEN** it SHALL read `test-suite-run.execution.default-concurrency-level` (default 1), `test-suite-run.execution.max-concurrency-level` (default 50), `test-suite-run.execution.default-request-timeout-ms` (default 30000), `test-suite-run.execution.max-request-timeout-ms` (default 600000), `test-suite-run.execution.result-batch-size` (default 100), and `test-suite-run.execution.max-response-size-bytes` (default 5242880)
-
-#### Scenario: Cancellation grace period property is removed
-- **WHEN** a deployment YAML still contains `test-suite-run.execution.cancellation-grace-period-ms`
-- **THEN** the application SHALL start normally and the property SHALL have no effect (cancellation interrupts in-flight work immediately; there is no drain period to configure)
+- **THEN** it SHALL read `test-suite-run.execution.default-concurrency-level` (default 1), `test-suite-run.execution.max-concurrency-level` (default 50), `test-suite-run.execution.default-request-timeout-ms` (default 600000), `test-suite-run.execution.max-request-timeout-ms` (default 1200000), `test-suite-run.execution.result-batch-size` (default 100), and `test-suite-run.execution.max-response-size-bytes` (default 52428800)
 
 #### Scenario: Retry defaults and limits
 - **WHEN** the application starts
@@ -608,7 +605,7 @@ Status: **Implemented**
 - **THEN** system SHALL allow both (uniqueness is per test suite, not global)
 
 ### Requirement: Number of test cases snapshot
-When a run is created, the service sets a preliminary `numberOfTestCases` from the suite's runnable count (valid, and matching `testCaseFilter` when set). This value is **finalized at the snapshot phase** (not immutable at creation): the snapshot phase counts inserted `test_case_run_inputs` rows and updates `number_of_test_cases` to that exact count before the run transitions to RUNNING.
+When an execution run is created, the service SHALL set a preliminary `numberOfTestCases` from the suite's runnable count (valid, and matching `testCaseFilter` when set). The snapshot phase SHALL finalize it to the exact number of inserted `test_case_run_inputs` rows before RUNNING. Imported-result runs SHALL keep their imported result-row count and SHALL not capture test-case inputs.
 Status: **Implemented**
 
 #### Scenario: Snapshot on run creation
@@ -619,9 +616,13 @@ Status: **Implemented**
 - **WHEN** test cases are added or removed from the test suite after a run is created
 - **THEN** the run's `numberOfTestCases` SHALL reflect the count captured at snapshot phase (which runs before RUNNING state)
 
-#### Scenario: No runnable test cases
-- **WHEN** client triggers a run for a test suite that has 0 runnable test cases
-- **THEN** the created run SHALL have `numberOfTestCases: 0`
+#### Scenario: No runnable test cases at creation
+- **WHEN** a client triggers execution for a suite with 0 runnable test cases
+- **THEN** creation SHALL be rejected with HTTP 409 `INVALID_OPERATION`; no zero-count run SHALL be created
+
+#### Scenario: Runnable set becomes empty before snapshot
+- **WHEN** a run passed the creation presence guard but the snapshot captures no runnable cases
+- **THEN** the persisted `numberOfTestCases` SHALL be finalized to 0
 
 ### Requirement: Suite snapshot field
 The `TestSuiteRunResponseDto` SHALL include a `suiteSnapshot` field containing the frozen suite configuration at the time the run's snapshot phase executed.
@@ -680,12 +681,12 @@ Status: **Implemented**
 - **WHEN** reconciliation completes
 - **THEN** system SHALL log the count of orphaned runs that were marked as FAILED and the count finalized as CANCELLED (at INFO level if any were found, at DEBUG level if none)
 
-#### Scenario: Reconciliation runs before accepting requests
+#### Scenario: Reconciliation runs on application readiness
 - **WHEN** the application starts
-- **THEN** reconciliation SHALL complete before the service begins accepting new run creation requests (e.g., via `@EventListener(ApplicationReadyEvent.class)` or `SmartLifecycle`)
+- **THEN** the synchronous `ApplicationReadyEvent` listener SHALL reconcile in a meta transaction; it SHALL NOT be treated as an explicit request-admission gate
 
 ### Requirement: Header blacklist validation at suite save time
-The system SHALL validate `requestTemplate.headers` against the configured header blacklist when a test suite is created or updated. Suites with blacklisted headers SHALL be marked as invalid with a validation warning.
+The system SHALL validate `requestTemplate.headers` for every HTTP request in a suite's chain against the configured header blacklist when the suite is created or updated. Suites with blacklisted headers SHALL be marked invalid with validation warnings, including indexed paths for additional requests.
 Status: **Implemented**
 
 #### Scenario: Blacklisted header detected during save
@@ -705,42 +706,15 @@ Status: **Implemented**
 - **THEN** it SHALL be integrated into the existing `SuiteValidationService` pipeline alongside other validation checks (e.g., JSONata expression validation, deployment validation)
 
 ## Implementation Notes
-- Controller: `com.epam.aidial.evaluation.web.controller.TestSuiteRunController`
-- SSE Controller: `com.epam.aidial.evaluation.web.controller.TestSuiteRunSseController`
-- Service: `com.epam.aidial.evaluation.service.domain.TestSuiteRunService`
-- SSE Service: `com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService`
-- Reconciliation: `com.epam.aidial.evaluation.service.domain.TestSuiteRunReconciliation`
-- Job: `com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob`
-- Repository: `com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository`
-- RecordMapper: `com.epam.aidial.evaluation.data.db.mapper.TestSuiteRunRecordMapper`
-- Model: `com.epam.aidial.evaluation.data.db.model.TestSuiteRun`
-- Enum: `com.epam.aidial.evaluation.data.db.model.RunStatus`
-- DTOs: `TestSuiteRunRequestDto`, `TestSuiteRunResponseDto`, `TestSuiteRunUpdateDto`, `RunConfigDto`, `ExecutionSettingsDto`, `RetryPolicyDto`, `RunErrorDetailsDto`, `SseStatusEventDto` (all in `service.domain.dto`)
-- Mapper: `com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper`
-- Constants: `com.epam.aidial.evaluation.constants.TestSuiteRunConstants`
-- Configuration: `com.epam.aidial.evaluation.configuration.properties.TestSuiteRunProperties`, `com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties`
-- Async config: `com.epam.aidial.evaluation.configuration.AsyncConfiguration` — `testSuiteRunExecutor` is a
-  `SimpleAsyncTaskExecutor` (thread-per-run, `test-suite-run-` prefix, `ContextPropagatingTaskDecorator`,
-  `cancelRemainingTasksOnClose`, no concurrency limit); its thread mode and every run's worker executor come
-  from runner-core's `RunExecutorFactory` bean (`Threading.VIRTUAL.isActive(environment)`). The former
-  `test-suite-run.executor.*` pool properties are gone; run concurrency is governed only by `test-suite-run.limits.*`.
-- Flyway migration: `V1.6__CreateTestSuiteRunsTable.sql`
-- Execution engine: See `eval-execution-engine` spec for executor, worker, and related components
-- `TestSuiteRunService.createRun` calls `RunnableTestCaseSelector.countRunnable(datasetId, filterJson)`
-  directly, passing the suite's `testCaseFilter` (see `suite-test-case-filter`). The former
-  `RunnableTestCaseCounter` wrapper is deleted — its only remaining job was coalescing a null exclusion list.
-- The message text "Suite has no valid and enabled test cases" is retained verbatim for client
-  compatibility, even though "enabled" no longer refers to any stored per-suite exclusion list.
-- `RunStatus` gains `CANCELLING`; `TERMINAL_STATUSES` is unchanged; a new `ACTIVE_STATUSES` set feeds
-  `TestSuiteRunService.enforceConcurrencyLimits`.
-- `TestSuiteRunRepository`: `updateToRunning` / `updateToCompleted` / `updateToCancelled` become status-guarded and
-  return the affected-row count; new `markCancelling(id)` (RUNNING → CANCELLING, no `completed_at`) and
-  `cancelOrphanedCancellingRuns()`.
-- `service.domain.job.ActiveRunRegistry` (per-JVM `ConcurrentHashMap<UUID, RunHandle>`) replaces the
-  `AtomicBoolean` map; `TestSuiteEvaluationJob.dispatch(...)` registers the handle then submits to the
-  `testSuiteRunExecutor` bean directly (no `@Async`).
-- Multi-instance deployments: the registry is per-JVM, so a cancel served by another instance only writes
-  `CANCELLING`; the owning job finalizes `CANCELLED` when it finishes (guarded terminal write). Same single-instance
-  assumption as startup reconciliation.
-- Deleting a run cascades to its `run_metric_snapshots` rows through the meta foreign key declared in `V1.32__CreateRunMetricSnapshotsTable.sql` (`ON DELETE CASCADE`); `TestSuiteRunService.deleteRun` needs no extra cleanup call.
-- The cascade covers snapshots only. A run's analytics rows (`test_case_run_results`, `test_case_eval_summaries`, `metric_score_result`) survive deletion, because no foreign key can span the meta and analytics databases — run deletion MUST NOT be relied on to reclaim analytics storage.
+
+- [Run controller](../../../src/main/java/com/epam/aidial/evaluation/web/controller/TestSuiteRunController.java) and [SSE controller](../../../src/main/java/com/epam/aidial/evaluation/web/controller/TestSuiteRunSseController.java) own REST binding and status-stream parameters.
+- [Run service](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestSuiteRunService.java) implements ordered creation guards, post-commit dispatch, cancel, deletion/tombstones and rename.
+- [Run repository](../../../src/main/java/com/epam/aidial/evaluation/data/db/repository/PostgresTestSuiteRunRepository.java) implements guarded lifecycle writes, list-tier projection, sequence allocation and reconciliation updates.
+- [Job](../../../src/main/java/com/epam/aidial/evaluation/service/domain/job/TestSuiteEvaluationJob.java) captures snapshots before RUNNING, orchestrates three phases, resolves effective per-test-case scoring, and applies failure/cancellation precedence.
+- [SSE service](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestSuiteRunSseService.java) handles matching status events and inactivity-based heartbeat sweeps.
+- [Reconciliation](../../../src/main/java/com/epam/aidial/evaluation/service/domain/TestSuiteRunReconciliation.java) runs synchronously on ApplicationReadyEvent; it is not a request gate.
+- [Async configuration](../../../src/main/java/com/epam/aidial/evaluation/configuration/AsyncConfiguration.java) and [worker factory](../../../evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/job/RunExecutorFactory.java) select virtual/platform thread-per-task executors.
+- [Run properties](../../../src/main/java/com/epam/aidial/evaluation/configuration/properties/testsuite/TestSuiteRunProperties.java), [execution properties](../../../evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/config/properties/EvaluationRunProperties.java), and [application configuration](../../../src/main/resources/application.yml) define binding/defaults.
+- [Run DTO](../../../evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/dto/TestSuiteRunResponseDto.java) and [mapper](../../../src/main/java/com/epam/aidial/evaluation/service/domain/mapper/TestSuiteRunMapper.java) define response fields.
+- [Suite validator](../../../src/main/java/com/epam/aidial/evaluation/service/domain/SuiteValidationService.java) checks every HTTP-chain request's header blacklist.
+- The cancellation registry is per-JVM: cancellation served on another instance can persist CANCELLING without interrupting the owning executor; its guarded terminal write determines the final state.

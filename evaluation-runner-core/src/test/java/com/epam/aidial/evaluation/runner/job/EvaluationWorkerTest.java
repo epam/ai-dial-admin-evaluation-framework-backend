@@ -33,11 +33,16 @@ import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
+import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -131,6 +136,80 @@ class EvaluationWorkerTest {
         List<TestCaseRunResult> results = worker.execute(input, context, 0, responseColumns);
 
         assertThat(results).containsExactly(stubbedRow);
+    }
+
+    @Test
+    @DisplayName(
+            "HTTP request and turn result rows share the linked test-case root trace without changing execution parenting")
+    void requestAndTurnRowsShareLinkedRoot() {
+        final InMemorySpanExporter exporter = InMemorySpanExporter.create();
+        try (OpenTelemetrySdk telemetry = OpenTelemetrySdk.builder()
+                .setTracerProvider(SdkTracerProvider.builder()
+                        .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+                        .build())
+                .build()) {
+            final EvaluationContext original = buildContext();
+            final Span runSpan = telemetry.getTracer("test").spanBuilder("run").startSpan();
+            try (EvaluationTraceSession session = new EvaluationTraceSession(
+                    telemetry, original.getRunId(), original.getSuiteId(), runSpan.getSpanContext())) {
+                final EvaluationContext context =
+                        original.toBuilder().traceSession(session).build();
+                final TestCaseRunInput input = buildTestCaseRunInput();
+                when(requestChainExecutor.execute(any(), any(), any(), eq(0), anyString(), anyLong()))
+                        .thenAnswer(inv -> {
+                            final String traceId = inv.getArgument(4);
+                            final Span downstream = telemetry
+                                    .getTracer("test")
+                                    .spanBuilder("deployment")
+                                    .startSpan();
+                            downstream.end();
+                            return List.of(
+                                    TestCaseRunResult.builder()
+                                            .requestIndex(0)
+                                            .turnIndex(0)
+                                            .traceId(traceId)
+                                            .build(),
+                                    TestCaseRunResult.builder()
+                                            .requestIndex(1)
+                                            .turnIndex(1)
+                                            .traceId(traceId)
+                                            .build());
+                        });
+                final EvaluationWorker tracedWorker = new EvaluationWorker(
+                        responseColumnExtractor,
+                        objectMapper,
+                        jsonbMapper,
+                        telemetry,
+                        mcpToolInvoker,
+                        mcpRequestResolver,
+                        mcpResponseSerializer,
+                        FIXED_CLOCK,
+                        requestChainExecutor);
+                final List<TestCaseRunResult> rows = tracedWorker.execute(input, context, 0, List.of());
+                assertThat(rows).hasSize(2);
+                assertThat(rows.get(0).getTraceId())
+                        .isEqualTo(rows.get(1).getTraceId())
+                        .isNotEqualTo(runSpan.getSpanContext().getTraceId());
+            }
+            final var root = exporter.getFinishedSpanItems().stream()
+                    .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE))
+                    .findFirst()
+                    .orElseThrow();
+            final var execution = exporter.getFinishedSpanItems().stream()
+                    .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
+                    .findFirst()
+                    .orElseThrow();
+            final var downstream = exporter.getFinishedSpanItems().stream()
+                    .filter(s -> s.getName().equals("deployment"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(execution.getParentSpanId()).isEqualTo(root.getSpanId());
+            assertThat(downstream.getParentSpanId()).isEqualTo(execution.getSpanId());
+            assertThat(root.getLinks())
+                    .singleElement()
+                    .satisfies(l -> assertThat(l.getSpanContext()).isEqualTo(runSpan.getSpanContext()));
+            runSpan.end();
+        }
     }
 
     @Test

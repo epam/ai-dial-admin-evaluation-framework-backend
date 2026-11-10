@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.job.EvaluationTraceSession;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
 import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
 import com.epam.aidial.evaluation.runner.model.suite.McpSuite;
@@ -14,6 +15,8 @@ import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinition;
 import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
@@ -36,6 +39,7 @@ public class EvaluationContextFactory {
     private final TargetProperties targetProperties;
     private final Clock clock;
     private final RunExecutorFactory runExecutorFactory;
+    private final OpenTelemetry openTelemetry;
 
     /**
      * Creates a new {@link EvaluationContext} for the given suite and test-case count.
@@ -64,8 +68,12 @@ public class EvaluationContextFactory {
             DeploymentReferenceDto targetDeploymentRef,
             List<FieldDefinitionDto> testCaseSchema) {
         final EvalCliProperties.Run run = cliProperties.getRun();
+        final SuiteDefinition definition = resolveSuite(suite, targetDeploymentRef);
+        final UUID runId = UUID.randomUUID();
         return EvaluationContext.builder()
-                .runId(UUID.randomUUID())
+                .runId(runId)
+                .traceSession(new EvaluationTraceSession(
+                        openTelemetry, runId, suite.getId(), Span.current().getSpanContext()))
                 .suiteId(suite.getId())
                 .datasetId(suite.getDatasetId())
                 .numberOfRuns(1)
@@ -89,7 +97,7 @@ public class EvaluationContextFactory {
                 // target DIAL Core with a static API key
                 .credential(CallerCredential.apiKey(targetProperties.getApiKey()))
                 .createdAtMs(clock.millis())
-                .suite(resolveSuite(suite, targetDeploymentRef))
+                .suite(definition)
                 .snapshotTestCaseSchema(testCaseSchema)
                 .build();
     }

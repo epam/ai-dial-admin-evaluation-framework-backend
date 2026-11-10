@@ -12,12 +12,10 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.MDC;
-import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.AsyncHandlerInterceptor;
 
 @Slf4j
-public class CorrelationIdInterceptor implements HandlerInterceptor {
-
-    public static final String CORRELATION_ID_HEADER_NAME = "X-Correlation-Id";
+public class CorrelationIdInterceptor implements AsyncHandlerInterceptor {
     private static final Pattern CORRELATION_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9]{"
             + SecurityConstants.CORRELATION_ID_MIN_LENGTH + "," + SecurityConstants.CORRELATION_ID_MAX_LENGTH + "}$");
     private static final int CORRELATION_ID_LENGTH = SecurityConstants.CORRELATION_ID_MIN_LENGTH;
@@ -27,7 +25,7 @@ public class CorrelationIdInterceptor implements HandlerInterceptor {
             @NotNull final HttpServletRequest request,
             final HttpServletResponse response,
             @NotNull final Object handler) {
-        response.setHeader(CORRELATION_ID_HEADER_NAME, resolveValidCorrelationId(request));
+        response.setHeader(SecurityConstants.CORRELATION_ID_HEADER_NAME, resolveValidCorrelationId(request));
         return true;
     }
 
@@ -37,17 +35,23 @@ public class CorrelationIdInterceptor implements HandlerInterceptor {
             @NotNull final HttpServletResponse response,
             @NotNull final Object handler,
             @Nullable final Exception ex) {
-        // do nothing
+        MDC.remove(SecurityConstants.CORRELATION_ID_MDC_KEY);
+    }
+
+    @Override
+    public void afterConcurrentHandlingStarted(
+            HttpServletRequest request, HttpServletResponse response, Object handler) {
+        MDC.remove(SecurityConstants.CORRELATION_ID_MDC_KEY);
     }
 
     private String resolveValidCorrelationId(final HttpServletRequest request) {
-        var correlationId = request.getHeader(CORRELATION_ID_HEADER_NAME);
+        var correlationId = request.getHeader(SecurityConstants.CORRELATION_ID_HEADER_NAME);
         var validCorrelationId = (correlationId != null
                         && CORRELATION_ID_PATTERN.matcher(correlationId).matches())
                 ? correlationId
                 : generateCorrelationId();
 
-        MDC.put("_correlation_id", validCorrelationId);
+        MDC.put(SecurityConstants.CORRELATION_ID_MDC_KEY, validCorrelationId);
 
         if (!validCorrelationId.equals(correlationId)) {
             var uri = request.getRequestURI();

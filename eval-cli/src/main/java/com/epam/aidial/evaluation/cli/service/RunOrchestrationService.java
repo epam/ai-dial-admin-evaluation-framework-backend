@@ -85,6 +85,22 @@ public class RunOrchestrationService {
         final EvaluationContext context = evaluationContextFactory.create(
                 bundle.getSuite(), testCases.size(), resolvedDeploymentRef, bundle.getTestCaseSchema());
 
+        try {
+            return executeAndWrite(bundle, workDir, context, testCases);
+        } finally {
+            try {
+                context.getExecutor().shutdownNow();
+            } finally {
+                if (context.getTraceSession() != null) {
+                    context.getTraceSession().close();
+                }
+            }
+        }
+    }
+
+    private File executeAndWrite(
+            SuiteFetchBundle bundle, String workDir, EvaluationContext context, List<TestCaseResponseDto> testCases) {
+
         final List<TestCaseRunInput> inputs = mapInputs(testCases, context.getRunId());
         final Path csvPath = csvPath(workDir, bundle.getSourceSuiteId());
 
@@ -99,15 +115,11 @@ public class RunOrchestrationService {
 
             final TestCaseRunner runner =
                     testCaseRunnerFactory.create(context, context.getSuite().responseColumns(), csvWriter);
-            try {
-                final boolean accepted = runner.submit(inputs);
-                if (!accepted) {
-                    log.debug("Run {}: executor rejected submission for one or more test cases", context.getRunId());
-                }
-                runner.awaitCompletion();
-            } finally {
-                context.getExecutor().shutdownNow();
+            final boolean accepted = runner.submit(inputs);
+            if (!accepted) {
+                log.debug("Run {}: executor rejected submission for one or more test cases", context.getRunId());
             }
+            runner.awaitCompletion();
             csvWriter.flush();
 
         } catch (IOException e) {

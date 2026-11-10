@@ -14,6 +14,7 @@ import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
@@ -169,6 +170,14 @@ public abstract class AbstractMultiTurnFunctionalTest extends BaseFunctionalTest
      */
     protected TestSuiteResponseDto createChatSuite(
             String name, Map<String, Object> testCaseFilter, List<FieldDefinitionDto> extraFields) {
+        return createChatSuite(name, testCaseFilter, extraFields, List.of());
+    }
+
+    protected TestSuiteResponseDto createChatSuite(
+            String name,
+            Map<String, Object> testCaseFilter,
+            List<FieldDefinitionDto> extraFields,
+            List<RequestDefinitionDto> additionalRequests) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name + " " + UUID.randomUUID())
                 .deploymentRef(DeploymentReferenceDto.builder()
@@ -215,6 +224,7 @@ public abstract class AbstractMultiTurnFunctionalTest extends BaseFunctionalTest
                         .type(SchemaFieldType.STRING)
                         .build()))
                 .testCaseFilter(testCaseFilter)
+                .additionalRequests(additionalRequests)
                 .build();
 
         ResponseEntity<TestSuiteResponseDto> response =

@@ -9,6 +9,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
 import com.epam.aidial.evaluation.configuration.properties.security.ApiKeyProperties;
+import com.epam.aidial.evaluation.constants.SecurityConstants;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpStatus;
@@ -74,6 +76,7 @@ class DialRouteTriggerClientTest {
 
     @AfterEach
     void tearDown() {
+        MDC.remove(SecurityConstants.CORRELATION_ID_MDC_KEY);
         clientLogger.removeAppender(logAppender);
         logAppender.stop();
         clientLogger.setLevel(originalLevel);
@@ -132,6 +135,31 @@ class DialRouteTriggerClientTest {
         assertThat(stream.reachedEof).isTrue();
         assertThat(stream.closed).isTrue();
         assertThat(streamClosedLogs()).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("forwards the request correlation ID alongside the unchanged caller credential")
+    void forwardsCorrelationId() {
+        MDC.put(SecurityConstants.CORRELATION_ID_MDC_KEY, "requestCorrelation123");
+        server.expect(request -> {
+                    assertThat(request.getHeaders().getFirst(SecurityConstants.CORRELATION_ID_HEADER_NAME))
+                            .isEqualTo("requestCorrelation123");
+                    assertThat(request.getHeaders().getFirst("Authorization")).isEqualTo("Bearer jwt-token");
+                    assertThat(request.getHeaders().getFirst("Api-Key")).isNull();
+                })
+                .andRespond(withSuccess("", MediaType.TEXT_EVENT_STREAM));
+        client.triggerEvalRun(RUN_ID, CallerCredential.bearer("jwt-token"));
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("does not fabricate an outbound correlation ID when no request correlation exists")
+    void noCorrelationWhenAbsent() {
+        server.expect(request -> assertThat(request.getHeaders().getFirst(SecurityConstants.CORRELATION_ID_HEADER_NAME))
+                        .isNull())
+                .andRespond(withSuccess("", MediaType.TEXT_EVENT_STREAM));
+        client.triggerEvalRun(RUN_ID, CallerCredential.bearer("jwt-token"));
+        server.verify();
     }
 
     @Test

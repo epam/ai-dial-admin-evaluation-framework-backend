@@ -11,7 +11,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class EvaluationContext {
 
     private final UUID runId;
@@ -47,6 +47,9 @@ public class EvaluationContext {
      * creates or shuts it down. Cancellation is delivered by the owner calling shutdownNow().
      */
     private final ExecutorService executor;
+
+    /** Optional for legacy library consumers; production run owners supply and close this session. */
+    private final EvaluationTraceSession traceSession;
 
     // Caller credential for propagation to workers
     private final CallerCredential credential;

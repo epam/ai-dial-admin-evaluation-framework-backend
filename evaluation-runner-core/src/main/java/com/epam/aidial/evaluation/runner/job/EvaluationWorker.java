@@ -25,6 +25,7 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -69,7 +70,7 @@ public class EvaluationWorker {
             EvaluationContext context,
             int runIndex,
             List<ResponseColumnDefinitionDto> responseColumns) {
-        Span span = openTelemetry
+        final SpanBuilder spanBuilder = openTelemetry
                 .getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME)
                 .spanBuilder(TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE)
                 .setAttribute(
@@ -79,8 +80,11 @@ public class EvaluationWorker {
                 .setAttribute(TracingConstants.EVAL_RUN_ID, context.getRunId().toString())
                 .setAttribute(
                         TracingConstants.EVAL_SUITE_ID, context.getSuiteId().toString())
-                .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_EXECUTION)
-                .startSpan();
+                .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_EXECUTION);
+        final Span span = context.getTraceSession() == null
+                ? spanBuilder.startSpan()
+                : context.getTraceSession()
+                        .startSpan(spanBuilder, input.getTestCaseId(), input.getTestCaseName(), runIndex);
         long execStartedAtMs = clock.millis();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
 

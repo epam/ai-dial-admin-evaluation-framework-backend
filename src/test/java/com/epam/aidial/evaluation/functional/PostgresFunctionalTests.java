@@ -16,7 +16,9 @@ import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsDescriptionDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsResponseDto;
 import com.epam.aidial.evaluation.functional.config.PostgresFunctionalTestConfiguration;
+import com.epam.aidial.evaluation.functional.config.TracingFunctionalTestConfiguration;
 import com.epam.aidial.evaluation.functional.support.CallerIdentityProbeTools;
+import com.epam.aidial.evaluation.functional.support.CoreRouteTestServer;
 import com.epam.aidial.evaluation.functional.support.StaticJwtTestConfiguration;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultBatchWriteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultCountFunctionalTests;
@@ -24,6 +26,8 @@ import com.epam.aidial.evaluation.functional.tests.AnalyticsResultGetByIdFunctio
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultListFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsRetryFieldsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.ApiKeyAuthenticationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.CoreRoutedTracingDisabledFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.CoreRoutedTracingFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.CsvImportModeFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.CsvImportPlainGoldenFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetCloneFunctionalTests;
@@ -46,6 +50,7 @@ import com.epam.aidial.evaluation.functional.tests.EvalSummaryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvaluationExecutorFailureModesFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvaluationMultipartFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvaluationTracingFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.ExecutionSettingsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.FileFieldFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.FileFunctionalTests;
@@ -139,6 +144,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -152,6 +158,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.NestedTestConfiguration;
@@ -311,6 +318,87 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class MetricScoreComputationTests extends MetricScoreComputationFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "otel.sdk.disabled=false",
+                "otel.traces.exporter=none",
+                "otel.logs.exporter=none",
+                "otel.metrics.exporter=none"
+            })
+    @Import(TracingFunctionalTestConfiguration.class)
+    @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+    class EvaluationTracingTests extends EvaluationTracingFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "otel.sdk.disabled=false",
+                "otel.traces.exporter=none",
+                "otel.logs.exporter=none",
+                "otel.metrics.exporter=none",
+                "dial-app-proxy.enabled=true",
+                "dial-app-proxy.deployment-name=EF",
+                "dial-app-proxy.heartbeat-interval-ms=100",
+                "config.rest.security.api-key.enabled=true",
+                "config.rest.security.api-key.core-url=http://localhost:1",
+                "config.rest.security.api-key.key-roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.jwt-roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.startup-probe=false"
+            })
+    @Import(TracingFunctionalTestConfiguration.class)
+    @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+    class CoreRoutedTracingTests extends CoreRoutedTracingFunctionalTests {
+        private static final CoreRouteTestServer CORE = new CoreRouteTestServer();
+
+        @DynamicPropertySource
+        static void coreUrl(DynamicPropertyRegistry properties) {
+            properties.add("dial.components.core.base-url", CORE::baseUrl);
+        }
+
+        @Override
+        protected CoreRouteTestServer core() {
+            return CORE;
+        }
+
+        @AfterAll
+        static void closeCore() {
+            CORE.close();
+        }
+    }
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "otel.sdk.disabled=true",
+                "dial-app-proxy.enabled=true",
+                "dial-app-proxy.deployment-name=EF",
+                "dial-app-proxy.heartbeat-interval-ms=100",
+                "config.rest.security.api-key.enabled=true",
+                "config.rest.security.api-key.core-url=http://localhost:1",
+                "config.rest.security.api-key.startup-probe=false",
+                "config.rest.security.api-key.jwt-roles-mapping={\"admin\":[\"admin\"]}"
+            })
+    @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+    class CoreRoutedTracingDisabledTests extends CoreRoutedTracingDisabledFunctionalTests {
+        private static final CoreRouteTestServer CORE = new CoreRouteTestServer();
+
+        @DynamicPropertySource
+        static void coreUrl(DynamicPropertyRegistry p) {
+            p.add("dial.components.core.base-url", CORE::baseUrl);
+        }
+
+        @Override
+        protected CoreRouteTestServer core() {
+            return CORE;
+        }
+
+        @AfterAll
+        static void closeCore() {
+            CORE.close();
+        }
+    }
 
     @Nested
     class RunComparisonRepositoryTests extends RunComparisonRepositoryFunctionalTests {}

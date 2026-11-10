@@ -23,6 +23,10 @@ public final class TracingConstants {
 
     // ---- Span names ----
 
+    public static final String SPAN_EVAL_RUN = "eval.run";
+    public static final String SPAN_EVAL_TESTCASE = "eval.testcase";
+    public static final String EVAL_RUN_STATUS = "eval.run.status";
+
     /** Span name for a single test case execution in {@code EvaluationWorker}. */
     public static final String SPAN_EVAL_TESTCASE_EXECUTE = "eval.testcase.execute";
 

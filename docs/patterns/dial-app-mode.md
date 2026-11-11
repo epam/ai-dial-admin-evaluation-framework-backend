@@ -60,8 +60,8 @@ keeps that flow's behavior unchanged under either flag value.
 The trigger thread carries the incoming native OTel context and the request's custom correlation ID.
 The trigger HTTP client injects W3C context and explicitly forwards `X-Correlation-Id`. Core's proxied
 internal request supplies the parent context captured by job dispatch; `eval.run` continues that trace.
-Independent case/repetition roots link to orchestration, with execution and Phase 2 metrics beneath
-each case root. See [evaluation tracing](evaluation-tracing.md) for lifecycle, imports, and Grafana navigation.
+Short execution (per repetition) and metrics (per result row) root traces link to orchestration and
+to each other. See [evaluation tracing](evaluation-tracing.md) for lifecycle, imports, and Grafana navigation.
 
 ## Components
 

@@ -26,6 +26,7 @@ import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -33,14 +34,14 @@ import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.LinkData;
+import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -194,8 +195,9 @@ class MetricEvaluationWorkerTest {
     }
 
     @Test
-    @DisplayName("Phase 2 metric rows reuse execution's root, preserve provider descendants and fresh metric baggage")
-    void metricRowsUseCaseRoot() throws InterruptedException {
+    @DisplayName(
+            "each result row gets an eval.testcase.metrics root linked to run and execution; TSMD spans are its children with provider descendants and fresh metric baggage")
+    void metricRowsGetLinkedMetricsRoots() throws InterruptedException {
         final InMemorySpanExporter exporter = InMemorySpanExporter.create();
         try (OpenTelemetrySdk telemetry = OpenTelemetrySdk.builder()
                 .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
@@ -207,14 +209,12 @@ class MetricEvaluationWorkerTest {
             final MetricEvaluationContext original = buildContext(0);
             final TestCaseRunResult result = buildResult();
             final Span runSpan = telemetry.getTracer("test").spanBuilder("run").startSpan();
-            try (EvaluationTraceSession session = new EvaluationTraceSession(
-                    telemetry, original.getTestSuiteRunId(), original.getTestSuiteId(), runSpan.getSpanContext())) {
-                final Span execution = session.startSpan(
-                        telemetry.getTracer("test").spanBuilder("execution"),
-                        result.getTestCaseId(),
-                        result.getTestCaseName(),
-                        0);
-                result.setTraceId(execution.getSpanContext().getTraceId());
+            final SpanContext executionContext;
+            try (EvaluationTraceSession session = new EvaluationTraceSession(runSpan.getSpanContext())) {
+                final Span execution = session.startExecutionSpan(
+                        telemetry.getTracer("test").spanBuilder("execution"), result.getTestCaseId(), 0);
+                executionContext = execution.getSpanContext();
+                result.setTraceId(executionContext.getTraceId());
                 execution.end();
                 final MetricEvaluationContext context =
                         original.toBuilder().traceSession(session).build();
@@ -236,7 +236,7 @@ class MetricEvaluationWorkerTest {
                         })
                         .andRespond(withSuccess());
                 when(metricProviderClient.evaluate(anyString(), any())).thenAnswer(inv -> {
-                    assertThat(Span.current().getSpanContext().getTraceId()).isEqualTo(result.getTraceId());
+                    assertThat(Span.current().getSpanContext().getTraceId()).isNotEqualTo(result.getTraceId());
                     assertThat(Baggage.current().getEntryValue(TracingConstants.EVAL_PHASE))
                             .isEqualTo(TracingConstants.PHASE_METRIC_EVALUATION);
                     assertThat(Baggage.current().getEntryValue(TracingConstants.RESULT_ID))
@@ -253,7 +253,12 @@ class MetricEvaluationWorkerTest {
                             result.setId(UUID.randomUUID());
                             result.setRequestIndex(request);
                             result.setTurnIndex(turn);
-                            traced.evaluate(buildTsmd(), result, new Semaphore(1), context);
+                            final Span metricsSpan = traced.startMetricsSpan(result, context);
+                            try (Scope ignoredRow = metricsSpan.makeCurrent()) {
+                                traced.evaluate(buildTsmd(), result, new Semaphore(1), context);
+                            } finally {
+                                metricsSpan.end();
+                            }
                         }
                     }
                     assertThat(Span.current().getSpanContext()).isEqualTo(runSpan.getSpanContext());
@@ -262,30 +267,33 @@ class MetricEvaluationWorkerTest {
                 }
                 server.verify();
             }
-            final var root = exporter.getFinishedSpanItems().stream()
-                    .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE))
-                    .findFirst()
-                    .orElseThrow();
-            final var metrics = exporter.getFinishedSpanItems().stream()
-                    .filter(s -> s.getName().equals(TracingConstants.SPAN_METRIC_TSMD_EVALUATE))
-                    .toList();
-            assertThat(metrics).hasSize(4).allSatisfy(metric -> {
-                assertThat(metric.getParentSpanId()).isEqualTo(root.getSpanId());
-                assertThat(metric.getTraceId()).isEqualTo(result.getTraceId());
+            final List<SpanData> metricsRoots = spansNamed(exporter, TracingConstants.SPAN_EVAL_TESTCASE_METRICS);
+            final List<SpanData> tsmdSpans = spansNamed(exporter, TracingConstants.SPAN_METRIC_TSMD_EVALUATE);
+            assertThat(metricsRoots).hasSize(4).allSatisfy(root -> {
+                assertThat(root.getParentSpanContext().isValid()).isFalse();
+                assertThat(root.getTraceId())
+                        .isNotEqualTo(result.getTraceId())
+                        .isNotEqualTo(runSpan.getSpanContext().getTraceId());
+                assertThat(root.getLinks())
+                        .extracting(LinkData::getSpanContext)
+                        .containsExactlyInAnyOrder(runSpan.getSpanContext(), executionContext);
             });
-            assertThat(exporter.getFinishedSpanItems().stream()
-                            .filter(s -> s.getName().equals("provider"))
-                            .toList())
+            assertThat(metricsRoots).extracting(SpanData::getTraceId).doesNotHaveDuplicates();
+            assertThat(tsmdSpans)
+                    .hasSize(4)
+                    .allSatisfy(tsmd -> assertThat(metricsRoots)
+                            .anyMatch(root -> root.getSpanId().equals(tsmd.getParentSpanId())));
+            assertThat(spansNamed(exporter, "provider"))
                     .hasSize(4)
                     .allSatisfy(provider ->
-                            assertThat(metrics).anyMatch(m -> m.getSpanId().equals(provider.getParentSpanId())));
+                            assertThat(tsmdSpans).anyMatch(m -> m.getSpanId().equals(provider.getParentSpanId())));
             runSpan.end();
         }
     }
 
     @Test
-    @DisplayName("imported results get fresh metric-only roots without rewriting historical execution trace IDs")
-    void importedResultTraceRemainsHistorical() throws InterruptedException {
+    @DisplayName("imported results get a run-linked metrics root without rewriting historical execution trace IDs")
+    void importedResultTraceRemainsHistorical() {
         final InMemorySpanExporter exporter = InMemorySpanExporter.create();
         try (OpenTelemetrySdk telemetry = OpenTelemetrySdk.builder()
                 .setTracerProvider(SdkTracerProvider.builder()
@@ -295,70 +303,56 @@ class MetricEvaluationWorkerTest {
             final MetricEvaluationContext original = buildContext(0);
             final TestCaseRunResult result = buildResult();
             result.setTraceId("11111111111111111111111111111111");
-            try (EvaluationTraceSession session = new EvaluationTraceSession(
-                    telemetry,
-                    original.getTestSuiteRunId(),
-                    original.getTestSuiteId(),
-                    Span.current().getSpanContext())) {
-                when(metricProviderClient.evaluate(anyString(), any())).thenReturn(buildSuccessResponse());
+            final Span runSpan = telemetry.getTracer("test").spanBuilder("run").startSpan();
+            try (EvaluationTraceSession session = new EvaluationTraceSession(runSpan.getSpanContext())) {
                 new MetricEvaluationWorker(metricProviderClient, bindingResolver, telemetry)
-                        .evaluate(
-                                buildTsmd(),
-                                result,
-                                new Semaphore(1),
-                                original.toBuilder().traceSession(session).build());
+                        .startMetricsSpan(
+                                result, original.toBuilder().traceSession(session).build())
+                        .end();
                 assertThat(result.getTraceId()).isEqualTo("11111111111111111111111111111111");
             }
-            assertThat(exporter.getFinishedSpanItems())
-                    .allSatisfy(span -> assertThat(span.getTraceId()).isNotEqualTo(result.getTraceId()));
-            assertThat(exporter.getFinishedSpanItems())
-                    .anyMatch(span -> span.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE));
+            runSpan.end();
+            assertThat(spansNamed(exporter, TracingConstants.SPAN_EVAL_TESTCASE_METRICS))
+                    .singleElement()
+                    .satisfies(root -> {
+                        assertThat(root.getTraceId()).isNotEqualTo(result.getTraceId());
+                        assertThat(root.getLinks())
+                                .extracting(LinkData::getSpanContext)
+                                .containsExactly(runSpan.getSpanContext());
+                    });
         }
     }
 
     @Test
-    @DisplayName("metric completion racing with run cleanup releases roots and late metrics cannot resurrect tracing")
-    void metricCompletionAfterCleanup() throws Exception {
+    @DisplayName("without a trace session the metrics span is a child of the current context")
+    void metricsSpanWithoutSessionUsesCurrentContext() {
         final InMemorySpanExporter exporter = InMemorySpanExporter.create();
-        final CountDownLatch entered = new CountDownLatch(1);
-        final CountDownLatch release = new CountDownLatch(1);
         try (OpenTelemetrySdk telemetry = OpenTelemetrySdk.builder()
-                        .setTracerProvider(SdkTracerProvider.builder()
-                                .addSpanProcessor(SimpleSpanProcessor.create(exporter))
-                                .build())
-                        .build();
-                var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            final MetricEvaluationContext original = buildContext(0);
-            final EvaluationTraceSession session = new EvaluationTraceSession(
-                    telemetry,
-                    original.getTestSuiteRunId(),
-                    original.getTestSuiteId(),
-                    Span.current().getSpanContext());
-            final MetricEvaluationContext context =
-                    original.toBuilder().traceSession(session).build();
-            final MetricEvaluationWorker traced =
-                    new MetricEvaluationWorker(metricProviderClient, bindingResolver, telemetry);
-            when(metricProviderClient.evaluate(anyString(), any())).thenAnswer(inv -> {
-                entered.countDown();
-                assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
-                return buildSuccessResponse();
-            });
-            final var running =
-                    executor.submit(() -> traced.evaluate(buildTsmd(), buildResult(), new Semaphore(1), context));
-            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
-            session.close();
-            release.countDown();
-            assertThat(running.get(5, TimeUnit.SECONDS).getMetricName()).isEqualTo(METRIC_NAME);
-            final int finished = exporter.getFinishedSpanItems().size();
-            traced.evaluate(buildTsmd(), buildResult(), new Semaphore(1), context);
-            assertThat(exporter.getFinishedSpanItems()).hasSize(finished);
-            assertThat(exporter.getFinishedSpanItems().stream()
-                            .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE))
-                            .toList())
-                    .hasSize(1);
-        } finally {
-            release.countDown();
+                .setTracerProvider(SdkTracerProvider.builder()
+                        .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+                        .build())
+                .build()) {
+            final Span parent = telemetry.getTracer("test").spanBuilder("parent").startSpan();
+            try (Scope ignored = parent.makeCurrent()) {
+                new MetricEvaluationWorker(metricProviderClient, bindingResolver, telemetry)
+                        .startMetricsSpan(buildResult(), buildContext(0))
+                        .end();
+            }
+            parent.end();
+            assertThat(spansNamed(exporter, TracingConstants.SPAN_EVAL_TESTCASE_METRICS))
+                    .singleElement()
+                    .satisfies(root -> {
+                        assertThat(root.getParentSpanId())
+                                .isEqualTo(parent.getSpanContext().getSpanId());
+                        assertThat(root.getLinks()).isEmpty();
+                    });
         }
+    }
+
+    private static List<SpanData> spansNamed(InMemorySpanExporter exporter, String name) {
+        return exporter.getFinishedSpanItems().stream()
+                .filter(s -> s.getName().equals(name))
+                .toList();
     }
 
     @Nested

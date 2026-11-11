@@ -66,6 +66,7 @@ import io.opentelemetry.context.Scope;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.time.Clock;
@@ -196,8 +197,12 @@ class TestSuiteEvaluationJobTest {
     }
 
     private SpanData runSpan() {
+        return finishedSpan(TracingConstants.SPAN_EVAL_RUN);
+    }
+
+    private SpanData finishedSpan(String name) {
         return exporter.getFinishedSpanItems().stream()
-                .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_RUN))
+                .filter(s -> s.getName().equals(name))
                 .findFirst()
                 .orElseThrow();
     }
@@ -854,7 +859,7 @@ class TestSuiteEvaluationJobTest {
         @ParameterizedTest
         @ValueSource(strings = {"completed", "failed", "cancelled"})
         @DisplayName(
-                "the same tracing session spans both phases and closes all roots on completed, failed and cancelled exits")
+                "the same tracing session spans both phases, links metrics to execution, and is released on completed, failed and cancelled exits")
         void sessionIsSharedAndAlwaysClosed(String outcome) {
             stubResolvableRun();
             stubExecutionRunProperties();
@@ -869,7 +874,7 @@ class TestSuiteEvaluationJobTest {
                         final EvaluationContext context = inv.getArgument(0);
                         seen.set(context.getTraceSession());
                         context.getTraceSession()
-                                .startSpan(telemetry.getTracer("test").spanBuilder("execution"), caseId, "case", 0)
+                                .startExecutionSpan(telemetry.getTracer("test").spanBuilder("execution"), caseId, 0)
                                 .end();
                         return null;
                     })
@@ -879,7 +884,7 @@ class TestSuiteEvaluationJobTest {
                         final MetricEvaluationContext context = inv.getArgument(0);
                         assertThat(context.getTraceSession()).isSameAs(seen.get());
                         context.getTraceSession()
-                                .startSpan(telemetry.getTracer("test").spanBuilder("metric"), caseId, "case", 0)
+                                .startMetricsSpan(telemetry.getTracer("test").spanBuilder("metrics"), caseId, 0)
                                 .end();
                         if (outcome.equals("failed")) {
                             throw new AnalyticsWriteException("failed", new IllegalStateException("DB"));
@@ -893,16 +898,12 @@ class TestSuiteEvaluationJobTest {
                     .when(metricEvaluationExecutor)
                     .execute(any());
             job.run(runId, null, false, handle);
-            assertThat(exporter.getFinishedSpanItems().stream()
-                            .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE))
-                            .toList())
-                    .hasSize(1);
-            assertThat(seen.get()
-                            .startSpan(telemetry.getTracer("test").spanBuilder("late"), caseId, "case", 0)
-                            .getSpanContext()
-                            .isValid())
-                    .isFalse();
-            assertThat(ReflectionTestUtils.getField(seen.get(), "roots")).isEqualTo(Map.of());
+            final SpanData run = runSpan();
+            final SpanData execution = finishedSpan("execution");
+            assertThat(finishedSpan("metrics").getLinks())
+                    .extracting(LinkData::getSpanContext)
+                    .containsExactlyInAnyOrder(run.getSpanContext(), execution.getSpanContext());
+            assertThat(ReflectionTestUtils.getField(seen.get(), "executions")).isEqualTo(Map.of());
             assertThat(handle.executor().isShutdown()).isTrue();
         }
 

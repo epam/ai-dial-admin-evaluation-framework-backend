@@ -183,7 +183,7 @@ public class TestSuiteEvaluationJob {
                     TracingConstants.EVAL_SUITE_ID, run.getTestSuiteId().toString());
             Supplier<SuiteSnapshotDto> snapshot = lazySnapshot(run);
             traceSession =
-                    new EvaluationTraceSession(openTelemetry, runId, run.getTestSuiteId(), span.getSpanContext());
+                    new EvaluationTraceSession(span.getSpanContext());
 
             if (!skipDeploymentPhase) {
                 // Inconsistent snapshot guard

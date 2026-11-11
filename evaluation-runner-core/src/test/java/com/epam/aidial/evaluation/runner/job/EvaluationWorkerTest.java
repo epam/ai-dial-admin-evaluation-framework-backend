@@ -140,8 +140,8 @@ class EvaluationWorkerTest {
 
     @Test
     @DisplayName(
-            "HTTP request and turn result rows share the linked test-case root trace without changing execution parenting")
-    void requestAndTurnRowsShareLinkedRoot() {
+            "HTTP request and turn result rows share one execution root trace linked to the run")
+    void requestAndTurnRowsShareLinkedExecutionRoot() {
         final InMemorySpanExporter exporter = InMemorySpanExporter.create();
         try (OpenTelemetrySdk telemetry = OpenTelemetrySdk.builder()
                 .setTracerProvider(SdkTracerProvider.builder()
@@ -150,8 +150,7 @@ class EvaluationWorkerTest {
                 .build()) {
             final EvaluationContext original = buildContext();
             final Span runSpan = telemetry.getTracer("test").spanBuilder("run").startSpan();
-            try (EvaluationTraceSession session = new EvaluationTraceSession(
-                    telemetry, original.getRunId(), original.getSuiteId(), runSpan.getSpanContext())) {
+            try (EvaluationTraceSession session = new EvaluationTraceSession(runSpan.getSpanContext())) {
                 final EvaluationContext context =
                         original.toBuilder().traceSession(session).build();
                 final TestCaseRunInput input = buildTestCaseRunInput();
@@ -191,10 +190,6 @@ class EvaluationWorkerTest {
                         .isEqualTo(rows.get(1).getTraceId())
                         .isNotEqualTo(runSpan.getSpanContext().getTraceId());
             }
-            final var root = exporter.getFinishedSpanItems().stream()
-                    .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE))
-                    .findFirst()
-                    .orElseThrow();
             final var execution = exporter.getFinishedSpanItems().stream()
                     .filter(s -> s.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
                     .findFirst()
@@ -203,9 +198,10 @@ class EvaluationWorkerTest {
                     .filter(s -> s.getName().equals("deployment"))
                     .findFirst()
                     .orElseThrow();
-            assertThat(execution.getParentSpanId()).isEqualTo(root.getSpanId());
+            assertThat(execution.getParentSpanContext().isValid()).isFalse();
+            assertThat(execution.getTraceId()).isNotEqualTo(runSpan.getSpanContext().getTraceId());
             assertThat(downstream.getParentSpanId()).isEqualTo(execution.getSpanId());
-            assertThat(root.getLinks())
+            assertThat(execution.getLinks())
                     .singleElement()
                     .satisfies(l -> assertThat(l.getSpanContext()).isEqualTo(runSpan.getSpanContext()));
             runSpan.end();

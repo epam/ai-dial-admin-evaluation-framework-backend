@@ -43,6 +43,33 @@ public class MetricEvaluationWorker {
     private final OpenTelemetry openTelemetry;
 
     /**
+     * Starts the {@code eval.testcase.metrics} span grouping one result row's metric evaluations. With a
+     * trace session it roots its own trace, linked to the run and the repetition's execution span;
+     * without one (legacy callers) it is a child of the current context. The caller makes it current
+     * for the row's TSMD tasks and ends it once they settle.
+     */
+    public Span startMetricsSpan(TestCaseRunResult result, MetricEvaluationContext context) {
+        final SpanBuilder spanBuilder = openTelemetry
+                .getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME)
+                .spanBuilder(TracingConstants.SPAN_EVAL_TESTCASE_METRICS)
+                .setAttribute(
+                        TracingConstants.EVAL_RUN_ID,
+                        context.getTestSuiteRunId().toString())
+                .setAttribute(
+                        TracingConstants.EVAL_SUITE_ID, context.getTestSuiteId().toString())
+                .setAttribute(
+                        TracingConstants.TESTCASE_ID, result.getTestCaseId().toString())
+                .setAttribute(TracingConstants.TESTCASE_NAME, result.getTestCaseName())
+                .setAttribute(TracingConstants.RUN_INDEX, String.valueOf(result.getRunIndex()))
+                .setAttribute(TracingConstants.RESULT_ID, result.getId().toString())
+                .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION);
+        return context.getTraceSession() == null
+                ? spanBuilder.startSpan()
+                : context.getTraceSession()
+                        .startMetricsSpan(spanBuilder, result.getTestCaseId(), result.getRunIndex());
+    }
+
+    /**
      * Evaluates a single TSMD against a test case result.
      *
      * @param tsmd              the aggregated metric definition
@@ -75,10 +102,8 @@ public class MetricEvaluationWorker {
                         TracingConstants.EVAL_SUITE_ID, context.getTestSuiteId().toString())
                 .setAttribute(TracingConstants.METRIC_DECLARATION_NAME, tsmd.getMetricDeclarationName())
                 .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION);
-        final Span span = context.getTraceSession() == null
-                ? spanBuilder.startSpan()
-                : context.getTraceSession()
-                        .startSpan(spanBuilder, result.getTestCaseId(), result.getTestCaseName(), result.getRunIndex());
+        // Parent is the row's eval.testcase.metrics span, made current by the dispatching executor
+        final Span span = spanBuilder.startSpan();
 
         Baggage baggage = EvalBaggage.withMetricContext(
                 context.getTestSuiteRunId(),

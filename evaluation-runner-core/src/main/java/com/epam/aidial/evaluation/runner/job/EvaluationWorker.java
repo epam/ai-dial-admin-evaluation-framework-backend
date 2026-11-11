@@ -83,8 +83,7 @@ public class EvaluationWorker {
                 .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_EXECUTION);
         final Span span = context.getTraceSession() == null
                 ? spanBuilder.startSpan()
-                : context.getTraceSession()
-                        .startSpan(spanBuilder, input.getTestCaseId(), input.getTestCaseName(), runIndex);
+                : context.getTraceSession().startExecutionSpan(spanBuilder, input.getTestCaseId(), runIndex);
         long execStartedAtMs = clock.millis();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
 

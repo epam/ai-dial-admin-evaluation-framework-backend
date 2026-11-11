@@ -28,6 +28,9 @@ import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWrite
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseMetricScoreAggregatedBatchWriteItemDto;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -243,82 +246,95 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             dispatchedTsmds.add(tsmd);
         }
 
-        Map<String, Long> dispatchStartedAtMsByTsmd = new ConcurrentHashMap<>();
-        List<CompletableFuture<Void>> tsmdFutures = new ArrayList<>();
-        for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
-            List<String> fieldNames = outputFieldNamesMap.get(tsmd.getName());
-            Semaphore semaphore = providerSemaphores.get(tsmd.getDeclarationProviderId());
-            log.debug(
-                    "Run {}: dispatching metric '{}' for result {}",
-                    context.getTestSuiteRunId(),
-                    tsmd.getName(),
-                    result.getId());
-            dispatchStartedAtMsByTsmd.put(tsmd.getName(), clock.millis());
-            CompletableFuture<Void> tsmdFuture = CompletableFuture.runAsync(
-                    () -> {
-                        long startedAtMs = clock.millis();
-                        try {
-                            EvaluationResponseDto response = worker.evaluate(tsmd, result, semaphore, context);
-                            tsmdResults.put(
-                                    tsmd.getName(),
-                                    new TsmdEvaluationResult.Success(
-                                            response, fieldNames, clock.millis() - startedAtMs));
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            log.warn(
-                                    "Metric evaluation interrupted for TSMD {} on result {}",
-                                    tsmd.getName(),
-                                    result.getId(),
-                                    e);
-                            tsmdResults.put(
-                                    tsmd.getName(),
-                                    new TsmdEvaluationResult.Failure(e, fieldNames, clock.millis() - startedAtMs));
-                        } catch (RuntimeException e) {
-                            log.warn(
-                                    "Metric evaluation failed for TSMD {} on result {}: {}",
-                                    tsmd.getName(),
-                                    result.getId(),
-                                    e.getMessage(),
-                                    e);
-                            tsmdResults.put(
-                                    tsmd.getName(),
-                                    new TsmdEvaluationResult.Failure(e, fieldNames, clock.millis() - startedAtMs));
-                        }
-                    },
-                    executor);
-
-            tsmdFutures.add(tsmdFuture);
-        }
-
+        // One short eval.testcase.metrics trace per row; its TSMD spans are children via metricsContext.
+        // No span when every metric was skipped or condition-errored (nothing is dispatched).
+        final Span metricsSpan =
+                dispatchedTsmds.isEmpty() ? Span.getInvalid() : worker.startMetricsSpan(result, context);
+        final Context metricsContext = Context.current().with(metricsSpan);
+        boolean hasError;
         try {
-            CompletableFuture.allOf(tsmdFutures.toArray(new CompletableFuture[0]))
-                    .get(context.getPerResultTimeoutMs(), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            log.warn(
-                    "Metric evaluation timed out for result {} after {}ms",
-                    result.getId(),
-                    context.getPerResultTimeoutMs(),
-                    e);
-            tsmdFutures.forEach(f -> f.cancel(true));
-        } catch (ExecutionException e) {
-            log.warn("Metric evaluation execution error for result {}: {}", result.getId(), e.getMessage(), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Metric evaluation interrupted while waiting for result {}", result.getId(), e);
-        }
+            Map<String, Long> dispatchStartedAtMsByTsmd = new ConcurrentHashMap<>();
+            List<CompletableFuture<Void>> tsmdFutures = new ArrayList<>();
+            for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
+                List<String> fieldNames = outputFieldNamesMap.get(tsmd.getName());
+                Semaphore semaphore = providerSemaphores.get(tsmd.getDeclarationProviderId());
+                log.debug(
+                        "Run {}: dispatching metric '{}' for result {}",
+                        context.getTestSuiteRunId(),
+                        tsmd.getName(),
+                        result.getId());
+                dispatchStartedAtMsByTsmd.put(tsmd.getName(), clock.millis());
+                CompletableFuture<Void> tsmdFuture = CompletableFuture.runAsync(
+                        metricsContext.wrap(() -> {
+                            long startedAtMs = clock.millis();
+                            try {
+                                EvaluationResponseDto response = worker.evaluate(tsmd, result, semaphore, context);
+                                tsmdResults.put(
+                                        tsmd.getName(),
+                                        new TsmdEvaluationResult.Success(
+                                                response, fieldNames, clock.millis() - startedAtMs));
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                log.warn(
+                                        "Metric evaluation interrupted for TSMD {} on result {}",
+                                        tsmd.getName(),
+                                        result.getId(),
+                                        e);
+                                tsmdResults.put(
+                                        tsmd.getName(),
+                                        new TsmdEvaluationResult.Failure(e, fieldNames, clock.millis() - startedAtMs));
+                            } catch (RuntimeException e) {
+                                log.warn(
+                                        "Metric evaluation failed for TSMD {} on result {}: {}",
+                                        tsmd.getName(),
+                                        result.getId(),
+                                        e.getMessage(),
+                                        e);
+                                tsmdResults.put(
+                                        tsmd.getName(),
+                                        new TsmdEvaluationResult.Failure(e, fieldNames, clock.millis() - startedAtMs));
+                            }
+                        }),
+                        executor);
 
-        // Record timeout/missing TSMDs as Failure so the summary reflects incomplete evaluation.
-        // Only dispatched metrics are reconciled — skipped/condition-error metrics are intentionally absent.
-        for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
-            tsmdResults.putIfAbsent(
-                    tsmd.getName(),
-                    new TsmdEvaluationResult.Failure(
-                            new RuntimeException("Metric evaluation timed out for TSMD " + tsmd.getName()),
-                            outputFieldNamesMap.get(tsmd.getName()),
-                            clock.millis() - dispatchStartedAtMsByTsmd.get(tsmd.getName())));
-        }
+                tsmdFutures.add(tsmdFuture);
+            }
 
-        boolean hasError = checkForErrors(tsmdResults);
+            try {
+                CompletableFuture.allOf(tsmdFutures.toArray(new CompletableFuture[0]))
+                        .get(context.getPerResultTimeoutMs(), TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                log.warn(
+                        "Metric evaluation timed out for result {} after {}ms",
+                        result.getId(),
+                        context.getPerResultTimeoutMs(),
+                        e);
+                tsmdFutures.forEach(f -> f.cancel(true));
+            } catch (ExecutionException e) {
+                log.warn("Metric evaluation execution error for result {}: {}", result.getId(), e.getMessage(), e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Metric evaluation interrupted while waiting for result {}", result.getId(), e);
+            }
+
+            // Record timeout/missing TSMDs as Failure so the summary reflects incomplete evaluation.
+            // Only dispatched metrics are reconciled — skipped/condition-error metrics are intentionally absent.
+            for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
+                tsmdResults.putIfAbsent(
+                        tsmd.getName(),
+                        new TsmdEvaluationResult.Failure(
+                                new RuntimeException("Metric evaluation timed out for TSMD " + tsmd.getName()),
+                                outputFieldNamesMap.get(tsmd.getName()),
+                                clock.millis() - dispatchStartedAtMsByTsmd.get(tsmd.getName())));
+            }
+
+            hasError = checkForErrors(tsmdResults);
+            if (hasError) {
+                metricsSpan.setStatus(StatusCode.ERROR, "One or more metric evaluations failed");
+            }
+        } finally {
+            metricsSpan.end();
+        }
 
         ObjectNode metricValues = outputMapper.buildMetricValues(tsmdResults);
         ObjectNode metricInfos = outputMapper.buildMetricInfos(tsmdResults);

@@ -85,7 +85,7 @@ context: |
   - mcp is a peer of web (not web.mcp): outbound it may use service, configuration, constants, utils, client.*.dto, runner.*; it must never use web or data; only configuration may access mcp. service is extended to allow mcp as a caller, symmetric with web. See docs/patterns/mcp-server.md.
 
   # Key Patterns
-  - Evaluation tracing: explicitly capture native OTel context at job dispatch; a run-owned, DB-free EvaluationTraceSession supplies linked per-repetition roots for both execution and Phase 2 metric children, closes after executor shutdown, and never persists span contexts (see docs/patterns/evaluation-tracing.md).
+  - Evaluation tracing: explicitly capture native OTel context at job dispatch; a run-owned, DB-free EvaluationTraceSession starts short root spans (execution per repetition, metrics per result row) linked to eval.run and to each other, holds only immutable span contexts (no long-lived spans), and never persists them (see docs/patterns/evaluation-tracing.md).
   - Use @Transactional in service layer for transaction boundaries
   - UUIDs stored as VARCHAR(36) in database
   - Use Lombok (@Data/@Builder/@RequiredArgsConstructor/@Slf4j) for boilerplate reduction

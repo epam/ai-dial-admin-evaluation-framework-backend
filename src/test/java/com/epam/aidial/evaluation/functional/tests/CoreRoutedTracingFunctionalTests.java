@@ -24,6 +24,7 @@ import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.TraceFlags;
 import io.opentelemetry.api.trace.TraceState;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.sdk.trace.data.LinkData;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
@@ -107,22 +108,29 @@ public abstract class CoreRoutedTracingFunctionalTests extends EvaluationTracing
         assertThat(core().correlationId()).isEqualTo("routedCorrelation123");
         assertThat(core().authorization()).isEqualTo("Bearer caller-token");
         assertThat(core().failure()).isNull();
-        final var root =
-                spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE).getFirst();
-        assertThat(root.getLinks())
-                .singleElement()
-                .satisfies(l -> assertThat(l.getSpanContext()).isEqualTo(orchestration.getSpanContext()));
-        assertThat(root.getTraceId()).isNotEqualTo(orchestration.getTraceId());
+        final var execution = spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE)
+                .getFirst();
+        assertThat(execution.getParentSpanContext().isValid()).isFalse();
+        assertThat(execution.getLinks())
+                .extracting(LinkData::getSpanContext)
+                .containsExactly(orchestration.getSpanContext());
+        assertThat(execution.getTraceId()).isNotEqualTo(orchestration.getTraceId());
+        final var metricsRoot = spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_METRICS)
+                .getFirst();
+        assertThat(metricsRoot.getParentSpanContext().isValid()).isFalse();
+        assertThat(metricsRoot.getLinks())
+                .extracting(LinkData::getSpanContext)
+                .containsExactlyInAnyOrder(orchestration.getSpanContext(), execution.getSpanContext());
         assertThat(spansFor(run.getId(), TracingConstants.SPAN_METRIC_TSMD_EVALUATE))
                 .singleElement()
-                .satisfies(s -> assertThat(s.getParentSpanId()).isEqualTo(root.getSpanId()));
+                .satisfies(s -> assertThat(s.getParentSpanId()).isEqualTo(metricsRoot.getSpanId()));
         assertThat(rowsFor(run))
                 .singleElement()
-                .satisfies(r -> assertThat(r.getTraceId()).isEqualTo(root.getTraceId()));
+                .satisfies(r -> assertThat(r.getTraceId()).isEqualTo(execution.getTraceId()));
     }
 
     @Test
-    @DisplayName("Core trigger rejection leaves the run FAILED without dispatching orchestration or case roots")
+    @DisplayName("Core trigger rejection leaves the run FAILED without dispatching orchestration or test-case traces")
     void rejectedTriggerCreatesNoExecutionRoots() {
         final var suite = createChatSuite("Rejected trace");
         createSingleTurnCase(suite.getDatasetId(), "case", Map.of("prompt", "hello"));
@@ -142,7 +150,8 @@ public abstract class CoreRoutedTracingFunctionalTests extends EvaluationTracing
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
         final var run = awaitRunTerminal(response.getBody().getId(), 20);
         assertThat(run.getStatus()).isEqualTo(RunStatus.FAILED.name());
-        assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE)).isEmpty();
+        assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
+                .isEmpty();
         assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_RUN)).isEmpty();
         assertThat(registry.activeCount()).isZero();
     }
@@ -162,7 +171,7 @@ public abstract class CoreRoutedTracingFunctionalTests extends EvaluationTracing
                     String.class);
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
             assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_RUN)).isEmpty();
-            assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE))
+            assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
                     .isEmpty();
         } finally {
             handle.close();
@@ -172,8 +181,8 @@ public abstract class CoreRoutedTracingFunctionalTests extends EvaluationTracing
 
     @Test
     @DisplayName(
-            "Core disconnect cancels the run and closes its linked case root without persisting unfinished execution")
-    void disconnectCancelsAndClosesRoot() throws Exception {
+            "Core disconnect cancels the run, ends its execution trace and starts no metrics trace, without persisting unfinished execution")
+    void disconnectCancelsAndEndsExecutionTrace() throws Exception {
         final var suite = createChatSuite("Disconnect trace");
         createSingleTurnCase(suite.getDatasetId(), "case", Map.of("prompt", "hello"));
         final CountDownLatch entered = new CountDownLatch(1);
@@ -211,9 +220,14 @@ public abstract class CoreRoutedTracingFunctionalTests extends EvaluationTracing
             await().atMost(5, TimeUnit.SECONDS)
                     .untilAsserted(() -> assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_RUN))
                             .hasSize(1));
-            assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE))
-                    .hasSize(1);
             assertThat(rowsFor(run)).isEmpty();
+            assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_METRICS))
+                    .isEmpty();
+            release.countDown();
+            await().atMost(5, TimeUnit.SECONDS)
+                    .untilAsserted(() -> assertThat(
+                                    spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
+                            .hasSize(1));
         } finally {
             release.countDown();
         }

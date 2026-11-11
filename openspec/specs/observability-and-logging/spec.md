@@ -362,49 +362,54 @@ Status: **Implemented**
 - **WHEN** a run starts with tracing enabled but no valid incoming span
 - **THEN** orchestration SHALL have a valid new trace with run/suite attributes
 
-### Requirement: Independent linked test-case traces
-Each executed `(testCaseId, runIndex)` within a run SHALL have one independent root span and trace. Its root SHALL have no parent and SHALL contain a span link to the run orchestration span when that context is valid. Root attributes SHALL include `eval.run.id`, `eval.suite.id`, `testcase.id`, `testcase.name`, and `run.index`.
+### Requirement: Short linked test-case execution traces
+Each executed `(testCaseId, runIndex)` within a run SHALL have one `eval.testcase.execute` span that is the root of its own trace: it SHALL have no parent and SHALL carry a span link to the run orchestration span when that context is valid. It SHALL cover only that repetition's execution phase. No test-case span SHALL remain open after its own work finishes or span both phases.
 Status: **Implemented**
 
 #### Scenario: Independent repetitions
 - **WHEN** multiple test cases or repetitions execute with tracing enabled
 - **THEN** each `(testCaseId, runIndex)` SHALL have a different trace ID from orchestration and from every other pair
-- **AND** each root SHALL link to the same run orchestration span, not be its child
+- **AND** each execution root SHALL link to the run orchestration span, not be its child
 
 #### Scenario: Existing execution subtree preserved
 - **WHEN** a test case performs HTTP or MCP execution, including multiple requests, turns, or retries
-- **THEN** its existing `eval.testcase.execute` span and downstream hierarchy SHALL remain beneath its independent test-case root
-- **AND** every result row from that repetition SHALL retain that test-case trace ID
+- **THEN** its deployment/MCP invocation spans SHALL remain beneath its `eval.testcase.execute` root
+- **AND** every result row from that repetition SHALL retain that execution trace ID
 
 #### Scenario: Run-scoped trace discovery
 - **WHEN** retained and exported traces are searched by `eval.run.id`
-- **THEN** the orchestration trace and all matching independent test-case traces SHALL be discoverable
+- **THEN** the orchestration trace and all matching execution and metrics traces SHALL be discoverable
 
-### Requirement: Metric spans are children of their test-case root
-Each invoked metric span SHALL be directly parented to the root for its result's `(testCaseId, runIndex)` in the active run. Metrics SHALL share that test-case trace ID, not the orchestration trace ID. Existing metric attributes, phase-specific baggage, and provider/downstream parent-child hierarchies SHALL be preserved.
+### Requirement: Per-row linked metrics traces
+Each result row whose metrics are dispatched SHALL get one `eval.testcase.metrics` span that is the root of its own trace, carrying `eval.run.id`, `eval.suite.id`, `testcase.id`, `testcase.name`, `run.index`, `result.id` and `eval.phase`. That row's `metric.tsmd.evaluate` spans SHALL be its children. It SHALL link to the run orchestration span and, when the run executed that `(testCaseId, runIndex)`, to its `eval.testcase.execute` span. Links SHALL carry `eval.link.type` (`run` or `execution`). Existing metric attributes, phase-specific baggage and provider/downstream hierarchies SHALL be preserved.
 Status: **Implemented**
 
 #### Scenario: Phase 2 follows Phase 1
-- **WHEN** metrics execute after the deployment-execution phase has completed
-- **THEN** their parent span ID SHALL equal the corresponding test-case root span ID
-- **AND** their trace ID SHALL equal the execution result's trace ID
+- **WHEN** metrics execute after the execution phase has completed
+- **THEN** each row's metrics root SHALL have a trace ID different from the execution trace and from orchestration
+- **AND** it SHALL link to both the execution span and the orchestration span
+- **AND** it SHALL end once that row's metric evaluations settle, and SHALL have ERROR status when any of them failed or timed out
 
 #### Scenario: Multiple requests and turns
 - **WHEN** one repetition produces multiple request/turn result rows with metrics
-- **THEN** all invoked metric spans for those rows SHALL be children of the same test-case root
-- **AND** `result.id` and existing phase-specific attributes/baggage SHALL distinguish the rows and metrics
+- **THEN** each row SHALL get its own metrics trace, all linked to the same execution span
+- **AND** `result.id` SHALL identify the row on the metrics root and its metric spans
 
-#### Scenario: No cross-run or repetition parenting
+#### Scenario: Nothing dispatched
+- **WHEN** a row's metrics are all condition-skipped or condition-errored, or the row did not succeed
+- **THEN** no metrics root SHALL be created for it
+
+#### Scenario: No cross-run or repetition linking
 - **WHEN** the same test case appears in concurrent runs or multiple repetitions
-- **THEN** each metric SHALL be parented only to its own active run and repetition's root
+- **THEN** each metrics root SHALL link only to its own run's and repetition's execution span
 
-#### Scenario: Imported results have no live execution parent
+#### Scenario: Imported results have no live execution span
 - **WHEN** a metrics-only run evaluates imported results without their original runtime span contexts
-- **THEN** it SHALL create a new metric-only root for each evaluated `(testCaseId, runIndex)`, linked to current orchestration
-- **AND** it SHALL NOT fabricate a historical parent span ID or overwrite an imported execution trace ID to claim historical continuity
+- **THEN** each metrics root SHALL link only to current orchestration
+- **AND** it SHALL NOT fabricate a historical span link or overwrite an imported execution trace ID
 
 ### Requirement: Tracing state is transient and run-owned
-Span contexts needed for cross-phase parenting SHALL remain in run-scoped runtime memory only. Test-case roots SHALL cover execution and metric evaluation, and SHALL be ended and released when the run finishes, fails, or is cancelled. Closing tracing state SHALL be idempotent and SHALL prevent late tasks from retaining or creating new run-owned roots.
+Span contexts needed for cross-phase links SHALL remain in run-scoped runtime memory only, as immutable contexts; the run SHALL hold no open test-case spans. Closing tracing state SHALL be idempotent and SHALL release remembered contexts; spans started afterwards SHALL remain valid and linked to the run.
 Status: **Implemented**
 
 #### Scenario: Persistent contract unchanged
@@ -414,11 +419,11 @@ Status: **Implemented**
 
 #### Scenario: Terminal cleanup
 - **WHEN** a run completes, fails, is cancelled, or encounters submission rejection after tracing resources are allocated
-- **THEN** all owned root spans SHALL be ended exactly once and retained tracing state SHALL be released
+- **THEN** retained tracing state SHALL be released
 
 #### Scenario: Late worker after shutdown
-- **WHEN** a timed-out or interrupted worker races with tracing-session cleanup
-- **THEN** it SHALL NOT recreate run-owned roots or leave tracing resources retained after session closure
+- **WHEN** a timed-out or interrupted worker finishes after tracing-session cleanup
+- **THEN** its spans SHALL end in its own cleanup and SHALL NOT re-populate the released tracing state
 
 #### Scenario: Tracing disabled
 - **WHEN** OTel is disabled

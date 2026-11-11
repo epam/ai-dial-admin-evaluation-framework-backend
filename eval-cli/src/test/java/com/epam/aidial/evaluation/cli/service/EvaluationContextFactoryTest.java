@@ -26,7 +26,6 @@ import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.util.CredentialKind;
-import io.opentelemetry.api.OpenTelemetry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -61,7 +60,7 @@ class EvaluationContextFactoryTest {
     @BeforeEach
     void setUp() {
         factory = new EvaluationContextFactory(
-                cliProperties, targetProperties, clock, new RunExecutorFactory(true), OpenTelemetry.noop());
+                cliProperties, targetProperties, clock, new RunExecutorFactory(true));
 
         when(cliProperties.getRun()).thenReturn(runConfig);
         when(runConfig.getConcurrencyLevel()).thenReturn(4);
@@ -166,7 +165,7 @@ class EvaluationContextFactoryTest {
     @DisplayName("runs the context's executor on a platform thread when virtual threads are disabled")
     void executorRunsOnPlatformThreadWhenVirtualThreadsDisabled() throws Exception {
         final EvaluationContextFactory platformFactory = new EvaluationContextFactory(
-                cliProperties, targetProperties, clock, new RunExecutorFactory(false), OpenTelemetry.noop());
+                cliProperties, targetProperties, clock, new RunExecutorFactory(false));
         final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
                 .id(UUID.randomUUID())
                 .datasetId(UUID.randomUUID())

@@ -45,6 +45,12 @@ import com.epam.aidial.evaluation.service.domain.analytics.TestCaseMetricScoreAg
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseMetricScoreAggregatedBatchWriteItemDto;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -52,6 +58,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
@@ -131,6 +138,7 @@ class InProcessMetricEvaluationExecutorTest {
 
     @BeforeEach
     void stubConditions() {
+        lenient().when(worker.startMetricsSpan(any(), any())).thenReturn(Span.getInvalid());
         lenient().when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.run());
         lenient()
                 .when(runMetricSnapshotRepository.findByRunIdAndComputationId(any(), any()))
@@ -534,6 +542,67 @@ class InProcessMetricEvaluationExecutorTest {
     }
 
     @Test
+    @DisplayName(
+            "Each dispatched row's TSMD tasks run under its eval.testcase.metrics span, which ends after they settle and is ERROR when one fails")
+    void tsmdTasksRunUnderRowMetricsSpan() throws Exception {
+        final InMemorySpanExporter exporter = InMemorySpanExporter.create();
+        try (SdkTracerProvider tracerProvider = SdkTracerProvider.builder()
+                .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+                .build()) {
+            UUID runId = UUID.randomUUID();
+            UUID suiteId = UUID.randomUUID();
+            AggregatedMetricDefinition ok = AggregatedMetricDefinition.builder()
+                    .id(UUID.randomUUID())
+                    .name("Accuracy")
+                    .declarationProviderId("dial")
+                    .metricDeclarationName("exact_match")
+                    .build();
+            AggregatedMetricDefinition failing = AggregatedMetricDefinition.builder()
+                    .id(UUID.randomUUID())
+                    .name("Broken")
+                    .declarationProviderId("dial")
+                    .metricDeclarationName("exact_match")
+                    .build();
+            MetricEvaluationContext context = buildContext(runId, suiteId, List.of(ok, failing), 10000L);
+            TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+            when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                    .thenReturn(new CursorPage<>(List.of(result), null, false));
+            final Span metricsSpan =
+                    tracerProvider.get("test").spanBuilder("metrics").startSpan();
+            when(worker.startMetricsSpan(result, context)).thenReturn(metricsSpan);
+            final Map<String, SpanContext> currentByTsmd = new ConcurrentHashMap<>();
+            when(worker.evaluate(any(), eq(result), any(Semaphore.class), eq(context)))
+                    .thenAnswer(inv -> {
+                        final AggregatedMetricDefinition tsmd = inv.getArgument(0);
+                        currentByTsmd.put(tsmd.getName(), Span.current().getSpanContext());
+                        if (tsmd == failing) {
+                            throw new IllegalStateException("provider down");
+                        }
+                        return EvaluationResponseDto.builder()
+                                .metricName("exact_match")
+                                .output(Map.of())
+                                .build();
+                    });
+            when(clock.millis()).thenReturn(1_000L);
+            doReturn(objectMapper.createObjectNode()).when(outputMapper).buildMetricValues(any());
+            doReturn(null).when(outputMapper).buildMetricInfos(any());
+
+            executor.execute(context);
+
+            assertThat(currentByTsmd)
+                    .containsOnlyKeys("Accuracy", "Broken")
+                    .allSatisfy((name, current) -> assertThat(current).isEqualTo(metricsSpan.getSpanContext()));
+            assertThat(exporter.getFinishedSpanItems())
+                    .singleElement()
+                    .satisfies(span -> {
+                        assertThat(span.getName()).isEqualTo("metrics");
+                        assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+                    });
+            verify(worker, times(1)).startMetricsSpan(any(), any());
+        }
+    }
+
+    @Test
     @DisplayName("A condition-skipped metric leaves the aggregate SUCCESS and the score is computed as before")
     void conditionSkipOnlyStillComputesScore() throws Exception {
         UUID runId = UUID.randomUUID();
@@ -566,6 +635,7 @@ class InProcessMetricEvaluationExecutorTest {
         executor.execute(context);
 
         verify(worker, never()).evaluate(any(), any(), any(Semaphore.class), any());
+        verify(worker, never()).startMetricsSpan(any(), any());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);

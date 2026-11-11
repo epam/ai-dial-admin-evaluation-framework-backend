@@ -23,9 +23,14 @@ public final class TracingConstants {
 
     // ---- Span names ----
 
+    /** Span name for run orchestration in {@code TestSuiteEvaluationJob}; continues the dispatching trace. */
     public static final String SPAN_EVAL_RUN = "eval.run";
-    public static final String SPAN_EVAL_TESTCASE = "eval.testcase";
-    public static final String EVAL_RUN_STATUS = "eval.run.status";
+
+    /**
+     * Span name for one result row's metric evaluations in {@code InProcessMetricEvaluationExecutor};
+     * root of its own trace, parent of that row's {@link #SPAN_METRIC_TSMD_EVALUATE} spans.
+     */
+    public static final String SPAN_EVAL_TESTCASE_METRICS = "eval.testcase.metrics";
 
     /** Span name for a single test case execution in {@code EvaluationWorker}. */
     public static final String SPAN_EVAL_TESTCASE_EXECUTE = "eval.testcase.execute";
@@ -43,6 +48,18 @@ public final class TracingConstants {
 
     /** OTel key for the evaluation run id (UUID). Span attribute + baggage. */
     public static final String EVAL_RUN_ID = "eval.run.id";
+
+    /** Terminal run status on {@link #SPAN_EVAL_RUN}. Span attribute only. */
+    public static final String EVAL_RUN_STATUS = "eval.run.status";
+
+    /**
+     * Span-link attribute telling which linked span a test-case trace points at: {@link #LINK_TYPE_RUN}
+     * or {@link #LINK_TYPE_EXECUTION}.
+     */
+    public static final String EVAL_LINK_TYPE = "eval.link.type";
+
+    public static final String LINK_TYPE_RUN = "run";
+    public static final String LINK_TYPE_EXECUTION = "execution";
 
     /** OTel key for the evaluation suite id (UUID). Span attribute + baggage. */
     public static final String EVAL_SUITE_ID = "eval.suite.id";

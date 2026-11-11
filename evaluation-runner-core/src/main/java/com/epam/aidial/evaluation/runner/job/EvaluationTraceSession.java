@@ -1,81 +1,79 @@
 package com.epam.aidial.evaluation.runner.job;
 
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
-import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.SpanContext;
-import io.opentelemetry.api.trace.Tracer;
-import io.opentelemetry.context.Context;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Run-owned tracing handles, never persisted. A repetition's root spans execution and metrics;
- * request/turn rows share that root. Synchronization serializes creation with close so late workers
- * cannot resurrect roots. No credentials or result bodies are retained.
+ * Run-owned tracing state, never persisted. Every test-case span it starts is the root of its own short
+ * trace, linked (not parented) to the run orchestration span: execution spans cover Phase 1 of one
+ * {@code (testCaseId, runIndex)}, metrics spans cover one result row's metric evaluations and are also
+ * linked to that repetition's execution span. Only immutable {@link SpanContext}s are retained — no open
+ * spans, credentials or result bodies — so nothing stays open for the run's duration.
  */
 public final class EvaluationTraceSession implements AutoCloseable {
-    private final Tracer tracer;
-    private final UUID runId;
-    private final UUID suiteId;
-    private final SpanContext orchestration;
-    private final Map<CaseKey, Span> roots = new HashMap<>();
-    private boolean closed;
 
-    public EvaluationTraceSession(OpenTelemetry telemetry, UUID runId, UUID suiteId, SpanContext orchestration) {
-        this.tracer = telemetry.getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME);
-        this.runId = runId;
-        this.suiteId = suiteId;
+    private static final Attributes RUN_LINK = Attributes.builder()
+            .put(TracingConstants.EVAL_LINK_TYPE, TracingConstants.LINK_TYPE_RUN)
+            .build();
+    private static final Attributes EXECUTION_LINK = Attributes.builder()
+            .put(TracingConstants.EVAL_LINK_TYPE, TracingConstants.LINK_TYPE_EXECUTION)
+            .build();
+
+    private final SpanContext orchestration;
+    private final Map<CaseKey, SpanContext> executions = new ConcurrentHashMap<>();
+    private volatile boolean closed;
+
+    public EvaluationTraceSession(SpanContext orchestration) {
         this.orchestration = orchestration;
     }
 
-    /** Starts a child with the caller's attributes already set (available to the sampler). */
-    public synchronized Span startSpan(SpanBuilder builder, UUID testCaseId, String testCaseName, int runIndex) {
-        if (closed) {
-            return Span.getInvalid();
+    /**
+     * Starts a repetition's execution root (caller's attributes already set, so samplers see them) and
+     * remembers its context for later metrics links.
+     */
+    public Span startExecutionSpan(SpanBuilder builder, UUID testCaseId, int runIndex) {
+        final Span span = linkedRoot(builder).startSpan();
+        if (!closed && span.getSpanContext().isValid()) {
+            executions.put(new CaseKey(testCaseId, runIndex), span.getSpanContext());
         }
-        final CaseKey key = new CaseKey(testCaseId, runIndex);
-        Span root = roots.get(key);
-        if (root == null) {
-            final SpanBuilder rootBuilder = tracer.spanBuilder(TracingConstants.SPAN_EVAL_TESTCASE)
-                    .setNoParent()
-                    .setAttribute(TracingConstants.EVAL_RUN_ID, runId.toString())
-                    .setAttribute(TracingConstants.EVAL_SUITE_ID, suiteId.toString())
-                    .setAttribute(TracingConstants.TESTCASE_ID, testCaseId.toString())
-                    .setAttribute(TracingConstants.RUN_INDEX, Integer.toString(runIndex));
-            if (testCaseName != null) {
-                rootBuilder.setAttribute(TracingConstants.TESTCASE_NAME, testCaseName);
-            }
-            if (orchestration.isValid()) {
-                rootBuilder.addLink(orchestration);
-            }
-            root = rootBuilder.startSpan();
-            if (!root.getSpanContext().isValid()) {
-                root.end();
-                return Span.getInvalid();
-            }
-            roots.put(key, root);
-        }
-        return builder.setParent(Context.root().with(root)).startSpan();
+        return span;
     }
 
-    /** Clear under the creation lock; SDK end/export runs outside the lock. */
+    /**
+     * Starts a result row's metrics root, linked to the run and, when this session executed the
+     * repetition, to its execution span (absent for imported / metrics-only results).
+     */
+    public Span startMetricsSpan(SpanBuilder builder, UUID testCaseId, int runIndex) {
+        final SpanBuilder root = linkedRoot(builder);
+        final SpanContext execution = executions.get(new CaseKey(testCaseId, runIndex));
+        if (execution != null) {
+            root.addLink(execution, EXECUTION_LINK);
+        }
+        return root.startSpan();
+    }
+
+    /**
+     * Releases remembered contexts. Spans started afterwards stay valid and linked to the run; a racing
+     * put after the clear is harmless because the session is dropped with its run.
+     */
     @Override
     public void close() {
-        final List<Span> completed;
-        synchronized (this) {
-            if (closed) {
-                return;
-            }
-            closed = true;
-            completed = new ArrayList<>(roots.values());
-            roots.clear();
+        closed = true;
+        executions.clear();
+    }
+
+    private SpanBuilder linkedRoot(SpanBuilder builder) {
+        builder.setNoParent();
+        if (orchestration.isValid()) {
+            builder.addLink(orchestration, RUN_LINK);
         }
-        completed.forEach(Span::end);
+        return builder;
     }
 
     private record CaseKey(UUID testCaseId, int runIndex) {}

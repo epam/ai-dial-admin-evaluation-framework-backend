@@ -1,50 +1,52 @@
-# Evaluation tracing: linked repetitions and cross-phase parenting
+# Evaluation tracing: short linked traces, no long-lived spans
 
-The backend's `eval.run` span continues the context captured at job dispatch. Each test-case repetition
-has its own independent `eval.testcase` root trace, with a span link to `eval.run` (not a parent edge).
+The backend's `eval.run` span continues the context captured at job dispatch, so one trace covers
+the whole run: FE call → EF → DIAL Core → EF → orchestration until the result. Test-case work is
+**not** parented to it. Each repetition's execution and each result row's metrics are separate short
+traces, connected to `eval.run` and to each other by span links.
 
 ```text
-Trace A: start request --> DIAL Core --> internal execute request --> eval.run
-                                                                      ^
-                                                                      | span link
-Trace B: eval.testcase (testCaseId, runIndex) ---------------------------+
-           +-- eval.testcase.execute
-           |     +-- existing deployment/MCP invocation descendants
-           +-- metric.tsmd.evaluate (result row / TSMD)
-                 +-- existing provider/downstream descendants
+Trace A: start request --> DIAL Core --> internal execute request --> eval.run (whole run)
+                                                                      ^  ^
+                                               link (eval.link.type=run) |
+Trace X: eval.testcase.execute (testCaseId, runIndex) -------------------+  |
+           +-- deployment / MCP invocation spans          ^                 |
+                                                          | link (execution)|
+Trace Y: eval.testcase.metrics (one result row) ----------+-----------------+ (run)
+           +-- metric.tsmd.evaluate (per dispatched TSMD)
+                 +-- provider / downstream spans
 ```
 
-## The boundary is a whole repetition
+## Why no common parent
 
-All requests and turns within `(testCaseId, runIndex)` share the same trace. They are sequential parts of
-one request chain/conversation, not separate root traces. Result rows carry their request/turn identity;
-metric spans carry `result.id` to identify the evaluated row. Repetitions of the same case have distinct
-traces. Session ownership isolates the same case/index across concurrent runs.
+Execution and metrics can only be siblings in one trace under a shared parent. Phase 2 starts after
+all of Phase 1, so that parent (and its trace) would stretch from a case's execution to its metrics:
+up to the whole run. Linked peer traces keep every trace as long as its own work.
 
-`eval.testcase.execute` retains its Phase 1 duration. Its lifetime parent remains open until run cleanup,
-so subsequent Phase 2 metrics are direct children of the case root, not children of an already-ended
-execution span. Discovery calls and Phase 3 run-level aggregates stay under orchestration.
+## Boundaries
+
+- **Execution trace:** one per `(testCaseId, runIndex)`. All requests and turns of the repetition
+  share it. Its trace ID is the persisted result `traceId`.
+- **Metrics trace:** one per result row whose metrics are dispatched. Phase 2 handles rows one at a
+  time with their TSMDs in parallel, so the root is short. The executor makes it current for the row's
+  TSMD tasks and ends it once they settle. Status is ERROR if any TSMD failed or timed out. No root when
+  every TSMD was condition-skipped/errored or the row did not succeed.
+- Discovery calls and Phase 3 run-level aggregates stay under `eval.run`.
 
 ## Runtime ownership
 
-`runner.job.EvaluationTraceSession` is a DB-free, non-Spring `AutoCloseable` object. It holds only an
-orchestration span context and a map of root span handles keyed by case ID/repetition. The backend passes
-one session through `EvaluationContext` and `MetricEvaluationContext`. The CLI's context factory creates
-a session linked to the current context when one is valid; CLI roots cover its local Phase 1 only.
+`runner.job.EvaluationTraceSession` is a DB-free, non-Spring `AutoCloseable`. It holds the orchestration
+`SpanContext` and a map of execution `SpanContext`s keyed by `(testCaseId, runIndex)`: immutable
+contexts, never open spans. The backend passes one session through `EvaluationContext` and
+`MetricEvaluationContext`. The CLI's context factory links to the current context when valid; CLI runs
+only Phase 1.
 
-Workers prepare their span attributes before calling `session.startSpan(...)`, so samplers can inspect
-them. The session explicitly sets the root as parent rather than relying on the job context inherited
-by the worker executor. Execution and metric scopes still populate their existing phase-specific baggage.
+Workers set span attributes before calling `startExecutionSpan` / `startMetricsSpan`, so samplers see
+them. The run owner closes the session in unconditional cleanup after executor shutdown. Close clears the
+map; a later span still starts and links to the run. State is O(started repetitions).
 
-The run owner shuts down its worker executor, then closes the session in unconditional cleanup. Root
-creation and close share a lock; close releases the map and ends each root once. Late workers receive an
-invalid/no-op span and cannot reopen a closed session. Existing in-flight child spans end in their own
-`finally` blocks, even when a timeout lets them finish after root cleanup. No unbounded termination wait
-is introduced. State is O(started test-case repetitions), not O(result rows/response bodies).
-
-Legacy library consumers may omit the optional session and keep their existing implicit span-parenting
-behavior. The backend and CLI always provide owned sessions. Never add span IDs or serialized contexts
-to persisted run/result objects to implement same-process cross-phase parenting.
+Legacy library consumers may omit the session: spans then use implicit parenting from the current
+context. Never add span IDs or serialized contexts to persisted run/result objects.
 
 ## Incoming tracing and custom correlation IDs
 
@@ -56,37 +58,31 @@ The DIAL trigger thread is explicitly wrapped too, and its HTTP client injects W
 `X-Correlation-Id` is independent of a span's trace ID. `CorrelationIdContext` captures/restores that
 single MDC value around job/trigger tasks; the trigger explicitly forwards the header.
 `CorrelationIdInterceptor` clears its request value at synchronous completion and async HTTP handoff.
-The current span's native `trace_id`/`span_id` still identify the active case/metric trace in logs.
 
-Core must continue/forward W3C context for distributed linkage and forward the custom header for its
-correlation continuity. EF cannot retroactively reparent an earlier request if Core drops context.
+Core must forward W3C context for distributed linkage and the custom header for correlation continuity.
+EF cannot retroactively reparent an earlier request if Core drops context.
 
 ## Stored results and imports
 
-The existing execution `traceId` field remains the only persisted tracing field and identifies the
-case trace. REST and CSV shapes are unchanged. Imported results lack the original runtime parent span
-ID: a metrics-only run creates fresh linked case roots without fabricating a historical parent or
-rewriting imported execution trace IDs. Consequently, a historical imported execution trace and its
-new metric-computation trace are not claimed to be one continuous trace.
+The execution `traceId` field remains the only persisted tracing field. REST and CSV shapes are
+unchanged. Imported results have no live execution span: their metrics roots link only to `eval.run`;
+imported trace IDs are not rewritten.
 
 ## Grafana / Tempo navigation
 
-- From a case root, use its span link to open orchestration (UI availability depends on Grafana version).
-- From a run, search `{ span.eval.run.id = "<run-id>" }` to find orchestration and all exported case traces.
-- Narrow by `span.testcase.id` and `span.run.index` to find a particular case/repetition.
-- Do not assume reverse-link discovery or one automatically stitched waterfall across traces.
+- From any test-case trace, follow its span link to `eval.run` (`eval.link.type=run`); from a metrics
+  trace, follow `eval.link.type=execution` to the execution trace.
+- From a run, search `{ span.eval.run.id = "<run-id>" }` to list orchestration and every test-case trace.
+- Narrow by `span.testcase.id`, `span.run.index`, or `span.result.id`.
+- Do not assume reverse-link discovery or one stitched waterfall across traces.
 
-Links do not force sampling or guarantee retention. Each independent root is sampled under the existing
-deployment policy. A target can be unsampled, not yet exported, or expired. Case roots export at cleanup;
-execution/metric children end earlier, so a complete root-based view is available after run completion.
+Links do not force sampling or guarantee retention; each root is sampled under the deployment policy.
 
 ## Verification
 
-`EvaluationTraceSessionTest` asserts root/link identity, isolation, disabled tracing, and close/create
-races. Worker tests assert actual exported parent IDs and cross-phase baggage. Tracing-enabled
-`PostgresFunctionalTests` nested suites cover public direct dispatch, multi-request/multi-turn metrics,
-imports, and a local HTTP Core proxy that forwards SSE and a test PRK. Separate routed tests cover
-disabled tracing, duplicate dispatch, trigger rejection, and disconnect cancellation.
-
-These tests prove EF-side wiring and emulated forwarding; a deployment smoke check must still verify
-the real DIAL Core's propagation and the installed Grafana span-link UI.
+`EvaluationTraceSessionTest` asserts root/link identity, case/repetition matching, isolation, close and
+disabled tracing. Worker and executor tests assert exported parent IDs, links, baggage and metrics-span
+scoping. Tracing-enabled `PostgresFunctionalTests` nested suites cover direct dispatch,
+multi-request/multi-turn metrics, imports, a local HTTP Core proxy, disabled tracing, duplicate dispatch,
+trigger rejection, and disconnect cancellation. A deployment smoke check must still verify real DIAL
+Core propagation and the Grafana span-link UI.

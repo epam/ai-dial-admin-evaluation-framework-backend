@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -30,6 +31,7 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
+import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanContext;
@@ -38,14 +40,19 @@ import io.opentelemetry.api.trace.TraceFlags;
 import io.opentelemetry.api.trace.TraceState;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import java.io.StringWriter;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
 import org.junit.jupiter.api.DisplayName;
@@ -77,6 +84,28 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
 
     @Autowired
     private MetricProviderClient metricProvider;
+
+    /** Cost-attribution baggage observed at each outbound deployment / metric-provider call. */
+    private final List<Map<String, String>> deploymentBaggage = new CopyOnWriteArrayList<>();
+
+    private final List<Map<String, String>> providerBaggage = new CopyOnWriteArrayList<>();
+
+    private static Map<String, String> currentEvalBaggage() {
+        final Baggage baggage = Baggage.current();
+        final Map<String, String> entries = new HashMap<>();
+        for (String key : List.of(
+                TracingConstants.EVAL_RUN_ID,
+                TracingConstants.EVAL_PHASE,
+                TracingConstants.TESTCASE_ID,
+                TracingConstants.RUN_INDEX,
+                TracingConstants.RESULT_ID)) {
+            final String value = baggage.getEntryValue(key);
+            if (value != null) {
+                entries.put(key, value);
+            }
+        }
+        return entries;
+    }
 
     @Test
     @DisplayName("public direct dispatch completes evaluation and parents orchestration to the incoming server span")
@@ -136,19 +165,18 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
             assertThat(span.getTraceId()).isEqualTo(incoming.getTraceId());
         });
         verify(deploymentInvoker).invokeWithStreaming(any(), any(), any(), any(), any());
-        final SpanData root =
-                spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE).getFirst();
-        assertThat(root.getParentSpanContext().isValid()).isFalse();
-        assertThat(root.getTraceId()).isNotEqualTo(orchestration.getTraceId());
-        assertThat(root.getLinks())
+        final SpanData execution =
+                spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE).getFirst();
+        assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
+                .hasSize(1);
+        assertThat(execution.getParentSpanContext().isValid()).isFalse();
+        assertThat(execution.getTraceId()).isNotEqualTo(orchestration.getTraceId());
+        assertThat(execution.getLinks())
                 .singleElement()
                 .satisfies(l -> assertThat(l.getSpanContext()).isEqualTo(orchestration.getSpanContext()));
-        assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
-                .singleElement()
-                .satisfies(s -> assertThat(s.getParentSpanId()).isEqualTo(root.getSpanId()));
         assertThat(rowsFor(run))
                 .singleElement()
-                .satisfies(row -> assertThat(row.getTraceId()).isEqualTo(root.getTraceId()));
+                .satisfies(row -> assertThat(row.getTraceId()).isEqualTo(execution.getTraceId()));
     }
 
     protected List<SpanData> spansFor(UUID runId, String name) {
@@ -174,7 +202,7 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
     }
 
     @Test
-    @DisplayName("CSV import preserves historical execution trace IDs while metrics get new linked case roots")
+    @DisplayName("CSV import preserves historical execution trace IDs while metrics get a fresh run-linked metrics root")
     void importedMetricsUseFreshRoots() throws Exception {
         final var suite = createChatSuite("Imported tracing");
         createSingleTurnCase(suite.getDatasetId(), "imported", Map.of("prompt", "hello"));
@@ -228,7 +256,10 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
                 .singleElement()
                 .satisfies(row -> assertThat(row.getTraceId()).isEqualTo(historical));
         final var root =
-                spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE).getFirst();
+                spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_METRICS).getFirst();
+        assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_METRICS))
+                .hasSize(1);
+        assertThat(root.getParentSpanContext().isValid()).isFalse();
         assertThat(root.getTraceId()).isNotEqualTo(historical);
         assertThat(root.getLinks())
                 .singleElement()
@@ -262,6 +293,7 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
                 "[]",
                 "false");
         when(metricProvider.evaluate(anyString(), any())).thenAnswer(inv -> {
+            providerBaggage.add(currentEvalBaggage());
             final Span provider = Span.current();
             assertThat(provider.getSpanContext().isValid()).isTrue();
             return EvaluationResponseDto.builder()
@@ -278,7 +310,7 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
 
     @Test
     @DisplayName(
-            "multiple requests and turns across repetitions retain independent case traces with Phase 2 metric children")
+            "multiple requests and turns across repetitions get one execution trace per repetition, one linked metrics trace per row, and unchanged cost-attribution baggage")
     void multiRequestMultiTurnMetricHierarchy() {
         final RequestDefinitionDto additional = RequestDefinitionDto.builder()
                 .name("second")
@@ -308,7 +340,10 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
                 suite.getDatasetId(), "second", List.of(Map.of("prompt", "three"), Map.of("prompt", "four")));
         addTracingMetric(suite.getId());
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
-                .thenReturn(chatReply("answer"));
+                .thenAnswer(inv -> {
+                    deploymentBaggage.add(currentEvalBaggage());
+                    return chatReply("answer");
+                });
         final var response = restTemplate.postForEntity(
                 apiUrl("/test-suites/" + suite.getId() + "/runs"),
                 jsonEntity(TestSuiteRunRequestDto.builder()
@@ -321,30 +356,78 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
         await().atMost(5, TimeUnit.SECONDS)
                 .untilAsserted(() -> assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_RUN))
                         .hasSize(1));
-        final List<SpanData> roots = spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE);
+        final SpanData orchestration =
+                spansFor(run.getId(), TracingConstants.SPAN_EVAL_RUN).getFirst();
         final List<SpanData> executions = spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE);
+        final List<SpanData> metricsRoots = spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_METRICS);
         final List<SpanData> metrics = spansFor(run.getId(), TracingConstants.SPAN_METRIC_TSMD_EVALUATE);
-        assertThat(roots).hasSize(4);
-        assertThat(roots.stream().map(SpanData::getTraceId).distinct().toList()).hasSize(4);
-        assertThat(executions).hasSize(4);
+        assertThat(executions).hasSize(4).allSatisfy(execution -> {
+            assertThat(execution.getParentSpanContext().isValid()).isFalse();
+            assertThat(execution.getLinks())
+                    .extracting(LinkData::getSpanContext)
+                    .containsExactly(orchestration.getSpanContext());
+        });
+        assertThat(executions.stream().map(SpanData::getTraceId).distinct().toList())
+                .hasSize(4);
+        assertThat(metricsRoots).hasSize(16);
+        assertThat(metricsRoots.stream().map(SpanData::getTraceId).distinct().toList())
+                .hasSize(16);
         assertThat(metrics).hasSize(16);
         assertThat(rowsFor(run)).hasSize(16).allSatisfy(row -> {
-            final SpanData root = roots.stream()
+            final SpanData execution = executions.stream()
                     .filter(s -> row.getTraceId().equals(s.getTraceId()))
                     .findFirst()
                     .orElseThrow();
-            assertThat(root.getAttributes().get(AttributeKey.stringKey(TracingConstants.TESTCASE_ID)))
+            assertThat(execution.getAttributes().get(AttributeKey.stringKey(TracingConstants.TESTCASE_ID)))
                     .isEqualTo(row.getTestCaseId().toString());
-            assertThat(root.getAttributes().get(AttributeKey.stringKey(TracingConstants.RUN_INDEX)))
+            assertThat(execution.getAttributes().get(AttributeKey.stringKey(TracingConstants.RUN_INDEX)))
                     .isEqualTo(Integer.toString(row.getRunIndex()));
+            final SpanData metricsRoot = metricsRoots.stream()
+                    .filter(s -> row.getId()
+                            .toString()
+                            .equals(s.getAttributes().get(AttributeKey.stringKey(TracingConstants.RESULT_ID))))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(metricsRoot.getParentSpanContext().isValid()).isFalse();
+            assertThat(metricsRoot.getLinks())
+                    .extracting(LinkData::getSpanContext)
+                    .containsExactlyInAnyOrder(orchestration.getSpanContext(), execution.getSpanContext());
             assertThat(metrics).anySatisfy(metric -> {
                 assertThat(metric.getAttributes().get(AttributeKey.stringKey(TracingConstants.RESULT_ID)))
                         .isEqualTo(row.getId().toString());
-                assertThat(metric.getParentSpanId()).isEqualTo(root.getSpanId());
-                assertThat(metric.getTraceId()).isEqualTo(root.getTraceId());
-                assertThat(root.getStartEpochNanos()).isLessThanOrEqualTo(metric.getStartEpochNanos());
-                assertThat(root.getEndEpochNanos()).isGreaterThanOrEqualTo(metric.getEndEpochNanos());
+                assertThat(metric.getParentSpanId()).isEqualTo(metricsRoot.getSpanId());
+                assertThat(metric.getTraceId()).isEqualTo(metricsRoot.getTraceId());
             });
         });
+        assertCostAttributionBaggage(run, rowsFor(run));
+    }
+
+    private void assertCostAttributionBaggage(TestSuiteRunResponseDto run, List<TestCaseRunResult> rows) {
+        final String runId = run.getId().toString();
+        final Set<String> caseIds = rows.stream()
+                .map(row -> row.getTestCaseId().toString())
+                .collect(Collectors.toSet());
+        assertThat(deploymentBaggage).hasSize(16).allSatisfy(baggage -> {
+            assertThat(baggage)
+                    .containsEntry(TracingConstants.EVAL_RUN_ID, runId)
+                    .containsEntry(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_EXECUTION)
+                    .containsKey(TracingConstants.RUN_INDEX)
+                    .doesNotContainKey(TracingConstants.RESULT_ID);
+            assertThat(caseIds).contains(baggage.get(TracingConstants.TESTCASE_ID));
+        });
+        assertThat(providerBaggage).hasSize(16).allSatisfy(baggage -> assertThat(baggage)
+                .containsEntry(TracingConstants.EVAL_RUN_ID, runId)
+                .containsEntry(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION));
+        assertThat(providerBaggage)
+                .extracting(
+                        baggage -> baggage.get(TracingConstants.TESTCASE_ID),
+                        baggage -> baggage.get(TracingConstants.RUN_INDEX),
+                        baggage -> baggage.get(TracingConstants.RESULT_ID))
+                .containsExactlyInAnyOrderElementsOf(rows.stream()
+                        .map(row -> tuple(
+                                row.getTestCaseId().toString(),
+                                Integer.toString(row.getRunIndex()),
+                                row.getId().toString()))
+                        .toList());
     }
 }

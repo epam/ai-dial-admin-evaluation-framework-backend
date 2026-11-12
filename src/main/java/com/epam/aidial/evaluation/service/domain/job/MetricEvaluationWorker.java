@@ -63,10 +63,27 @@ public class MetricEvaluationWorker {
                 .setAttribute(TracingConstants.RUN_INDEX, String.valueOf(result.getRunIndex()))
                 .setAttribute(TracingConstants.RESULT_ID, result.getId().toString())
                 .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION);
+        setRowPosition(spanBuilder, result, context);
         return context.getTraceSession() == null
                 ? spanBuilder.startSpan()
                 : context.getTraceSession()
                         .startMetricsSpan(spanBuilder, result.getTestCaseId(), result.getRunIndex());
+    }
+
+    /**
+     * Stamps the result row's request/turn position, so a row's metrics trace is distinguishable from the
+     * other rows (turns, chained requests) of the same test-case repetition.
+     */
+    private static void setRowPosition(SpanBuilder spanBuilder, TestCaseRunResult result, MetricEvaluationContext context) {
+        spanBuilder
+                .setAttribute(TracingConstants.REQUEST_INDEX, String.valueOf(result.getRequestIndex()))
+                .setAttribute(TracingConstants.REQUEST_TOTAL, String.valueOf(result.getTotalRequests()))
+                .setAttribute(TracingConstants.TURN_INDEX, String.valueOf(result.getTurnIndex()))
+                .setAttribute(TracingConstants.TURN_TOTAL, String.valueOf(result.getTotalTurns()));
+        final String requestName = context.requestLabelAt(result.getRequestIndex());
+        if (requestName != null) {
+            spanBuilder.setAttribute(TracingConstants.REQUEST_NAME, requestName);
+        }
     }
 
     /**
@@ -102,6 +119,7 @@ public class MetricEvaluationWorker {
                         TracingConstants.EVAL_SUITE_ID, context.getTestSuiteId().toString())
                 .setAttribute(TracingConstants.METRIC_DECLARATION_NAME, tsmd.getMetricDeclarationName())
                 .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION);
+        setRowPosition(spanBuilder, result, context);
         // Parent is the row's eval.testcase.metrics span, made current by the dispatching executor
         final Span span = spanBuilder.startSpan();
 

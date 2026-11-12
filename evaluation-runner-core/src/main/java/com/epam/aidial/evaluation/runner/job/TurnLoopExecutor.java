@@ -97,6 +97,7 @@ public class TurnLoopExecutor {
     private final QuietJsonService jsonService;
     private final DeploymentTurnInvoker deploymentTurnInvoker;
     private final PerTurnBindingDetector perTurnBindingDetector;
+    private final TurnTracer turnTracer;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -168,17 +169,24 @@ public class TurnLoopExecutor {
                         plan.stampTurnIndices() ? jsonService.writeOrToString(turnData) : plan.verbatimDataJson();
 
                 final long turnStart = clock.millis();
-                final TurnStepResult step = runOneTurn(
-                        template,
-                        bindings,
-                        turnData,
-                        method,
-                        responseColumns,
-                        accumulated,
-                        input.getTestCaseId(),
-                        turnIndex,
-                        context,
-                        target);
+                final Map<String, Object> frame = accumulated;
+                final int currentTurn = turnIndex;
+                final TurnStepResult step = turnTracer.inTurnSpan(
+                        spec,
+                        currentTurn,
+                        totalTurns,
+                        () -> runOneTurn(
+                                template,
+                                bindings,
+                                turnData,
+                                method,
+                                responseColumns,
+                                frame,
+                                input.getTestCaseId(),
+                                currentTurn,
+                                context,
+                                target),
+                        TurnLoopExecutor::describeFailure);
                 final long turnEnd = clock.millis();
 
                 if (step.control() == TurnControl.CONTINUE) {
@@ -633,6 +641,16 @@ public class TurnLoopExecutor {
             }
         }
         return headers;
+    }
+
+    /** Turn-span failure for an aborted turn; null when the turn continues the loop. */
+    private static TurnTracer.TurnFailure describeFailure(TurnStepResult step) {
+        if (step.control() == TurnControl.CONTINUE) {
+            return null;
+        }
+        return new TurnTracer.TurnFailure(
+                "Turn aborted with status " + step.status(),
+                step.outcome() != null ? step.outcome().logDetails() : null);
     }
 
     private enum TurnControl {

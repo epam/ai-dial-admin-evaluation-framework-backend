@@ -2,6 +2,17 @@
 
 Browser client for `POST /api/v1/queries/execute`.
 
+Besides execute, the page calls the schema endpoints to populate the Builder (entity list,
+field lists):
+
+- `GET /api/v1/queries/entities`
+- `GET /api/v1/queries/entities/schema/{name}`
+- `GET /api/v1/queries/entities/schema/{name}/detailed` (only for complex, i.e. instanced, entities
+  when an id value is entered)
+
+All of them go through the same `/api/*` proxy when the in-page "API base" setting is empty; a non-empty
+API base sends them straight to that URL.
+
 ## Run
 
 ```bash
@@ -18,7 +29,7 @@ the backend sends no CORS headers, so the page must share its origin.
 | Flag | Default | Meaning |
 |---|---|---|
 | `--port` | `8099` | Port the console listens on (`127.0.0.1` only). |
-| `--backend` | `http://localhost:8096` | Backend base URL to forward `/api/*` to. |
+| `--backend` | `http://localhost:8080` | Backend base URL to forward `/api/*` to (backend default `server.port`). |
 
 ### In-page settings
 

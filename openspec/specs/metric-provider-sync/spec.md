@@ -14,7 +14,7 @@ This spec defines how the system configures multiple metric provider services, c
 
 ### Requirement: Configure metric providers
 
-The system SHALL support configuration of multiple metric provider services via a **map** keyed by provider id (e.g. `metric-providers.<provider-id>.base-url`). Each entry SHALL include a required per-entry `enabled` flag, a base URL, and optional connect/read timeouts. The `enabled` field SHALL be validated as non-null so that every configured entry declares its state explicitly. The provider id SHALL be the map key (not a field inside the entry). Sync SHALL be configurable (e.g. enabled flag and cron expression or fixed delay) under `metric-providers.sync`. Defaults SHALL be defined in application configuration, not in code.
+The system SHALL support configuration of multiple metric provider services via a **map** keyed by provider id (e.g. `metric-providers.providers.<provider-id>.base-url`). Each entry SHALL include a required per-entry `enabled` flag, a base URL, and optional connect/read timeouts that fall back to `metric-providers.defaults.connect-timeout-ms` / `read-timeout-ms` (both required). The `enabled` field SHALL be validated as non-null so that every configured entry declares its state explicitly. The provider id SHALL be the map key (not a field inside the entry). Sync SHALL be configurable (enabled flag and cron expression) under `metric-providers.sync`. Defaults SHALL be defined in application configuration, not in code.
 
 #### Scenario: Multiple providers configured
 
@@ -132,7 +132,7 @@ The system SHALL NOT remove or delete a MetricDeclaration when a provider's GET 
 
 ### Requirement: Document environment variables for first provider and sync schedule
 
-The configuration documentation SHALL list the environment variable names that override metric provider entries using the **map-based pattern** `METRIC_PROVIDERS_<UPPER_ID>_<PROPERTY>`. For the default `dial` provider, the documented variables SHALL include at least: enable flag, base URL, and optional connect and read timeouts (`METRIC_PROVIDERS_DIAL_ENABLED`, `METRIC_PROVIDERS_DIAL_BASE_URL`, `METRIC_PROVIDERS_DIAL_CONNECT_TIMEOUT_MS`, `METRIC_PROVIDERS_DIAL_READ_TIMEOUT_MS`). Any further stock provider entry shipped in the default configuration (e.g. a disabled-by-default `extra` slot) SHALL have its own env vars documented the same way, including its default enabled state. The provider id SHALL be the YAML map key (`dial`), not configurable via an environment variable. The `metric-providers.sync.enabled` property SHALL be sourced from an environment variable (e.g. `METRIC_PROVIDERS_SYNC_ENABLED`, default `false`) and the `metric-providers.sync.cron` property from an environment variable (e.g. `METRIC_PROVIDERS_SYNC_CRON`); both SHALL be documented in the configuration documentation.
+The configuration documentation SHALL list the environment variable names that override the stock metric provider entries using the pattern `METRIC_PROVIDERS_<UPPER_ID>_<PROPERTY>`; these names SHALL be backed by explicit placeholders in the default configuration. For the default `dial` provider, the documented variables SHALL include at least: enable flag, base URL, and optional connect and read timeouts (`METRIC_PROVIDERS_DIAL_ENABLED`, `METRIC_PROVIDERS_DIAL_BASE_URL`, `METRIC_PROVIDERS_DIAL_CONNECT_TIMEOUT_MS`, `METRIC_PROVIDERS_DIAL_READ_TIMEOUT_MS`). Any further stock provider entry shipped in the default configuration (e.g. a disabled-by-default `extra` slot) SHALL have its own env vars documented the same way, including its default enabled state. The provider id SHALL be the YAML map key (`dial`), not configurable via an environment variable. The `metric-providers.sync.enabled` property SHALL be sourced from an environment variable (e.g. `METRIC_PROVIDERS_SYNC_ENABLED`, default `false`) and the `metric-providers.sync.cron` property from an environment variable (e.g. `METRIC_PROVIDERS_SYNC_CRON`); both SHALL be documented in the configuration documentation. The shared timeout defaults SHALL be sourced from `METRIC_PROVIDERS_DEFAULTS_CONNECT_TIMEOUT_MS` / `METRIC_PROVIDERS_DEFAULTS_READ_TIMEOUT_MS`. For a provider id not shipped in the default configuration, the documentation SHALL give Spring Boot's relaxed-binding form (`METRICPROVIDERS_PROVIDERS_<UPPER_ID>_<PROPERTY_WITHOUT_DASHES>`, e.g. `METRICPROVIDERS_PROVIDERS_CUSTOM_BASEURL`).
 
 #### Scenario: Single provider configured via env vars
 
@@ -142,11 +142,11 @@ The configuration documentation SHALL list the environment variable names that o
 #### Scenario: Env var names documented
 
 - **WHEN** an operator reads the configuration documentation for metric providers
-- **THEN** the documentation SHALL include the exact environment variable names using the map-based pattern (`METRIC_PROVIDERS_<UPPER_ID>_<PROPERTY>`) so they can override base-url and timeouts for any configured provider
+- **THEN** the documentation SHALL include the exact environment variable names (`METRIC_PROVIDERS_<UPPER_ID>_<PROPERTY>` for stock entries, the relaxed-binding form for new ids) so they can override base-url and timeouts for any provider
 
 #### Scenario: Provider enable flag from environment
 
-- **WHEN** an operator sets `METRIC_PROVIDERS_<UPPER_ID>_ENABLED` for a configured provider entry
+- **WHEN** an operator sets `METRIC_PROVIDERS_<UPPER_ID>_ENABLED` for a stock provider entry
 - **THEN** the application SHALL use that value for that entry's `enabled` flag (no YAML edit required)
 
 #### Scenario: Sync cron from environment

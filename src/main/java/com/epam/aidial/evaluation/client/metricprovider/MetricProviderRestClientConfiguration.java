@@ -29,8 +29,8 @@ public class MetricProviderRestClientConfiguration {
                         Map.Entry::getKey,
                         entry -> buildRestClient(
                                 entry.getValue().getBaseUrl(),
-                                entry.getValue().getConnectTimeoutMs(),
-                                entry.getValue().getReadTimeoutMs(),
+                                properties.resolveConnectTimeoutMs(entry.getValue()),
+                                properties.resolveReadTimeoutMs(entry.getValue()),
                                 openTelemetry)));
         return new MetricProviderRestClientFactory(clients);
     }

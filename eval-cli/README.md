@@ -23,6 +23,15 @@ choice, not a stable environment default. `run` and `evaluate` also accept `--de
 reference instead of requiring an explicit override. Everything else (source/target auth, target host)
 is env-var-only — see [Configuration](#configuration).
 
+### Output files
+
+Per selected source suite, under `cli.work-dir`:
+
+| File | Written by | Read by |
+|------|------------|---------|
+| `<workDir>/<sourceSuiteId>.json` | `fetch` | `run` |
+| `<workDir>/<sourceSuiteId>-results.csv` | `run` | `import` |
+
 ## Quick start
 
 ```bash
@@ -66,6 +75,19 @@ docker run --rm \
     --clone-suffix eval \
     --deployment-id my-model
 ```
+
+The entrypoint (`eval-cli/docker-entrypoint.sh`) runs `java $DEBUG_OPTS $JAVA_OPTS -jar eval-cli.jar "$@"`:
+
+| Variable | Meaning |
+|----------|---------|
+| `JAVA_OPTS` | Extra JVM options (e.g. `-Xmx1g`). |
+| `DEBUG_OPTS` | Extra JVM options, typically a JDWP agent for remote debugging. |
+| `USE_SYSTEM_CA_CERTS` | Any non-empty value imports certificates mounted under `/certificates/` into the JVM trust store at startup (private / self-signed CAs). |
+
+The container runs as non-root `appuser` (uid `1001`) with working directory `/app`. A host
+directory mounted to `/app/eval-cli-work` must be writable by uid 1001 (e.g.
+`mkdir eval-cli-work && chown 1001 eval-cli-work`, or `chmod o+w`), otherwise `fetch`/`run` fail to
+write their files.
 
 ## Configuration
 
@@ -112,10 +134,10 @@ these two, `--deployment-id` (also CLI-flag-only) is optional — see the [Comma
 
 | Property | Environment Variable | Default | Required | Description |
 |----------|---------------------|---------|----------|-------------|
-| `cli.run.concurrency-level` | `CLI_RUN_CONCURRENCY_LEVEL` | `4` | Yes | Number of test cases executed concurrently (threads from the run worker executor; virtual by default, see Thread mode). |
+| `cli.run.concurrency-level` | `CLI_RUN_CONCURRENCY_LEVEL` | `4` | Yes | Number of test cases executed concurrently (threads from the run worker executor; virtual by default, see Thread mode). Min: 1. |
 | `cli.run.rate-limit-rps` | `CLI_RUN_RATE_LIMIT_RPS` | _(unbounded)_ | No | Optional rate limit in requests per second sent to the target deployment. |
 | `cli.run.request-timeout-ms` | `CLI_RUN_REQUEST_TIMEOUT_MS` | `3600000` | Yes | Per-request timeout for deployment invocations (ms). Min: 1000. |
-| `cli.run.max-retries` | `CLI_RUN_MAX_RETRIES` | `3` | Yes | Maximum number of retries per test case on transient failures. |
+| `cli.run.max-retries` | `CLI_RUN_MAX_RETRIES` | `3` | Yes | Maximum number of retries per test case on transient failures. Min: 0. |
 | `cli.run.retry-delay-ms` | `CLI_RUN_RETRY_DELAY_MS` | `1000` | Yes | Initial delay between retries (ms). |
 | `cli.run.retry-backoff-multiplier` | `CLI_RUN_RETRY_BACKOFF_MULTIPLIER` | `2.0` | Yes | Exponential backoff multiplier applied to `retry-delay-ms` on each retry. Min: 1.0. |
 | `cli.run.max-retry-delay-ms` | `CLI_RUN_MAX_RETRY_DELAY_MS` | `30000` | Yes | Maximum delay between retries regardless of backoff (ms). |
@@ -141,6 +163,29 @@ CLI-flag override for `base-url` — it is env-var-only, set once per target env
 | `dial.components.core.retry.multiplier` | `DIAL_CORE_RETRY_MULTIPLIER` | `2.0` | No | Backoff multiplier for DIAL Core client retries. |
 | `dial.components.core.try-out.read-timeout-ms` | `DIAL_CORE_TRY_OUT_READ_TIMEOUT_MS` | `3600000` | No | Long-poll read timeout for deployment invocations (ms). Should be ≥ `cli.run.request-timeout-ms`. |
 
+### DIAL Core MCP client (`dial.mcp.*`)
+
+Used when a fetched suite targets an MCP tool (invoked through DIAL Core's MCP proxy).
+
+| Property | Environment Variable | Default | Required | Description |
+|----------|---------------------|---------|----------|-------------|
+| `dial.mcp.connect-timeout-ms` | `DIAL_MCP_CONNECT_TIMEOUT_MS` | `5000` | No | MCP client connection timeout (ms). Min: 0. |
+| `dial.mcp.read-timeout-ms` | `DIAL_MCP_READ_TIMEOUT_MS` | `120000` | No | MCP client read timeout (ms). Min: 0. |
+
+### DIAL Core file storage (`dial.file-storage.*`)
+
+Used to resolve FILE references (`@ef/suites/...`, `@ef/datasets/...`) in test cases against DIAL Core
+file storage.
+
+| Property | Environment Variable | Default | Required | Description |
+|----------|---------------------|---------|----------|-------------|
+| `dial.file-storage.bucket-alias` | `DIAL_FILE_STORAGE_BUCKET_ALIAS` | `@ef` | No | Alias prefix marking EF-owned file references. |
+| `dial.file-storage.max-file-size-bytes` | `DIAL_FILE_STORAGE_MAX_FILE_SIZE_BYTES` | `52428800` | No | Maximum file size (bytes). Default: 50 MiB. Min: 1. |
+| `dial.file-storage.max-files-per-suite` | `DIAL_FILE_STORAGE_MAX_FILES_PER_SUITE` | `100` | No | Maximum files per suite. Min: 1. |
+| `dial.file-storage.max-files-per-dataset` | `DIAL_FILE_STORAGE_MAX_FILES_PER_DATASET` | `100` | No | Maximum files per dataset. Min: 1. |
+| `dial.file-storage.connect-timeout-ms` | `DIAL_FILE_STORAGE_CONNECT_TIMEOUT_MS` | `5000` | No | File storage connection timeout (ms). Min: 0. |
+| `dial.file-storage.read-timeout-ms` | `DIAL_FILE_STORAGE_READ_TIMEOUT_MS` | `30000` | No | File storage read timeout (ms). Min: 0. |
+
 ### Shared `evaluation-runner-core` bounds (`test-suite-run.*`, `sse-event-processing.*`)
 
 `evaluation-runner-core`'s `EvaluationWorker` and SSE parsing require these two property groups to be
@@ -165,6 +210,15 @@ request-build time (headers a test case cannot override, including the `Api-Key`
 | `test-suite-run.retry.max-retry-backoff-multiplier` | `TEST_SUITE_RUN_MAX_RETRY_BACKOFF_MULTIPLIER` | `10.0` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.run-inputs.retention-days` | `TEST_SUITE_RUN_RUN_INPUTS_RETENTION_DAYS` | `7` | Yes | Unused by eval-cli (no DB retention job runs here); must bind. |
 | `sse-event-processing.max-total-duration-ms` | `SSE_MAX_TOTAL_DURATION_MS` | `3600000` | Yes | Absolute cap on how long a single SSE stream may be parsed during a streaming deployment invocation. |
+
+### JSONata evaluation bounds (`jsonata.*`)
+
+Runtime bounds applied to every JSONata evaluation (request templates, response columns, conditions).
+
+| Property | Environment Variable | Default | Required | Description |
+|----------|---------------------|---------|----------|-------------|
+| `jsonata.evaluation-timeout-ms` | `JSONATA_EVALUATION_TIMEOUT_MS` | `10000` | Yes | Maximum wall-clock time for one JSONata evaluation (ms). Min: 1. |
+| `jsonata.max-recursion-depth` | `JSONATA_MAX_RECURSION_DEPTH` | `1000` | Yes | Maximum JSONata recursion depth. Min: 1. |
 
 ### Thread mode (`spring.threads.virtual.enabled`)
 

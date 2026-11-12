@@ -222,5 +222,10 @@ Specs documented but not yet fully implemented.
 
 - **[metrics-system](metrics-system/spec.md)** — Partial
   Metric declarations/versioning and metric results storage. Implemented: paginated/sorted/filtered declaration list (provider-synced only; the seeded stubs were dropped by migration), `GET /{id}/latest` for one declaration's latest version, and `GET /versions/latest` returning every declaration with its latest version nested, plus per-declaration uniqueness of `schema_version`. Planned: MetricResult reproducibility and recalculation.
-- **[evaluation-runs](evaluation-runs/spec.md)** — Planned
-  Running suites, storing run history and per-case results.
+
+### Superseded
+
+Early vision specs whose scope is now implemented and owned by other specs; kept for history, not maintained.
+
+- **[evaluation-runs](evaluation-runs/spec.md)** — Superseded
+  Original run vision (trigger run, per-case results, run history). Now covered by [test-suite-runs](test-suite-runs/spec.md), [runner-and-jobs](runner-and-jobs/spec.md) and [analytics-eval-results](analytics-eval-results/spec.md).

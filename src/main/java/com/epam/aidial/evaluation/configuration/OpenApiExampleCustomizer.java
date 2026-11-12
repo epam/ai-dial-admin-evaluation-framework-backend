@@ -61,7 +61,8 @@ public class OpenApiExampleCustomizer implements OpenApiCustomizer {
         });
     }
 
-    private static String pathToKey(String path) {
+    /** Maps a registered OpenAPI path to the {@code pathKey} prefix of its example file names. */
+    public static String pathToKey(String path) {
         // Trailing-wildcard mappings (slash-containing path values, e.g. deployment IDs) are registered
         // by SpringDoc with the '/**' intact. Dropping it keeps example filenames free of '*', which is
         // illegal on Windows and shell-glob-hostile everywhere.

@@ -1,0 +1,8 @@
+{
+  "path": "/api/v1/datasets/550e8400-e29b-41d4-a716-446655440000",
+  "method": "DELETE",
+  "status": 409,
+  "code": "INVALID_OPERATION",
+  "error": "Conflict",
+  "message": "Dataset 550e8400-e29b-41d4-a716-446655440000 cannot be deleted because it is referenced by 2 test suite(s): smoke-suite, regression-suite"
+}

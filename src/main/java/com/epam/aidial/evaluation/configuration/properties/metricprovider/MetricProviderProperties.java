@@ -28,9 +28,24 @@ public class MetricProviderProperties {
     @Valid
     private Map<String, ProviderEntry> providers = new LinkedHashMap<>();
 
+    /** Timeouts applied to every provider entry that does not set its own. */
+    @NotNull
+    @Valid
+    private Defaults defaults = new Defaults();
+
     @NotNull
     @Valid
     private SyncSettings sync = new SyncSettings();
+
+    /** Connect timeout for {@code entry}: its own value, else {@code defaults.connect-timeout-ms}. */
+    public int resolveConnectTimeoutMs(ProviderEntry entry) {
+        return entry.getConnectTimeoutMs() != null ? entry.getConnectTimeoutMs() : defaults.getConnectTimeoutMs();
+    }
+
+    /** Read timeout for {@code entry}: its own value, else {@code defaults.read-timeout-ms}. */
+    public int resolveReadTimeoutMs(ProviderEntry entry) {
+        return entry.getReadTimeoutMs() != null ? entry.getReadTimeoutMs() : defaults.getReadTimeoutMs();
+    }
 
     @Getter
     @Setter
@@ -41,11 +56,25 @@ public class MetricProviderProperties {
         @NotBlank(message = "Metric provider base-url is required")
         private String baseUrl;
 
+        /** Optional; falls back to {@code defaults.connect-timeout-ms}. */
         @Min(0)
-        private int connectTimeoutMs = 5000;
+        private Integer connectTimeoutMs;
 
+        /** Optional; falls back to {@code defaults.read-timeout-ms}. */
         @Min(0)
-        private int readTimeoutMs = 30000;
+        private Integer readTimeoutMs;
+    }
+
+    @Getter
+    @Setter
+    public static class Defaults {
+        @NotNull
+        @Min(0)
+        private Integer connectTimeoutMs;
+
+        @NotNull
+        @Min(0)
+        private Integer readTimeoutMs;
     }
 
     @Getter
@@ -53,13 +82,9 @@ public class MetricProviderProperties {
     public static class SyncSettings {
 
         /** When false, the metric provider sync job is not scheduled. */
-        private boolean enabled = false;
+        private boolean enabled;
 
         /** Cron expression for scheduled sync (e.g. every 5 minutes). Use "-" to disable recurring. */
-        private String cron = "-";
-
-        /** Fixed delay in milliseconds between sync runs. Optional if cron is set. */
-        @Min(0)
-        private long fixedDelayMs = 0;
+        private String cron;
     }
 }

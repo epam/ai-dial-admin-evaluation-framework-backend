@@ -160,7 +160,6 @@ context: |
   MCP Server (inbound): exposes this application as an MCP server (Streamable HTTP at `/mcp`, sync, tools capability
   only) so an MCP-capable agent can drive it directly; first tool group is deployments (`list_deployments`,
   `get_deployment`); protected identically to `/api/v1/**`.
-  Vision/planned: Evaluation Runs, Runner & Jobs.
 
   # Design Documentation
   - docs/design/entity-relationship-model.md
@@ -313,7 +312,7 @@ context: |
   #
   # MUST update specs/README.md when:
   # - New spec folder added to openspec/specs/
-  # - Spec status changes (Planned → Partial → Implemented)
+  # - Spec status changes (Planned → Partial → Implemented, or → Superseded)
   # - Spec summary becomes materially inaccurate (major capabilities added/removed/renamed)
   # - Spec is removed, renamed, or moved between categories
   #
@@ -368,6 +367,6 @@ rules:
     - If change includes Flyway migrations, verify docs/database-schema.md reflects new table structures, columns, indexes, and JSONB schemas.
     - Ensure all implementation notes in specs point to code that actually exists.
     - 'Delta spec sync: delta specs (openspec/changes/<name>/specs/) are FRAGMENTS containing only additions/modifications from a change — they are NOT complete specs. NEVER copy delta specs over main specs (openspec/specs/). Always use the /opsx:sync skill which performs intelligent merging. After sync, verify with `git diff` that main specs gained content and did not lose existing requirements.'
-    - 'specs/README.md auto-sync (ALWAYS perform, do not skip): List all folders under openspec/specs/. For each folder absent from README.md, add an entry with correct status (Implemented/Partial/Planned) and a one-sentence summary derived from the spec. Remove entries for folders that no longer exist. This is mechanical — do it inline, do not treat it as a separate task.'
+    - 'specs/README.md auto-sync (ALWAYS perform, do not skip): List all folders under openspec/specs/. For each folder absent from README.md, add an entry with correct status (Implemented/Partial/Planned/Superseded) and a one-sentence summary derived from the spec. Remove entries for folders that no longer exist. This is mechanical — do it inline, do not treat it as a separate task.'
     - 'AGENTS.md review (ALWAYS perform, do not skip): Read AGENTS.md. Compare it against this change''s proposal, design, and tasks. If the change introduced new packages, unique patterns, cross-cutting conventions, or code templates not yet documented in AGENTS.md, update AGENTS.md now following the AGENTS.md Maintenance guidelines. Do not defer to a pre-existing task — if the task was missed, fix it here.'
     - 'config.yaml context review: Read the Feature Surface, Key Patterns, Glossary, and Tooling sections of config.yaml context. If the change introduced new top-level packages, architectural layers, cross-cutting conventions, new tooling commands, or new glossary terms, update the relevant sections per the Config Maintenance Policy. If the change only adds features following existing patterns, skip this step.'

@@ -17,6 +17,7 @@ This document is the operator-facing reference for every configurable property o
    - [Identity Providers](#32-identity-providers)
    - [JWT Claim Resolution](#33-jwt-claim-resolution)
    - [DIAL API-Key Authentication](#34-dial-api-key-authentication)
+   - [DIAL Application Mode](#35-dial-application-mode)
 4. [Data Layer](#4-data-layer)
    - [Meta Datasource](#41-meta-datasource)
    - [Analytics Datasource](#42-analytics-datasource)
@@ -30,6 +31,7 @@ This document is the operator-facing reference for every configurable property o
    - [DIAL MCP Client](#54-dial-mcp-client)
    - [DIAL ADAS Client](#55-dial-adas-client)
    - [DIAL ADAS Client — Query Result Extension](#56-dial-adas-client--query-result-extension)
+   - [DIAL Application Route Registration](#57-dial-application-route-registration)
 6. [Evaluation Engine](#6-evaluation-engine)
    - [Test Suite Run — SSE](#61-test-suite-run--sse)
    - [Test Suite Run — Execution Settings](#62-test-suite-run--execution-settings)
@@ -52,6 +54,7 @@ This document is the operator-facing reference for every configurable property o
    - [Test Case Batch](#75-test-case-batch)
 8. [Observability](#8-observability)
    - [Grafana Integration](#81-grafana-integration)
+   - [OpenTelemetry](#82-opentelemetry)
 9. [Notes](#9-notes)
 
 ---
@@ -80,23 +83,28 @@ The structure of this document — the six-column schema, the four-term `Require
 
 ## 2. Spring Framework Configuration
 
+`application.yml` also sets a few Spring internals that are wiring decisions, not operator tunables, and are intentionally not listed as rows: `spring.main.allow-bean-definition-overriding=true`, `spring.autoconfigure.exclude` (Boot's jOOQ auto-config; DSLContexts are built per datasource) and `spring.flyway.enabled=false` (see [4.4 Flyway](#44-flyway)). Do not override them.
+
 ### 2.1 Server
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `server.port` | `SERVER_PORT` | `8080` | No | - | HTTP port the application listens on. |
 | `server.tomcat.accesslog.enabled` | `SERVER_TOMCAT_ACCESSLOG_ENABLED` | `true` | No | - | Enables Tomcat access logging. |
-| `server.tomcat.accesslog.pattern` | `SERVER_TOMCAT_ACCESSLOG_PATTERN` | `%{X-Correlation-Id}i %h %l %u %t "%r" %s %b %D` | No | - | Tomcat access log format. Correlation ID is captured first for log correlation with application logs. |
+| `server.tomcat.accesslog.pattern` | `SERVER_TOMCAT_ACCESSLOG_PATTERN` | `%{X-Correlation-Id}i %h %l %u %t "%r" %s %b %D` | No | `server.tomcat.accesslog.enabled=true` | Tomcat access log format. Correlation ID is captured first for log correlation with application logs. |
 | `server.tomcat.max-http-post-size` | `SERVER_TOMCAT_MAX_HTTP_POST_SIZE` | `10485760` | No | - | Tomcat-level cap on POST body size in bytes (10 MB). Also enforced by application-level `analytics.*.batch.max-request-size-bytes`. |
 
 ### 2.2 Actuator
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
+| `management.server.port` | `MANAGEMENT_SERVER_PORT` | `9464` | No | - | Separate HTTP port serving the Actuator endpoints. Actuator is not reachable on `server.port`. |
 | `management.endpoints.web.exposure.include` | `MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE` | `health,info,prometheus,metrics` | No | - | Comma-separated list of Spring Boot Actuator endpoints exposed over HTTP. |
 | `management.endpoint.health.show-details` | `MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS` | `when_authorized` | No | - | Visibility of detailed health data (`never`, `when_authorized`, `always`). |
+| `management.health.db.enabled` | `MANAGEMENT_HEALTH_DB_ENABLED` | `true` | No | - | Enables the datasource health indicators (`database`, `analyticsDatabase`). |
+| `management.health.group.readiness.include` | `MANAGEMENT_HEALTH_GROUP_READINESS_INCLUDE` | `dialFileStorage,database,analyticsDatabase` | No | - | Health indicators that make up the `readiness` group (`/actuator/health/readiness`). |
 
-**Available endpoints** (when exposed): `GET /actuator/health` (application readiness — includes `dialFileStorage`, `database`, `analyticsDatabase` health indicators), `GET /actuator/info`, `GET /actuator/prometheus`, `GET /actuator/metrics`.
+**Available endpoints** (when exposed, on `management.server.port`): `GET /actuator/health` (application readiness — includes `dialFileStorage`, `database`, `analyticsDatabase` health indicators), `GET /actuator/info`, `GET /actuator/prometheus`, `GET /actuator/metrics`.
 
 ### 2.3 OpenAPI
 
@@ -104,6 +112,7 @@ The structure of this document — the six-column schema, the four-term `Require
 |---|---|---|---|---|---|
 | `springdoc.api-docs.enabled` | `SPRINGDOC_API_DOCS_ENABLED` | `true` | No | - | Enables OpenAPI document generation. |
 | `springdoc.api-docs.path` | `SPRINGDOC_API_DOCS_PATH` | `/v3/api-docs` | No | - | HTTP path serving the generated OpenAPI document. |
+| `springdoc.default-produces-media-type` | `SPRINGDOC_DEFAULT_PRODUCES_MEDIA_TYPE` | `application/json` | No | - | Media type documented for responses that declare none (including exception-handler error responses). Affects the generated document only, not runtime content negotiation; lets `OpenApiExampleCustomizer` attach response examples. |
 | `springdoc.swagger-ui.enabled` | `SPRINGDOC_SWAGGER_UI_ENABLED` | `true` | No | - | Enables the Swagger UI console. |
 | `springdoc.swagger-ui.path` | `SPRINGDOC_SWAGGER_UI_PATH` | `/swagger-ui.html` | No | - | HTTP path where Swagger UI is served. |
 
@@ -144,7 +153,19 @@ Example `logging.levels.json`:
 
 `configuredLevel` is applied until `validTill` (epoch millis); after that the logger reverts to `defaultLevel`.
 
-#### 2.4.3 Correlation ID
+#### 2.4.3 Method Trace Interceptor
+
+Opt-in entry/exit logging of every method on `@LogExecution`-annotated beans (troubleshooting only — arguments and return values are logged verbatim).
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `app.customizable-trace-interceptor.enabled` | `CUSTOMIZABLE_TRACE_INTERCEPTOR_ENABLED` | `false` | No | - | Registers the trace interceptor and its advisor. |
+| `app.customizable-trace-interceptor.messages.ENTER` | - | `Enter: $[methodName]($[arguments])` | No | `app.customizable-trace-interceptor.enabled=true` | Method-entry message template (Spring `CustomizableTraceInterceptor` placeholders). Map entries are set in YAML only. |
+| `app.customizable-trace-interceptor.messages.EXIT` | - | `Exit:  $[methodName]() in $[invocationTime]ms → $[returnValue]` | No | `app.customizable-trace-interceptor.enabled=true` | Method-exit message template. |
+| `app.customizable-trace-interceptor.messages.EXCEPTION` | - | `Exception: $[methodName]() in $[invocationTime]ms` | No | `app.customizable-trace-interceptor.enabled=true` | Message template when a method throws. |
+| `app.trace-log-advisor.expression` | `APP_TRACE_LOG_ADVISOR_EXPRESSION` | `@within(com.epam.aidial.evaluation.runner.config.logging.LogExecution)` | No | `app.customizable-trace-interceptor.enabled=true` | AspectJ pointcut selecting the methods the interceptor wraps. |
+
+#### 2.4.4 Correlation ID
 
 Every HTTP request is assigned a correlation ID that appears in access logs, application logs, and the response headers. If the inbound request carries a valid `X-Correlation-Id` header (16–32 alphanumeric characters) it is reused; otherwise a new ID is generated from the OpenTelemetry trace ID when present, or randomly when not.
 
@@ -160,7 +181,7 @@ Spring AI's MCP server, exposed under root `spring.ai.mcp.server.*`. This is the
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
-| `spring.ai.mcp.server.enabled` | `SPRING_AI_MCP_SERVER_ENABLED` | `true` | No | - | Enables the inbound MCP server. When `false`, the MCP transport endpoint (`/mcp`) answers HTTP 404 and no tool is reachable; REST is unaffected. |
+| `spring.ai.mcp.server.enabled` | `SPRING_AI_MCP_SERVER_ENABLED` | `false` | No | - | Enables the inbound MCP server. When `false`, the MCP transport endpoint (`/mcp`) answers HTTP 404 and no tool is reachable; REST is unaffected. |
 | `spring.ai.mcp.server.stdio` | `SPRING_AI_MCP_SERVER_STDIO` | `false` | No | `spring.ai.mcp.server.enabled=true` | Enables the stdio transport (for a locally-spawned MCP client). Left `false`; this application is reached over HTTP only. |
 | `spring.ai.mcp.server.name` | `SPRING_AI_MCP_SERVER_NAME` | `ai-dial-admin-evaluation-framework-backend` | No | `spring.ai.mcp.server.enabled=true` | Server name reported in the MCP `initialize` response. |
 | `spring.ai.mcp.server.version` | `SPRING_AI_MCP_SERVER_VERSION` | `@project.version@` (resolved at build time to the Gradle project version) | No | `spring.ai.mcp.server.enabled=true` | Server version reported in the MCP `initialize` response. |
@@ -234,12 +255,12 @@ An alternative to OIDC/JWT bearer tokens: a caller may authenticate with an `Api
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `config.rest.security.api-key.enabled` | `API_KEY_ENABLED` | `false` | No | `config.rest.security.mode=oidc` | Enables DIAL API-Key authentication via the `Api-Key` request header. |
-| `config.rest.security.api-key.core-url` | `API_KEY_CORE_URL` | - | Yes | `config.rest.security.api-key.enabled=true` | Base URL of the DIAL Core instance used to introspect API keys via `GET /v1/user/info`. |
+| `config.rest.security.api-key.core-url` | `API_KEY_CORE_URL` | - | Conditional | `config.rest.security.api-key.enabled=true` | Base URL of the DIAL Core instance used to introspect API keys via `GET /v1/user/info`. Startup fails when blank and API-key auth is enabled. |
 | `config.rest.security.api-key.cache-ttl-seconds` | `API_KEY_CACHE_TTL_SECONDS` | `60` | No | `config.rest.security.api-key.enabled=true` | Time-to-live, in seconds, for cached successful introspection results. |
 | `config.rest.security.api-key.cache-max-size` | `API_KEY_CACHE_MAX_SIZE` | `10000` | No | `config.rest.security.api-key.enabled=true` | Maximum number of cached introspection results. |
 | `config.rest.security.api-key.request-timeout-ms` | `API_KEY_REQUEST_TIMEOUT_MS` | `3000` | No | `config.rest.security.api-key.enabled=true` | Connect/read timeout, in milliseconds, for the introspection call to DIAL Core. |
-| `config.rest.security.api-key.key-roles-mapping` | `API_KEY_KEY_ROLES_MAPPING` | - (empty) | Conditional | `config.rest.security.api-key.enabled=true` | JSON object mapping DIAL Core project-key role names to lists of this service's authority strings. Required (with `jwt-roles-mapping`) that at least one of the two mappings is non-empty. |
-| `config.rest.security.api-key.jwt-roles-mapping` | `API_KEY_JWT_ROLES_MAPPING` | - (empty) | Conditional | `config.rest.security.api-key.enabled=true` | JSON object mapping DIAL Core roles from the JWT-rooted per-request-key response shape (`userClaims`) to lists of this service's authority strings. |
+| `config.rest.security.api-key.key-roles-mapping` | `API_KEY_KEY_ROLES_MAPPING` | - | Conditional | `config.rest.security.api-key.enabled=true` | JSON object mapping DIAL Core project-key role names to lists of this service's authority strings. At least one of `key-roles-mapping` / `jwt-roles-mapping` must be non-empty, otherwise startup fails. |
+| `config.rest.security.api-key.jwt-roles-mapping` | `API_KEY_JWT_ROLES_MAPPING` | - | Conditional | `config.rest.security.api-key.enabled=true` | JSON object mapping DIAL Core roles from the JWT-rooted per-request-key response shape (`userClaims`) to lists of this service's authority strings. At least one of `key-roles-mapping` / `jwt-roles-mapping` must be non-empty, otherwise startup fails. |
 | `config.rest.security.api-key.user-claims-role-claim` | `API_KEY_USER_CLAIMS_ROLE_CLAIM` | `roles` | No | `config.rest.security.api-key.enabled=true` | Fallback claim name read out of the introspection response's `userClaims` object to obtain the caller's raw roles. When `config.rest.security.mode=oidc` (so `providers.<id>.*` is configured) and the `userClaims.iss` value matches a configured provider's accepted issuers, that provider's `roleClaims` is used instead (same resolution as bearer-JWT authorities); this property is only the fallback used when no `providers` bean exists (`mode=none`), `iss` is absent from `userClaims`, or no provider matches the issuer. |
 | `config.rest.security.api-key.startup-probe` | `API_KEY_STARTUP_PROBE` | `true` | No | `config.rest.security.api-key.enabled=true` | When `true`, the service calls DIAL Core's `/v1/user/info` at startup to verify connectivity and fails to start if Core is unreachable or misconfigured. |
 
@@ -267,7 +288,7 @@ The application uses a **dual datasource architecture**: a **meta** database for
 | `datasource.meta.vendor` | `DATASOURCE_META_VENDOR` | `POSTGRES` | No | - | Meta database vendor. Only `POSTGRES` is currently supported. |
 | `datasource.meta.auth.type` | `DATASOURCE_META_AUTH_TYPE` | `basic` | No | - | Meta authentication strategy. `basic` uses the username/password pair; `azure` obtains short-lived Azure AD tokens. |
 | `postgres.meta.datasource.url` | `POSTGRES_META_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/evaluation_db` | Recommended | - | Meta JDBC base URL without query parameters. Override in every non-local environment. |
-| `postgres.meta.datasource.connection-params` | `POSTGRES_META_DATASOURCE_CONNECTION_PARAMS` | `-` | No | - | JDBC query parameters appended to the URL (e.g. `reWriteBatchedInserts=true`). Empty by default. |
+| `postgres.meta.datasource.connection-params` | `POSTGRES_META_DATASOURCE_CONNECTION_PARAMS` | - | No | - | JDBC query parameters appended to the URL (e.g. `reWriteBatchedInserts=true`). Empty by default. |
 | `postgres.meta.datasource.driver-class-name` | `POSTGRES_META_DATASOURCE_DRIVER_CLASS_NAME` | `org.postgresql.Driver` | No | - | JDBC driver class. |
 | `postgres.meta.datasource.username` | `POSTGRES_META_DATASOURCE_USERNAME` | `postgres` | Conditional | `datasource.meta.auth.type=azure` | Database username. For `basic` auth the default is safe for local development; for `azure` auth this MUST be the Azure AD identity username. |
 | `postgres.meta.datasource.password` | `POSTGRES_META_DATASOURCE_PASSWORD` | `postgres` | Recommended | `datasource.meta.auth.type=basic` | Database password. The default is intended for local development only. Override via environment variable in every non-local environment. Unused when `datasource.meta.auth.type=azure`. |
@@ -342,7 +363,7 @@ At startup the application validates that the meta and analytics datasources do 
 | `dial.components.core.retry.max-attempts` | `DIAL_CORE_RETRY_MAX_ATTEMPTS` | `3` | No | - | Maximum retry attempts for transient failures. |
 | `dial.components.core.retry.delay-ms` | `DIAL_CORE_RETRY_DELAY_MS` | `1000` | No | - | Initial retry delay in milliseconds. |
 | `dial.components.core.retry.multiplier` | `DIAL_CORE_RETRY_MULTIPLIER` | `2.0` | No | - | Exponential backoff multiplier. |
-| `dial.components.core.try-out.read-timeout-ms` | `DIAL_CORE_TRY_OUT_READ_TIMEOUT_MS` | `120000` | No | - | Read timeout for try-it-out deployment invocations. Higher than the metadata read timeout because LLM inference latency is typically 30–120 s. |
+| `dial.components.core.try-out.read-timeout-ms` | `DIAL_CORE_TRY_OUT_READ_TIMEOUT_MS` | `3600000` | No | - | Read (idle) timeout for try-it-out deployment invocations (1 hour default). Set far above the metadata read timeout so long-running deployments — slow LLM inference, agents, streaming responses — are not cut off mid-response. |
 
 ### 5.2 DIAL API Key
 
@@ -452,10 +473,11 @@ When `dial-app-proxy.enabled=true`, EF must be registered as a DIAL Application 
 |---|---|---|---|---|---|
 | `test-suite-run.execution.default-concurrency-level` | `TEST_SUITE_RUN_EXECUTION_DEFAULT_CONCURRENCY_LEVEL` | `1` | No | - | Default number of parallel test case executions per run. |
 | `test-suite-run.execution.max-concurrency-level` | `TEST_SUITE_RUN_EXECUTION_MAX_CONCURRENCY_LEVEL` | `50` | No | - | Upper bound on concurrency per run. |
-| `test-suite-run.execution.default-request-timeout-ms` | `TEST_SUITE_RUN_EXECUTION_DEFAULT_REQUEST_TIMEOUT_MS` | `30000` | No | - | Default per-request timeout in milliseconds. |
-| `test-suite-run.execution.max-request-timeout-ms` | `TEST_SUITE_RUN_EXECUTION_MAX_REQUEST_TIMEOUT_MS` | `600000` | No | - | Upper bound on per-request timeout. |
+| `test-suite-run.execution.default-request-timeout-ms` | `TEST_SUITE_RUN_EXEC_DEFAULT_TIMEOUT` | `600000` | No | - | Default per-request timeout in milliseconds. |
+| `test-suite-run.execution.max-request-timeout-ms` | `TEST_SUITE_RUN_EXEC_MAX_TIMEOUT` | `1200000` | No | - | Upper bound on per-request timeout. |
+| `test-suite-run.execution.default-rate-limit-rps` | `TEST_SUITE_RUN_EXECUTION_DEFAULT_RATE_LIMIT_RPS` | - | No | - | Default run-wide pacing of test-case-run submissions (runs per second) when a run request has no `executionSettings`. Unset (default) or non-positive means no rate limit. Not set in `application.yml`. |
 | `test-suite-run.execution.result-batch-size` | `TEST_SUITE_RUN_EXECUTION_RESULT_BATCH_SIZE` | `100` | No | - | Number of results buffered before flushing to the analytics database. |
-| `test-suite-run.execution.max-response-size-bytes` | `TEST_SUITE_RUN_EXECUTION_MAX_RESPONSE_SIZE_BYTES` | `5242880` | No | - | Maximum captured response body size in bytes before truncation (5 MB default). |
+| `test-suite-run.execution.max-response-size-bytes` | `TEST_SUITE_RUN_EXEC_MAX_RESP_BODY_BYTES` | `52428800` | No | - | Maximum captured response body size in bytes before truncation (50 MB default). |
 | `test-suite-run.execution.header-blacklist` | `TEST_SUITE_RUN_EXECUTION_HEADER_BLACKLIST` | `[Authorization, Host, Content-Length, Transfer-Encoding, Connection, traceparent, tracestate]` | No | - | HTTP headers silently stripped from evaluation requests before they are forwarded. |
 
 ### 6.3 Test Suite Run — Retry Settings
@@ -513,7 +535,6 @@ Metric declarations can be synced from one or more external metric provider serv
 |---|---|---|---|---|---|
 | `metric-providers.sync.enabled` | `METRIC_PROVIDERS_SYNC_ENABLED` | `false` | Recommended | - | Enables the scheduled metric sync job. Default `false` is intended for local development only; operators SHOULD set this to `true` in any environment that needs to pick up metric declarations from a metric provider service. |
 | `metric-providers.sync.cron` | `METRIC_PROVIDERS_SYNC_CRON` | `-` | No | `metric-providers.sync.enabled=true` | Cron expression for recurring sync (e.g. `0 */5 * * * *` for every five minutes). `-` disables recurring sync; the job still runs once at startup when `enabled=true`. |
-| `metric-providers.sync.fixed-delay-ms` | `METRIC_PROVIDERS_SYNC_FIXED_DELAY_MS` | `0` | No | `metric-providers.sync.enabled=true AND metric-providers.sync.cron=-` | Fixed delay in milliseconds between sync runs. Used only when no cron expression is set. |
 
 #### Provider map
 
@@ -523,27 +544,29 @@ Each entry carries its own `enabled` flag. Disabling an entry excludes it from t
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
-| `metric-providers.providers.<id>.enabled` | `METRIC_PROVIDERS_<ID>_ENABLED` | - | Yes | - | Whether the sync job processes this provider entry. `@NotNull` — every entry present in configuration MUST define it (there is no Java-side default), so a provider added purely via environment variables MUST also set `METRIC_PROVIDERS_<ID>_ENABLED`. Stock defaults: `dial` = `true`, `extra` = `false`. `false` skips the entry during sync but leaves its already-synced declarations usable for metric evaluation. |
-| `metric-providers.providers.<id>.base-url` | `METRIC_PROVIDERS_<ID>_BASE_URL` | - | Conditional | `metric-providers.sync.enabled=true` | Base URL of the provider (e.g. `http://metric-service:8080`). `GET /metrics` is called against this. Validated via `@NotBlank` when a provider entry is present. The default configuration for id `dial` resolves from `METRIC_PROVIDERS_DIAL_BASE_URL` with yaml fallback `http://localhost:8086`. |
-| `metric-providers.providers.<id>.connect-timeout-ms` | `METRIC_PROVIDERS_<ID>_CONNECT_TIMEOUT_MS` | `5000` | No | `metric-providers.sync.enabled=true` | HTTP connection timeout in milliseconds. |
-| `metric-providers.providers.<id>.read-timeout-ms` | `METRIC_PROVIDERS_<ID>_READ_TIMEOUT_MS` | `150000` | No | `metric-providers.sync.enabled=true` | HTTP read timeout in milliseconds. `150000` is the value shipped in `application.yml` for the stock `dial` and `extra` entries; an entry declared only via environment variables falls back to the binding default of `30000`. |
-| `metric-providers.providers` | `-` | `{dial: {...}, extra: {...}}` | No | - | Top-level provider map. An empty map disables sync for all providers. See the rows above for the fields each entry accepts. |
+| `metric-providers.providers.<id>.enabled` | `METRIC_PROVIDERS_<ID>_ENABLED` (stock ids) | - | Yes | - | Whether the sync job processes this provider entry. `@NotNull` — every entry present in configuration MUST define it (there is no Java-side default). Stock defaults: `dial` = `true`, `extra` = `false`. `false` skips the entry during sync but leaves its already-synced declarations usable for metric evaluation. |
+| `metric-providers.providers.<id>.base-url` | `METRIC_PROVIDERS_<ID>_BASE_URL` (stock ids) | - | Yes | - | Base URL of the provider (e.g. `http://metric-service:8080`). `GET /metrics` and `/evaluate` are called against this. Validated via `@NotBlank` for every provider entry present (enabled or not, sync on or off); startup fails when blank. The default configuration for id `dial` resolves from `METRIC_PROVIDERS_DIAL_BASE_URL` with yaml fallback `http://localhost:8086`. |
+| `metric-providers.providers.<id>.connect-timeout-ms` | `METRIC_PROVIDERS_<ID>_CONNECT_TIMEOUT_MS` (stock ids) | `5000` | No | - | HTTP connection timeout in milliseconds. Optional; an entry without it uses `metric-providers.defaults.connect-timeout-ms`. `5000` is the value shipped in `application.yml` for the stock `dial` and `extra` entries. |
+| `metric-providers.providers.<id>.read-timeout-ms` | `METRIC_PROVIDERS_<ID>_READ_TIMEOUT_MS` (stock ids) | `150000` | No | - | HTTP read timeout in milliseconds. Optional; an entry without it uses `metric-providers.defaults.read-timeout-ms`. `150000` is the value shipped in `application.yml` for the stock `dial` and `extra` entries. |
+| `metric-providers.providers` | - | `{dial: {...}, extra: {...}}` | No | - | Top-level provider map. An empty map disables sync for all providers. See the rows above for the fields each entry accepts. |
+| `metric-providers.defaults.connect-timeout-ms` | `METRIC_PROVIDERS_DEFAULTS_CONNECT_TIMEOUT_MS` | `5000` | Yes | - | Connection timeout in milliseconds for every provider entry that does not set its own. `@NotNull`; startup fails when missing. |
+| `metric-providers.defaults.read-timeout-ms` | `METRIC_PROVIDERS_DEFAULTS_READ_TIMEOUT_MS` | `30000` | Yes | - | Read timeout in milliseconds for every provider entry that does not set its own. `@NotNull`; startup fails when missing. |
 
 Example:
 
 ```yaml
 metric-providers:
+  defaults:
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000
   providers:
     my-metrics:
       enabled: true
       base-url: http://metric-provider:8080
-      connect-timeout-ms: 5000
-      read-timeout-ms: 150000
+      read-timeout-ms: 150000   # overrides defaults; connect timeout falls back to 5000
     legacy-metrics:
       enabled: false          # kept in config, skipped by the sync job
       base-url: http://legacy-metric-provider:8080
-      connect-timeout-ms: 5000
-      read-timeout-ms: 150000
   sync:
     enabled: true
     cron: "0 */5 * * * *"
@@ -551,20 +574,20 @@ metric-providers:
 
 #### Per-provider environment variable override
 
-Entries under the `providers` map are fully addressable via environment variables using Spring Boot's relaxed binding. The pattern is `METRIC_PROVIDERS_<UPPER_ID>_<PROPERTY>` where `<UPPER_ID>` is the provider id in upper case and `<PROPERTY>` is the field name with `.` and `-` converted to `_`. For the stock `dial` entry the following env vars are available without editing YAML:
+The stock `dial` and `extra` entries read their fields from explicit `${...}` placeholders in `application.yml`, so the following env vars work without editing YAML:
 
 | Environment variable | Overrides | Notes |
 |---|---|---|
 | `METRIC_PROVIDERS_DIAL_ENABLED` | `metric-providers.providers.dial.enabled` | Default `true`. Set `false` to keep the entry configured but skip it during sync. |
 | `METRIC_PROVIDERS_DIAL_BASE_URL` | `metric-providers.providers.dial.base-url` | Required in yaml as `@NotBlank`. |
-| `METRIC_PROVIDERS_DIAL_CONNECT_TIMEOUT_MS` | `metric-providers.providers.dial.connect-timeout-ms` | - |
-| `METRIC_PROVIDERS_DIAL_READ_TIMEOUT_MS` | `metric-providers.providers.dial.read-timeout-ms` | - |
+| `METRIC_PROVIDERS_DIAL_CONNECT_TIMEOUT_MS` | `metric-providers.providers.dial.connect-timeout-ms` | Default `5000`. |
+| `METRIC_PROVIDERS_DIAL_READ_TIMEOUT_MS` | `metric-providers.providers.dial.read-timeout-ms` | Default `150000`. |
 | `METRIC_PROVIDERS_EXTRA_ENABLED` | `metric-providers.providers.extra.enabled` | Default `false`. Set `true` to activate the stock second provider slot. |
 | `METRIC_PROVIDERS_EXTRA_BASE_URL` | `metric-providers.providers.extra.base-url` | Yaml fallback `http://localhost:8087`. Override before enabling the entry. |
-| `METRIC_PROVIDERS_EXTRA_CONNECT_TIMEOUT_MS` | `metric-providers.providers.extra.connect-timeout-ms` | - |
-| `METRIC_PROVIDERS_EXTRA_READ_TIMEOUT_MS` | `metric-providers.providers.extra.read-timeout-ms` | - |
+| `METRIC_PROVIDERS_EXTRA_CONNECT_TIMEOUT_MS` | `metric-providers.providers.extra.connect-timeout-ms` | Default `5000`. |
+| `METRIC_PROVIDERS_EXTRA_READ_TIMEOUT_MS` | `metric-providers.providers.extra.read-timeout-ms` | Default `150000`. |
 
-To register a third or further provider without touching YAML, use env vars keyed by upper-cased provider id — both `METRIC_PROVIDERS_CUSTOM_BASE_URL` **and** `METRIC_PROVIDERS_CUSTOM_ENABLED` for a provider keyed `custom` (`enabled` is `@NotNull`, so omitting it fails startup validation).
+To register a third or further provider without touching YAML, use Spring Boot's relaxed-binding form for map entries: the property path upper-cased, `.` replaced by `_` and `-` removed — e.g. `METRICPROVIDERS_PROVIDERS_CUSTOM_ENABLED`, `METRICPROVIDERS_PROVIDERS_CUSTOM_BASEURL` and optionally `METRICPROVIDERS_PROVIDERS_CUSTOM_READTIMEOUTMS` for a provider keyed `custom`. The `METRIC_PROVIDERS_<ID>_*` names above do **not** work for new ids (they only exist as placeholders for the stock entries). `enabled` and `base-url` are required; omitted timeouts fall back to `metric-providers.defaults`.
 
 ### 6.10 Metric Evaluation
 
@@ -682,6 +705,20 @@ When enabled, the following response fields are populated with deep-link URLs:
 - `TryItOutResponseDto.grafanaTraceUrl` — Grafana Explore URL for a try-it-out trace.
 - `TestSuiteRunResponseDto.grafanaExploreUrl` — Grafana Explore TraceQL URL for all traces in a run (populated only once the run has started).
 
+### 8.2 OpenTelemetry
+
+Read by the OpenTelemetry Spring Boot starter. The SDK is disabled by default; enable it to export traces, logs and metrics over OTLP.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `otel.sdk.disabled` | `OTEL_SDK_DISABLED` | `true` | No | - | Disables the OpenTelemetry SDK. Set `false` to emit telemetry. |
+| `otel.service.name` | `OTEL_SERVICE_NAME` | `ai-dial-evaluation-framework` | No | `otel.sdk.disabled=false` | `service.name` resource attribute on all exported telemetry. |
+| `otel.exporter.otlp.endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | Recommended | `otel.sdk.disabled=false` | OTLP collector endpoint. Override with the real collector address when the SDK is enabled. |
+| `otel.exporter.otlp.protocol` | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | No | `otel.sdk.disabled=false` | OTLP transport: `http/protobuf` or `grpc`. |
+| `otel.logs.exporter` | `OTEL_LOGS_EXPORTER` | `otlp` | No | `otel.sdk.disabled=false` | Log exporter (`otlp` or `none`). |
+| `otel.traces.exporter` | `OTEL_TRACES_EXPORTER` | `otlp` | No | `otel.sdk.disabled=false` | Trace exporter (`otlp` or `none`). |
+| `otel.metrics.exporter` | `OTEL_METRICS_EXPORTER` | `otlp` | No | `otel.sdk.disabled=false` | Metric exporter (`otlp` or `none`). |
+
 ---
 
 ## 9. Notes
@@ -706,7 +743,7 @@ docker run -d \
 
 - **Always override** `postgres.meta.datasource.password`, `postgres.analytics.datasource.password`, `postgres.meta.datasource.url`, and `postgres.analytics.datasource.url` — the stock defaults are for local development only.
 - **Always set** `DIAL_EF_API_KEY`; the application refuses to boot without it.
-- **Enable metric provider sync** in every environment that needs metric declarations kept in sync with a metric provider service: set `METRIC_PROVIDERS_SYNC_ENABLED=true` and either a `METRIC_PROVIDERS_SYNC_CRON` expression or a `METRIC_PROVIDERS_SYNC_FIXED_DELAY_MS` value. The default (`false`) is intended for local development only.
+- **Enable metric provider sync** in every environment that needs metric declarations kept in sync with a metric provider service: set `METRIC_PROVIDERS_SYNC_ENABLED=true` and a `METRIC_PROVIDERS_SYNC_CRON` expression for recurring sync (without it, sync runs only once at startup). The default (`false`) is intended for local development only.
 - **Point each enabled provider entry at a real service.** The stock `extra` entry is disabled (`METRIC_PROVIDERS_EXTRA_ENABLED=false`) and points at `http://localhost:8087`; set `METRIC_PROVIDERS_EXTRA_BASE_URL` before flipping it to `true`.
 - JDBC query parameters (`connection-params`) have sensible defaults in `application.yml`; override only when the database requires additional driver options (e.g. `sslmode=require`).
 - When enabling Azure AD authentication for PostgreSQL, verify the managed identity assigned to the pod has been granted the relevant database role before rolling the deployment.

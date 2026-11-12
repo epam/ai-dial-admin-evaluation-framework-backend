@@ -25,6 +25,8 @@ import tools.jackson.databind.node.ObjectNode;
 public class GrafanaLinkBuilder {
 
     private static final long TIME_BUFFER_MS = Duration.ofMinutes(5).toMillis();
+    /** Group search results per trace; without it Grafana Explore falls back to a flat spans table. */
+    private static final String TABLE_TYPE_TRACES = "traces";
 
     private final GrafanaProperties grafanaProperties;
     private final ObjectMapper objectMapper;
@@ -85,6 +87,7 @@ public class GrafanaLinkBuilder {
         dsRef.put("uid", datasourceUid);
         queryNode.put("queryType", queryType);
         queryNode.put("query", query);
+        queryNode.put("tableType", TABLE_TYPE_TRACES);
 
         ObjectNode pane = objectMapper.createObjectNode();
         pane.put("datasource", datasourceUid);

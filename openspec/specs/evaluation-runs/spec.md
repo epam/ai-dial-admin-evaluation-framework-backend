@@ -3,7 +3,7 @@
 ## Purpose
 This spec defines execution of TestSuites and storage/query of run history and per-case results.
 
-Status: **Planned/Vision** (based on design docs; not fully implemented in current codebase)
+Status: **Superseded** — implemented and specified by [test-suite-runs](../test-suite-runs/spec.md) (trigger/history), [runner-and-jobs](../runner-and-jobs/spec.md) (execution) and [analytics-eval-results](../analytics-eval-results/spec.md) (per-case results). Retained for history; not maintained.
 
 ## Key Terms
 - **TestSuiteRun**: one execution of a suite.

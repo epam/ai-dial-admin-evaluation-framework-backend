@@ -6,7 +6,7 @@ read its responses. This puts both on one origin: static files come from this
 directory, anything under /api/ is forwarded to the backend as-is.
 
     python3 local_env/query-console/serve.py
-    python3 local_env/query-console/serve.py --backend http://localhost:8080 --port 9000
+    python3 local_env/query-console/serve.py --backend http://localhost:8081 --port 9000
 
 Standard library only, no install step. Local development tool: it listens on
 127.0.0.1 and forwards whatever credentials the page sends.
@@ -31,7 +31,7 @@ SKIP_RESPONSE_HEADERS = {"connection", "keep-alive", "transfer-encoding",
 class Handler(SimpleHTTPRequestHandler):
     """Static files from the console directory, plus a pass-through proxy for /api/."""
 
-    backend = "http://localhost:8096"
+    backend = "http://localhost:8080"
 
     def do_GET(self):
         if self.is_api:
@@ -101,8 +101,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", type=int, default=8099, help="port to serve on (default: 8099)")
-    parser.add_argument("--backend", default="http://localhost:8096",
-                        help="evaluation backend base url (default: http://localhost:8096)")
+    parser.add_argument("--backend", default="http://localhost:8080",
+                        help="evaluation backend base url (default: http://localhost:8080)")
     args = parser.parse_args()
 
     Handler.backend = args.backend.rstrip("/")

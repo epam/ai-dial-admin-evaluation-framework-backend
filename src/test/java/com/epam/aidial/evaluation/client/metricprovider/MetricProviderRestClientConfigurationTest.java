@@ -30,6 +30,8 @@ class MetricProviderRestClientConfigurationTest {
     @BeforeEach
     void setUp() {
         properties = new MetricProviderProperties();
+        properties.getDefaults().setConnectTimeoutMs(5000);
+        properties.getDefaults().setReadTimeoutMs(30000);
         configuration = new MetricProviderRestClientConfiguration();
     }
 

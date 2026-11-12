@@ -196,21 +196,24 @@ query-dsl:
 
 # Metric providers configuration (sync of metric declarations from external GET /metrics endpoints)
 metric-providers:
+  # Timeouts for any provider entry that does not set its own
+  defaults:
+    connect-timeout-ms: ${METRIC_PROVIDERS_DEFAULTS_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${METRIC_PROVIDERS_DEFAULTS_READ_TIMEOUT_MS:30000}
   providers:
     dial:
       enabled: ${METRIC_PROVIDERS_DIAL_ENABLED:true}
       base-url: ${METRIC_PROVIDERS_DIAL_BASE_URL:http://localhost:8086}
-      connect-timeout-ms: 5000
-      read-timeout-ms: 150000
+      connect-timeout-ms: ${METRIC_PROVIDERS_DIAL_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${METRIC_PROVIDERS_DIAL_READ_TIMEOUT_MS:150000}
     extra:
       enabled: ${METRIC_PROVIDERS_EXTRA_ENABLED:false}
       base-url: ${METRIC_PROVIDERS_EXTRA_BASE_URL:http://localhost:8087}
-      connect-timeout-ms: 5000
-      read-timeout-ms: 150000
+      connect-timeout-ms: ${METRIC_PROVIDERS_EXTRA_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${METRIC_PROVIDERS_EXTRA_READ_TIMEOUT_MS:150000}
   sync:
     enabled: ${METRIC_PROVIDERS_SYNC_ENABLED:false}
     cron: ${METRIC_PROVIDERS_SYNC_CRON:-}  # e.g. "0 */5 * * * *" for every 5 min; "-" or unset = no recurring
-    fixed-delay-ms: 0  # optional; used when cron is empty
 
 # Metric evaluation configuration (in-process metric evaluation phase of test suite runs)
 metric-evaluation:
@@ -230,11 +233,6 @@ sse-event-processing:
 jsonata:
   evaluation-timeout-ms: ${JSONATA_EVALUATION_TIMEOUT_MS:10000}
   max-recursion-depth: ${JSONATA_MAX_RECURSION_DEPTH:1000}
-
-# Blob storage configuration
-blob-storage:
-  max-file-size-bytes: ${BLOB_STORAGE_MAX_FILE_SIZE_BYTES:52428800}  # 50MB
-  max-files-per-suite: ${BLOB_STORAGE_MAX_FILES_PER_SUITE:100}
 
 # CSV configuration
 csv:
@@ -363,6 +361,9 @@ logging:
 
 # OpenAPI configuration
 springdoc:
+  # Documentation-only: responses without an explicit content type (incl. exception-handler errors)
+  # are published as application/json so OpenApiExampleCustomizer can attach examples
+  default-produces-media-type: application/json
   api-docs:
     enabled: true
     path: /v3/api-docs

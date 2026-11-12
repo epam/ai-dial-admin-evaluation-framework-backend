@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.service.domain.FileService;
 import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -67,7 +68,10 @@ public class FileController {
     @Operation(
             summary = "Download a file",
             description = "Streams the file content with appropriate Content-Type and Content-Disposition headers")
-    @ApiResponse(responseCode = "200", description = "File downloaded successfully")
+    @ApiResponse(
+            responseCode = "200",
+            description = "File downloaded successfully",
+            content = @Content(mediaType = MediaType.APPLICATION_OCTET_STREAM_VALUE))
     @ApiResponse(responseCode = "404", description = "File or test suite not found")
     public ResponseEntity<StreamingResponseBody> download(
             @Parameter(description = "Test suite ID") @PathVariable UUID suiteId,

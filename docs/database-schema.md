@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-10-23 (meta V1.38, analytics V1.22)
+> **Last sync**: 2026-11-12 (meta V1.38, analytics V1.22)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -33,6 +33,7 @@ This document describes the current database schema as implemented by Flyway mig
 | `test_case_eval_summaries` | Metric-enriched test case results (denormalized) | `(created_at_ms, id)` (composite) |
 | `test_case_eval_scores` | Per-test-case overall score/pass-fail, computed via SQL; the sole read surface for it (its own deduplicated `test_case_eval_scores` Query DSL entity — `eval_summaries` does not join to it) | `id` (VARCHAR(36)) |
 | `test_case_metric_scores_aggregated` | Per-test-case, per-computation aggregation of raw metric values (avg/min/max/count), collapsed across turn/request/run index | `id` (VARCHAR(36)) |
+| `metric_score_result` | Aggregated metric statistics per run and computation (one row per run, computation, statistic, metric field); written in Phase 3 | `id` (VARCHAR(36)) |
 | `run_deletions` | Tombstone table for soft-deletion of analytics rows; one row per deleted run, preserving the append-only invariant. Every read of a run-scoped analytics table anti-joins against it (`RunDeletionFilter`). | `test_suite_run_id` (VARCHAR(36)) |
 | `run_metric_snapshots` | **FROZEN** — superseded by the meta table of the same name; not read or written by any code path | `id` (VARCHAR(36)) |
 
@@ -77,6 +78,7 @@ Central owner of `testCaseSchema` and the test-case table. Multiple test suites 
   {
     "id": "string (server-assigned UUID; stable across renames; backfilled by V1.36)",
     "name": "string",
+    "displayName": "string (optional)",
     "type": "STRING|INTEGER|NUMBER|BOOLEAN|OBJECT|ARRAY|FILE|SKILL",
     "required": true,
     "description": "string",
@@ -188,7 +190,7 @@ The canonical identity uses `routes/platform/<name>` form. It is metadata only; 
     "name": "string",
     "displayName": "string (optional)",
     "expression": "string (JSONata expression)",
-    "type": "STRING|INTEGER|NUMBER|BOOLEAN|OBJECT|ARRAY (optional, defaults to STRING)"
+    "type": "STRING|INTEGER|NUMBER|BOOLEAN|OBJECT|ARRAY|FILE|SKILL (SchemaFieldType; optional, defaults to STRING)"
   }
 ]
 ```
@@ -345,7 +347,7 @@ Individual test cases belonging to a dataset. Per-suite run selection is control
 | `data` | JSONB | NOT NULL | `'{}'::jsonb` | Unified test case data map (single-turn). Empty `'{}'` for a multi-turn case. |
 | `multi_turn_data` | JSONB | NULL | - | Ordered array of per-turn data maps for a multi-turn test case (V1.27); NULL for single-turn (the discriminator). MAY coexist with a populated `data`: `data` carries the case's shared (test-case-level) fields and each turn map carries the per-turn fields. Field scope is declared per field in `datasets.test_case_schema` (`FieldDefinitionDto.perTurn`). No mutual-exclusivity CHECK constraint. |
 | `is_valid` | BOOLEAN | NOT NULL | - | Validation status |
-| `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
+| `validation_warnings` | JSONB | NULL | - | Structured validation warnings (created nullable as TEXT[] in V1.2; V1.3 changed only the type) |
 | `created_at_ms` | BIGINT | NOT NULL | - | Creation timestamp (epoch ms) |
 | `updated_at_ms` | BIGINT | NOT NULL | - | Last update timestamp (epoch ms) |
 
@@ -356,7 +358,6 @@ Individual test cases belonging to a dataset. Per-suite run selection is control
 | `uq_test_cases_dataset_name` | `dataset_id`, `LOWER(test_case_name)` | UNIQUE (BTREE) | Case-insensitive unique constraint: one name per dataset |
 | `idx_test_cases_dataset_id` | `dataset_id` | BTREE | |
 | `idx_test_cases_created_at_ms` | `created_at_ms DESC` | BTREE | |
-| `idx_test_cases_data` | `data` | GIN | |
 
 ### Foreign Keys
 
@@ -373,7 +374,7 @@ Individual test cases belonging to a dataset. Per-suite run selection is control
     "fieldName": "string",
     "path": "string",
     "message": "string",
-    "code": "REQUIRED|TYPE|FORMAT|PATTERN|ENUM|ADDITIONAL|UNRESOLVED_REFERENCE|INVALID_OUTPUT_SCHEMA|REQUEST_BODY_EVALUATION_ERROR|UNKNOWN|INVALID_INPUT|INVALID_SCOPE",
+    "code": "REQUIRED|TYPE|FORMAT|PATTERN|ENUM|ADDITIONAL|UNRESOLVED_REFERENCE|INVALID_OUTPUT_SCHEMA|REQUEST_BODY_EVALUATION_ERROR|REQUEST_BODY_VALIDATION_ERROR|UNKNOWN|INVALID_INPUT|INVALID_SCOPE|UNSUPPORTED_SCORE_FUNCTION",
     "turnIndex": "number (optional, 0-based; multi-turn cases only)"
   }
 ]
@@ -456,11 +457,12 @@ Tracks async test suite evaluation runs.
 ```json
 {
   "snapshotVersion": "2",
-  "suiteType": "DEPLOYMENT|MCP_TOOL",
+  "suiteType": "DEPLOYMENT|ROUTE|MCP_TOOL",
   "datasetRef": { "id": "uuid", "version": 0, "name": "string" },
   "deploymentRef": { "id": "string", "name": "string", "version": "string", "type": "string (optional)" },
-  "endpointRef": { /* EndpointContractDto */ },
-  "requestTemplate": { /* RequestTemplateDto */ },
+  "routesRef": { /* RouteReferenceDto — ROUTE suites only */ },
+  "endpointRef": { /* EndpointContractDto — DEPLOYMENT and ROUTE suites */ },
+  "requestTemplate": { /* RequestTemplateDto — DEPLOYMENT and ROUTE suites */ },
   "inputBindings": [ /* List of InputBindingDto */ ],
   "responseColumns": [ /* List of ResponseColumnDefinitionDto */ ],
   "additionalRequests": [ /* List of RequestDefinitionDto — requests 1..N of the chain, defaults to [] */ ],
@@ -468,7 +470,11 @@ Tracks async test suite evaluation runs.
   "testCaseSchema": [ /* List of FieldDefinitionDto — inlined from dataset at snapshot time */ ],
   "mcpDeploymentRef": { /* McpDeploymentReferenceDto — MCP suites only */ },
   "toolRef": { /* ToolReferenceDto — MCP suites only */ },
-  "argumentTemplate": { /* ArgumentTemplateDto — MCP suites only */ }
+  "argumentTemplate": { /* ArgumentTemplateDto — MCP suites only */ },
+  "overallScore": { /* OverallScoreDefinition (optional; null = system default) */ },
+  "testCaseOverallScore": { /* OverallScoreDefinition (optional; null = falls back to overallScore) */ },
+  "overallScoreThreshold": "number (optional)",
+  "metricScoreAggregation": "AVG|MIN|MAX (optional; absent = AVG)"
 }
 ```
 
@@ -558,7 +564,7 @@ Metric declarations catalog; populated by sync from configured metric providers 
 
 | Index Name | Columns | Type | Notes |
 |------------|---------|------|-------|
-| `uq_metric_declarations_provider_name` | `(provider_id, name)` | UNIQUE (BTREE) | One name per provider |
+| `uq_metric_declarations_provider_id_name` | `(provider_id, name)` | UNIQUE (BTREE) | One name per provider |
 
 ---
 
@@ -571,9 +577,9 @@ Schema versions for each metric declaration. New version is inserted when config
 | `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
 | `metric_declaration_id` | VARCHAR(36) | NOT NULL | - | FK to metric_declarations.id |
 | `schema_version` | INTEGER | NOT NULL | - | Monotonically increasing per declaration |
-| `config_schema` | JSONB | NULL | - | JSON schema for metric config |
-| `input_schema` | JSONB | NULL | - | JSON schema for metric input |
-| `output_schema` | JSONB | NULL | - | JSON schema for metric output |
+| `config_schema` | JSONB | NOT NULL | - | JSON schema for metric config |
+| `input_schema` | JSONB | NOT NULL | - | JSON schema for metric input |
+| `output_schema` | JSONB | NOT NULL | - | JSON schema for metric output |
 | `display_name` | TEXT | NULL | - | Display name at this version snapshot |
 | `description` | TEXT | NULL | - | Version description |
 | `created_at_ms` | BIGINT | NOT NULL | - | Creation timestamp (epoch ms) |
@@ -582,7 +588,7 @@ Schema versions for each metric declaration. New version is inserted when config
 
 | Column | References | On Delete |
 |--------|------------|-----------|
-| `metric_declaration_id` | `metric_declarations(id)` | CASCADE |
+| `metric_declaration_id` | `metric_declarations(id)` | NO ACTION (default) |
 
 ### Indexes
 
@@ -618,8 +624,8 @@ Metric applications within a test suite. Each row binds a metric declaration (wi
 | Column | References | On Delete |
 |--------|------------|-----------|
 | `test_suite_id` | `test_suites(id)` | CASCADE |
-| `metric_declaration_id` | `metric_declarations(id)` | RESTRICT (default) |
-| `metric_declaration_version_id` | `metric_declaration_versions(id)` | RESTRICT (default) |
+| `metric_declaration_id` | `metric_declarations(id)` | NO ACTION (default) |
+| `metric_declaration_version_id` | `metric_declaration_versions(id)` | NO ACTION (default) |
 
 ### Indexes
 
@@ -748,7 +754,7 @@ Test case execution results stored in the analytics database. Each row represent
 | `extracted_columns` | JSONB | NOT NULL | `'{}'::jsonb` | Extracted column values keyed by column name |
 | `extraction_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Extraction warning entries (List of ExtractionWarningDto) |
 | `retry_count` | INTEGER | NOT NULL | 0 | Number of retry attempts before final outcome (0 = no retries) |
-| `log_details` | JSONB | NULL | - | Structured retry attempt log (populated only when retryCount > 0) |
+| `log_details` | JSONB | NULL | - | Structured log: retry attempt log when retryCount > 0, or `{"error": "<message>"}` (with retry_count = 0) for request-resolution / request-body validation / request-body evaluation failures and multi-turn cases with no readable turns; NULL otherwise |
 | `created_at_ms` | BIGINT | NOT NULL | - | Run creation timestamp from meta DB (epoch ms) |
 
 ### Primary Key
@@ -811,7 +817,9 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 ]
 ```
 
-**`log_details`** (structured retry attempt log, nullable):
+**`log_details`** (nullable; one of two shapes):
+
+Retry attempt log (when `retry_count > 0`):
 ```json
 {
   "retryAttempts": [
@@ -822,6 +830,13 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
       "durationMs": 1200
     }
   ]
+}
+```
+
+Pre-invocation error (`retry_count = 0`; written by `TurnLoopExecutor` for request-resolution, request-body validation and request-body evaluation failures, and for a multi-turn case with no readable turns):
+```json
+{
+  "error": "Request body validation failed: <message>"
 }
 ```
 
@@ -966,7 +981,7 @@ sections and `docs/patterns/` for the scoring mechanics.
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_tc_metric_scores_agg_natural_key` | UNIQUE | `(test_suite_run_id, test_case_id, computation_id)` | One aggregated row per test case per computation; `ON CONFLICT DO NOTHING` target |
+| `uq_tc_metric_scores_agg_natural_key` | UNIQUE (INDEX) | `(test_suite_run_id, test_case_id, computation_id)` | One aggregated row per test case per computation; `ON CONFLICT DO NOTHING` target |
 
 ### Indexes
 
@@ -1017,7 +1032,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_metric_score_result_natural_key` | UNIQUE | `(test_suite_run_id, computation_id, metric_score_name, metric_name)` | One result per statistic per metric field per computation (append-only) |
+| `uq_metric_score_result_natural_key` | UNIQUE (INDEX) | `(test_suite_run_id, computation_id, metric_score_name, metric_name)` | One result per statistic per metric field per computation (append-only) |
 
 ### Indexes
 
@@ -1100,6 +1115,7 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 | V1.35 | `V1.35__AddMetricScoreAggregationToTestSuites.sql` | Added `metric_score_aggregation` VARCHAR(10) NOT NULL DEFAULT 'AVG' to test_suites (`AVG`/`MIN`/`MAX`: per-test-case leaf of the aggregated metric scores used by built-in statistics, overall score, per-test-case score and run comparison) |
 | V1.36 | `V1.36__AddIdsToDatasetSchemaFields.sql` | Data-only backfill: adds a server-assigned string `id` (UUID) to every field of `datasets.test_case_schema` that lacks one or has `"id": null`. Preserves array order; leaves existing ids and non-array values untouched; idempotent; does not bump `version`/`updated_at_ms`. |
 | V1.37 | `V1.37__AddRoutesRefToTestSuites.sql` | Added nullable `routes_ref` JSONB to `test_suites` for canonical global DIAL Core Route identity metadata on ROUTE suites. |
+| V1.38 | `V1.38__BackfillStartedAtForNeverStartedRuns.sql` | Data-only backfill: sets `started_at_ms = completed_at_ms` (zero duration) on FAILED/CANCELLED `test_suite_runs` rows with NULL `started_at_ms` and non-NULL `completed_at_ms` — runs that ended while still PENDING (restart reconciliation, snapshot or DIAL route-trigger failure, cancel while PENDING), matching what the repository now writes for such runs. |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 
@@ -1109,11 +1125,11 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 | V1.2 | `V1.2__AddExtractedColumnsToTestCaseRunResults.sql` | Added extracted_columns and extraction_warnings JSONB to test_case_run_results |
 | V1.3 | `V1.3__AddStreamingTimingToTestCaseRunResults.sql` | Added time_to_first_token_ms and time_to_last_token_ms nullable BIGINT columns |
 | V1.4 | `V1.4__DropTimingAddRetryColumns.sql` | Dropped time_to_first_token_ms and time_to_last_token_ms; added retry_count (INTEGER NOT NULL DEFAULT 0) and log_details (JSONB nullable) |
-| V1.5 | `V1.5__CreateTestCaseEvalSummariesTable.sql` | Created test_case_eval_summaries table with composite PK, unique constraint, indexes |
-| V1.6 | `V1.6__CreateRunMetricSnapshotsTable.sql` | Created run_metric_snapshots table with unique constraint on (computation_id, tsmd_id). **Frozen as of meta V1.32** — the table is retained but no longer read or written; the live table is the meta one. |
+| V1.5 | `V1.5__CreateTestCaseEvalSummariesTable.sql` | Created test_case_eval_summaries table with composite PK, unique index `uq_eval_summaries_natural_key`, indexes |
+| V1.6 | `V1.6__CreateRunMetricSnapshotsTable.sql` | Created run_metric_snapshots table with unique index `uq_run_metric_snapshots_computation_tsmd` on (computation_id, tsmd_id). **Frozen as of meta V1.32** — the table is retained but no longer read or written; the live table is the meta one. |
 | V1.7 | `V1.7__AddExtractionWarningsToEvalSummaries.sql` | Added extraction_warnings JSONB NOT NULL DEFAULT '[]' to test_case_eval_summaries |
 | V1.8 | `V1.8__NormalizeErrorShapedMetricValues.sql` | Normalized transport-failure metric_values from synthetic `{"error": null}` to real output field names; updated corresponding metric_infos entries |
-| V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation) |
+| V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique index `uq_metric_score_result_natural_key`, append-only per computation) |
 | V1.11 | `V1.11__CreateRocAucScoreFunction.sql` | Created `roc_auc_score(double precision[], double precision[])` SQL function computing the rank-sum ROC AUC score over paired label/probability arrays |
 | V1.12 | `V1.12__AddSuiteAndTimestampToMetricScoreResult.sql` | Added `test_suite_id` and `computed_at_ms` to metric_score_result (backfilled, NOT NULL) with index `idx_metric_score_result_suite_computed` for suite-scoped latest-N retrieval |
 | V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_run_results; extended `uq_results_run_case_index` with `turn_index` |
@@ -1123,7 +1139,7 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 | V1.17 | `V1.17__AddRequestColumnsToTestCaseRunResults.sql` | Added `request_index`/`total_requests` (NOT NULL DEFAULT 0/1) to test_case_run_results; dropped and re-created `uq_results_run_case_index` as `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)` |
 | V1.18 | `V1.18__AddRequestColumnsToEvalSummaries.sql` | Added `request_index`/`total_requests` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; dropped and re-created unique index `uq_eval_summaries_natural_key` as `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` |
 | V1.19 | `V1.19__CreateTestCaseEvalScoresTable.sql` | Created test_case_eval_scores table (`eval_summary_id` PK, nullable `score`/`passed`, `computed_at_ms`); no denormalized context, no secondary indexes — every read joins to test_case_eval_summaries |
-| V1.20 | `V1.20__CreateTestCaseMetricScoresAggregatedTable.sql` | Created test_case_metric_scores_aggregated table (`id` PK, `test_suite_run_id`/`test_case_id`/`computation_id`, `metric_scores` JSONB NOT NULL DEFAULT '{}', `created_at_ms` (set once, immutable across upserts), `computed_at_ms`); unique index on `(test_suite_run_id, test_case_id, computation_id)`, lookup index on `computation_id` |
+| V1.20 | `V1.20__CreateTestCaseMetricScoresAggregatedTable.sql` | Created test_case_metric_scores_aggregated table (`id` PK, `test_suite_run_id`/`test_case_id`/`computation_id`, `metric_scores` JSONB NOT NULL DEFAULT '{}', `created_at_ms`, `computed_at_ms`); insert-only (`ON CONFLICT DO NOTHING`); unique index on `(test_suite_run_id, test_case_id, computation_id)`, lookup index on `computation_id` |
 | V1.21 | `V1.21__AddRunCaseContextToTestCaseEvalScores.sql` | Dropped and re-created test_case_eval_scores (`id` PK; `test_suite_run_id`/`test_case_id`/`test_case_name`/`computation_id`/`execution_status` NOT NULL; nullable `score`/`passed`; `computed_at_ms`); `eval_summary_id` removed; unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)` |
 | V1.22 | `V1.22__CreateRunDeletionsTable.sql` | Created `run_deletions` tombstone table (`test_suite_run_id` PK, `deleted_at_ms` NOT NULL) for soft-deletion of analytics rows |
 
@@ -1135,7 +1151,7 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 - **Timestamps**: Stored as `BIGINT` epoch milliseconds
 - **JSON data**: Stored as `JSONB` for indexing and querying
 - **Boolean columns**: Named with `is_` prefix (e.g., `is_enabled`, `is_valid`)
-- **Foreign keys**: Use `ON DELETE CASCADE` for child tables
+- **Foreign keys**: Child tables owned by a parent use `ON DELETE CASCADE`. Exceptions: `test_suites.dataset_id → datasets` is `RESTRICT`; `test_suite_metric_definitions.metric_declaration_id → metric_declarations`, `test_suite_metric_definitions.metric_declaration_version_id → metric_declaration_versions` and `metric_declaration_versions.metric_declaration_id → metric_declarations` are `NO ACTION` (no clause; PostgreSQL default)
 
 ---
 

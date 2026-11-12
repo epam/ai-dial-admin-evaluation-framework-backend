@@ -5,11 +5,11 @@
 | Aspect | Value |
 |--------|-------|
 | Language | Java 25 |
-| Framework | Spring Boot 4.1.1 |
-| Build | Gradle 9.7.1 |
+| Framework | Spring Boot 4.1.2 |
+| Build | Gradle 9.8.2 |
 | Database | PostgreSQL (JDBC only, NO JPA) |
 | Security | OIDC/JWT multi-issuer |
-| Testing | JUnit 5 + Testcontainers |
+| Testing | JUnit Jupiter 6 + Testcontainers |
 | Formatting | Spotless + palantir-java-format (`./gradlew spotlessApply`) |
 | Build layout | Multi-module: root app + `evaluation-runner-core` subproject (DB-free Phase 1 execution engine library, `com.epam.aidial.evaluation.runner`, contributed via Spring Boot autoconfiguration; test with `./gradlew :evaluation-runner-core:test`) + `eval-cli` subproject (standalone Spring Boot picocli CLI, `com.epam.aidial.evaluation.cli`, DB-free consumer of `evaluation-runner-core`; produces executable `bootJar`; test with `./gradlew :eval-cli:test`) |
 
@@ -37,7 +37,7 @@ Package inventory: [docs/key-packages.md](docs/key-packages.md).
 - Use specialized, injectable components for conversion/validation logic instead of private/inner methods to facilitate reuse and testing
 - Use `@Transactional("metaTransactionManager")` for meta DB services and `@Transactional("analyticsTransactionManager")` for analytics DB services; unqualified `@Transactional` is not safe in a dual-datasource setup
 - Add OpenAPI annotations to controllers
-- Write functional tests with `@PostgresFunctionalTests`
+- Write functional tests as abstract `XFunctionalTests` extending `BaseFunctionalTest` directly or via an `Abstract*FunctionalTest` base, registered as `@Nested class XTests extends XFunctionalTests {}` inside `PostgresFunctionalTests`
 - Use `MetaTestDataHelper` / `AnalyticsTestDataHelper` (injected via `@Autowired`) for fixture creation and cleanup in functional tests; do not inject `JdbcTemplate` directly in test classes
 - Use repositories for state assertions in functional tests (`repository.findById(id)`, `repository.count()`) instead of raw SELECT queries
 - Name back-door test helpers after intent, not mechanism (e.g. `forceSuiteInvalid`, not `setIsValidFalse`)

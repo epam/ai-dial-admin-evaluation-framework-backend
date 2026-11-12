@@ -3,6 +3,8 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.configuration.properties.grafana.GrafanaProperties;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -101,6 +103,14 @@ class GrafanaLinkBuilderTest {
         }
 
         @Test
+        @DisplayName("should request the traces table view so results are grouped per trace")
+        void shouldRequestTracesTableType() {
+            final String url = enabledBuilder().runExploreUrl(UUID.randomUUID(), 1000L, 2000L);
+
+            assertThat(URLDecoder.decode(url, StandardCharsets.UTF_8)).contains("\"tableType\":\"traces\"");
+        }
+
+        @Test
         @DisplayName("should use current time as 'to' boundary when completedAt is null (in-progress run)")
         void shouldUseCurrentTimeWhenCompletedAtIsNull() {
             UUID runId = UUID.randomUUID();
@@ -165,6 +175,15 @@ class GrafanaLinkBuilderTest {
             assertThat(url).contains("660e8400-e29b-41d4-a716-446655440001");
             assertThat(url).contains("eval.run.id");
             assertThat(url).contains("testcase.id");
+        }
+
+        @Test
+        @DisplayName("should request the traces table view so results are grouped per trace")
+        void shouldRequestTracesTableType() {
+            final String url =
+                    enabledBuilder().testCaseAggregateUrl(UUID.randomUUID(), UUID.randomUUID(), 1000L, 2000L);
+
+            assertThat(URLDecoder.decode(url, StandardCharsets.UTF_8)).contains("\"tableType\":\"traces\"");
         }
 
         @Test

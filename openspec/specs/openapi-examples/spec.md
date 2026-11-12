@@ -83,23 +83,37 @@ Implementation notes:
 - **WHEN** a mapping's path shape changes such that its example key no longer matches its files
 - **THEN** the test asserting examples in the generated OpenAPI document SHALL fail, rather than the endpoint silently shipping without examples
 
-### Requirement: A response media type MUST be declared for response examples to attach
+### Requirement: Responses SHALL be documented as application/json unless they declare another type
 
-An endpoint's mapping annotation MUST declare `produces = MediaType.APPLICATION_JSON_VALUE` (or otherwise pin its response content type to `application/json`) for any response example to attach. `OpenApiExampleCustomizer` injects response examples by looking up the operation's `application/json` media type on the generated `ApiResponse` content (`OpenApiExampleCustomizer.MEDIA_TYPE_JSON`). Springdoc only creates that media-type entry when the mapping declares `produces` accordingly; without it springdoc documents the response under `*/*`, the customizer's lookup finds no `application/json` entry, and the operation ships with no response examples — even when the example JSON files exist and are named exactly per the `{pathKey}-{method}-response-{status}-{name}.json` convention. A correctly named example file is therefore necessary but not sufficient.
+`OpenApiExampleCustomizer` attaches examples only to an operation's `application/json` media type (`OpenApiExampleCustomizer.MEDIA_TYPE_JSON`). The application SHALL set `springdoc.default-produces-media-type: application/json`, so every response that declares no content type — including the error responses produced by the exception handler (`ErrorView`) — is documented under `application/json` and can receive examples. The setting SHALL affect the generated document only; it SHALL NOT be replaced by adding `produces` to mappings purely for documentation, because `produces` also restricts runtime content negotiation (a non-JSON `Accept` gets 406). An operation whose body is not JSON (SSE, CSV/ZIP export, file download) SHALL declare its real media type explicitly (`produces` or `@ApiResponse(content = @Content(mediaType = ...))`) so it is not documented as JSON.
 
 Status: **Implemented**
 
 Implementation notes:
-- `RunMetricSnapshotController` and `RunMetricSnapshotDeprecatedController` both declare `produces = MediaType.APPLICATION_JSON_VALUE` on their `@GetMapping`/`@PostMapping` methods specifically so their response examples attach; renaming the example JSON files to the customizer's convention alone would not have sufficed.
-- This requirement is additive guidance for future endpoints; it does not change the filename convention specified in "Example files SHALL resolve for trailing-wildcard endpoint mappings".
+- `springdoc.default-produces-media-type` is set in `application.yml`; `FileController`'s download declares `application/octet-stream` on its 200 response.
+- Mappings that already declare `produces = MediaType.APPLICATION_JSON_VALUE` (e.g. `RunMetricSnapshotController`) keep it; it is no longer required for examples to attach.
 
-#### Scenario: Endpoint gains response examples via produces attribute
-- **WHEN** a controller method returns a response body and its mapping annotation declares `produces = MediaType.APPLICATION_JSON_VALUE`
-- **THEN** springdoc SHALL register the `application/json` media type on that operation's response, and `OpenApiExampleCustomizer` SHALL find and inject matching example files there
+#### Scenario: Response without declared content type receives examples
+- **WHEN** a controller method returns a JSON body, its mapping declares no `produces`, and a correctly named example file exists
+- **THEN** the generated document SHALL list the response under `application/json` and `OpenApiExampleCustomizer` SHALL attach the example
 
-#### Scenario: Missing produces attribute silently drops examples
-- **WHEN** a controller method returns a response body but its mapping annotation omits `produces`
-- **THEN** springdoc SHALL document the response under `*/*` with no `application/json` media-type entry, and `OpenApiExampleCustomizer` SHALL find no place to attach response examples, regardless of whether correctly named example files exist on the classpath
+#### Scenario: Error response receives examples
+- **WHEN** an operation's error status (e.g. 409) is produced by the exception handler and a correctly named `...-response-409-{name}.json` file exists
+- **THEN** the example SHALL attach under `application/json`, and its content SHALL follow the `ErrorView` shape (`path`, `method`, `status`, `code`, `error`, `message`)
+
+#### Scenario: Non-JSON body keeps its own media type
+- **WHEN** an operation streams a file, CSV or SSE body
+- **THEN** it SHALL declare that media type explicitly and SHALL NOT be documented as `application/json`
+
+### Requirement: Every example file SHALL be injected
+
+Every file under `src/main/resources/openapi/examples/` SHALL resolve to an example in the generated document. A functional test SHALL fetch `/v3/api-docs` and fail, naming the file, when any example file is not injected (wrong path, method, status, name suffix or media type), so a stale or misnamed file cannot ship silently.
+
+Status: **Implemented**
+
+#### Scenario: Stale example file fails the build
+- **WHEN** an endpoint moves or changes its status codes and its example file is left behind
+- **THEN** the example-coverage functional test SHALL fail and list that file
 
 ## Implementation Notes
 

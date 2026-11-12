@@ -24,6 +24,8 @@ import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.SpanContext;
@@ -38,6 +40,7 @@ import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -346,6 +349,56 @@ class MetricEvaluationWorkerTest {
                                 .isEqualTo(parent.getSpanContext().getSpanId());
                         assertThat(root.getLinks()).isEmpty();
                     });
+        }
+    }
+
+    @Test
+    @DisplayName("metrics root and TSMD spans carry the result row's request and turn position")
+    void metricSpansCarryRowPosition() throws InterruptedException {
+        final InMemorySpanExporter exporter = InMemorySpanExporter.create();
+        try (OpenTelemetrySdk telemetry = OpenTelemetrySdk.builder()
+                .setTracerProvider(SdkTracerProvider.builder()
+                        .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+                        .build())
+                .build()) {
+            when(metricProviderClient.evaluate(eq(PROVIDER_ID), any(EvaluationRequestDto.class)))
+                    .thenReturn(buildSuccessResponse());
+            final MetricEvaluationWorker traced =
+                    new MetricEvaluationWorker(metricProviderClient, bindingResolver, telemetry);
+            final TestCaseRunResult result = buildResult().toBuilder()
+                    .requestIndex(1)
+                    .totalRequests(2)
+                    .turnIndex(2)
+                    .totalTurns(3)
+                    .build();
+            final MetricEvaluationContext context = buildContext(0).toBuilder()
+                    .requestLabels(Arrays.asList("first", "second"))
+                    .build();
+
+            final Span metricsSpan = traced.startMetricsSpan(result, context);
+            try (Scope ignored = metricsSpan.makeCurrent()) {
+                traced.evaluate(buildTsmd(), result, new Semaphore(1), context);
+            } finally {
+                metricsSpan.end();
+            }
+
+            assertThat(exporter.getFinishedSpanItems())
+                    .extracting(SpanData::getName)
+                    .containsExactlyInAnyOrder(
+                            TracingConstants.SPAN_METRIC_TSMD_EVALUATE, TracingConstants.SPAN_EVAL_TESTCASE_METRICS);
+            assertThat(exporter.getFinishedSpanItems()).allSatisfy(span -> {
+                final Attributes attributes = span.getAttributes();
+                assertThat(attributes.get(AttributeKey.stringKey(TracingConstants.REQUEST_INDEX)))
+                        .isEqualTo("1");
+                assertThat(attributes.get(AttributeKey.stringKey(TracingConstants.REQUEST_TOTAL)))
+                        .isEqualTo("2");
+                assertThat(attributes.get(AttributeKey.stringKey(TracingConstants.REQUEST_NAME)))
+                        .isEqualTo("second");
+                assertThat(attributes.get(AttributeKey.stringKey(TracingConstants.TURN_INDEX)))
+                        .isEqualTo("2");
+                assertThat(attributes.get(AttributeKey.stringKey(TracingConstants.TURN_TOTAL)))
+                        .isEqualTo("3");
+            });
         }
     }
 

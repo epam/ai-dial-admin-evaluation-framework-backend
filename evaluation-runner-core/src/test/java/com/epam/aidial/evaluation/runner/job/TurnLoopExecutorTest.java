@@ -52,14 +52,27 @@ import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
 import com.epam.aidial.evaluation.runner.util.BindingTypeResolver;
 import com.epam.aidial.evaluation.runner.util.QuietJsonService;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
+import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.EventData;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -103,8 +116,20 @@ class TurnLoopExecutorTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneId.of("UTC"));
 
+    private final InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+    private final OpenTelemetrySdk telemetry = OpenTelemetrySdk.builder()
+            .setTracerProvider(SdkTracerProvider.builder()
+                    .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+                    .build())
+            .build();
+
     private TurnLoopExecutor executor;
     private ObjectMapper objectMapper;
+
+    @AfterEach
+    void closeTelemetry() {
+        telemetry.close();
+    }
 
     @BeforeEach
     void setUp() {
@@ -148,6 +173,7 @@ class TurnLoopExecutorTest {
                 jsonService,
                 deploymentTurnInvoker,
                 perTurnBindingDetector,
+                new TurnTracer(telemetry),
                 objectMapper,
                 FIXED_CLOCK);
     }
@@ -590,6 +616,150 @@ class TurnLoopExecutorTest {
         assertThat(results.get(1).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
         assertThat(results.get(1).getTurnIndex()).isEqualTo(1);
         assertThat(results.stream().anyMatch(r -> r.getTurnIndex() == 2)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Each turn runs in its own eval.testcase.turn span; the failing turn's span is marked ERROR")
+    void eachTurnRunsInItsOwnTurnSpan() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("mt-spans")
+                .testCaseData(null)
+                .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"},{\"prompt\":\"q2\"}]")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .requestTemplate(jsonBodyTemplate(Map.of("messages", List.of(Map.of("content", "${{prompt}}")))))
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .snapshotTestCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .perTurn(true)
+                        .build()))
+                .build();
+        final List<SpanContext> invocationParents = new ArrayList<>();
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    invocationParents.add(Span.current().getSpanContext());
+                    return invocationParents.size() == 1
+                            ? new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null)
+                            : new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":\"boom\"}", 0, "boom");
+                });
+
+        executor.execute(
+                input,
+                context,
+                httpTarget(context),
+                0,
+                singleRequestSpec(context, List.of()),
+                Map.of(),
+                "trace-spans",
+                FIXED_CLOCK.millis());
+
+        final List<SpanData> turnSpans = spanExporter.getFinishedSpanItems().stream()
+                .filter(span -> span.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE_TURN))
+                .toList();
+        assertThat(turnSpans)
+                .extracting(span -> span.getAttributes().get(AttributeKey.stringKey(TracingConstants.TURN_INDEX)))
+                .containsExactly("0", "1");
+        assertThat(turnSpans).allSatisfy(span -> {
+            assertThat(span.getAttributes().get(AttributeKey.stringKey(TracingConstants.TURN_TOTAL)))
+                    .isEqualTo("3");
+            assertThat(span.getAttributes().get(AttributeKey.stringKey(TracingConstants.REQUEST_INDEX)))
+                    .isEqualTo("0");
+        });
+        assertThat(invocationParents)
+                .extracting(SpanContext::getSpanId)
+                .containsExactly(turnSpans.get(0).getSpanId(), turnSpans.get(1).getSpanId());
+        assertThat(turnSpans.get(0).getStatus().getStatusCode()).isEqualTo(StatusCode.UNSET);
+        assertThat(turnSpans.get(1).getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+        assertThat(turnSpans.get(1).getStatus().getDescription()).isEqualTo("Turn aborted with status FAILED");
+        assertThat(turnSpans.get(1).getEvents())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.getName()).isEqualTo(TracingConstants.EVENT_TURN_FAILURE);
+                    assertThat(event.getAttributes()
+                                    .get(AttributeKey.stringKey(TracingConstants.TURN_FAILURE_DETAILS)))
+                            .isEqualTo("boom");
+                });
+    }
+
+    @Test
+    @DisplayName("Turn spans of a chained request carry its request.index, request.total and request.name")
+    void chainedRequestTurnSpansCarryRequestPosition() {
+        stubCommonInfra();
+        final TestCaseRunInput input =
+                baseInputBuilder().testCaseName("second-req-span").testCaseData("{}").build();
+        final EvaluationContext context = baseContextBuilder()
+                .inputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+        final RequestExecutionSpec spec = new RequestExecutionSpec(
+                1,
+                2,
+                "second",
+                ((HttpSuite) context.getSuite()).first().endpointRef(),
+                jsonBodyTemplate(Map.of("messages", "hi")),
+                List.of(),
+                List.of());
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
+
+        executor.execute(input, context, httpTarget(context), 0, spec, Map.of(), "trace-chain", FIXED_CLOCK.millis());
+
+        assertThat(turnSpans()).singleElement().satisfies(span -> {
+            assertThat(span.getAttributes().get(AttributeKey.stringKey(TracingConstants.REQUEST_INDEX)))
+                    .isEqualTo("1");
+            assertThat(span.getAttributes().get(AttributeKey.stringKey(TracingConstants.REQUEST_TOTAL)))
+                    .isEqualTo("2");
+            assertThat(span.getAttributes().get(AttributeKey.stringKey(TracingConstants.REQUEST_NAME)))
+                    .isEqualTo("second");
+            assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.UNSET);
+        });
+    }
+
+    @Test
+    @DisplayName("A turn that throws records the exception on its ERROR turn span and still yields an ERROR row")
+    void throwingTurnRecordsExceptionOnTurnSpan() {
+        when(urlBuilder.buildUrl(any(HttpTarget.class), anyString()))
+                .thenReturn("/openai/deployments/gpt-4/chat/completions");
+        when(evaluationRunProperties.getExecution()).thenReturn(execution);
+        when(execution.getHeaderBlacklist()).thenReturn(List.of());
+        when(serializerRegistry.serialize(any())).thenThrow(new IllegalStateException("Unsupported content type"));
+        final TestCaseRunInput input =
+                baseInputBuilder().testCaseName("throwing-turn").testCaseData("{}").build();
+        final EvaluationContext context = baseContextBuilder()
+                .requestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
+                .inputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+
+        final List<TestCaseRunResult> rows = executor.execute(
+                        input,
+                        context,
+                        httpTarget(context),
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-throw",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(rows).singleElement().extracting(TestCaseRunResult::getExecutionStatus)
+                .isEqualTo(ExecutionStatus.ERROR);
+        assertThat(turnSpans()).singleElement().satisfies(span -> {
+            assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+            assertThat(span.getStatus().getDescription()).isEqualTo("Unsupported content type");
+            assertThat(span.getEvents()).extracting(EventData::getName).containsExactly("exception");
+        });
+    }
+
+    private List<SpanData> turnSpans() {
+        return spanExporter.getFinishedSpanItems().stream()
+                .filter(span -> span.getName().equals(TracingConstants.SPAN_EVAL_TESTCASE_TURN))
+                .toList();
     }
 
     @Test

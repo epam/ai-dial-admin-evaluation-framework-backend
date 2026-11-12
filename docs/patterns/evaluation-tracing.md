@@ -10,7 +10,9 @@ Trace A: start request --> DIAL Core --> internal execute request --> eval.run (
                                                                       ^  ^
                                                link (eval.link.type=run) |
 Trace X: eval.testcase.execute (testCaseId, runIndex) -------------------+  |
-           +-- deployment / MCP invocation spans          ^                 |
+           +-- eval.testcase.turn (HTTP: per request x turn)  ^             |
+                 +-- deployment invocation spans              |             |
+           +-- MCP invocation spans (MCP suites, no turn span)|             |
                                                           | link (execution)|
 Trace Y: eval.testcase.metrics (one result row) ----------+-----------------+ (run)
            +-- metric.tsmd.evaluate (per dispatched TSMD)
@@ -26,11 +28,15 @@ up to the whole run. Linked peer traces keep every trace as long as its own work
 ## Boundaries
 
 - **Execution trace:** one per `(testCaseId, runIndex)`. All requests and turns of the repetition
-  share it. Its trace ID is the persisted result `traceId`.
+  share it. Its trace ID is the persisted result `traceId`. Each HTTP request turn runs in its own
+  `eval.testcase.turn` child span (`TurnTracer`), labelled `request.index`/`request.total`/`request.name`/
+  `turn.index`/`turn.total` (planned count) and marked ERROR when the turn aborts the loop, with the
+  verbose log details on an `eval.turn.failure` span event.
 - **Metrics trace:** one per result row whose metrics are dispatched. Phase 2 handles rows one at a
   time with their TSMDs in parallel, so the root is short. The executor makes it current for the row's
   TSMD tasks and ends it once they settle. Status is ERROR if any TSMD failed or timed out. No root when
-  every TSMD was condition-skipped/errored or the row did not succeed.
+  every TSMD was condition-skipped/errored or the row did not succeed. The root and its TSMD spans carry the
+  row's `request.*`/`turn.*` position, so rows of one repetition are distinguishable.
 - Discovery calls and Phase 3 run-level aggregates stay under `eval.run`.
 
 ## Runtime ownership
@@ -73,7 +79,8 @@ imported trace IDs are not rewritten.
 - From any test-case trace, follow its span link to `eval.run` (`eval.link.type=run`); from a metrics
   trace, follow `eval.link.type=execution` to the execution trace.
 - From a run, search `{ span.eval.run.id = "<run-id>" }` to list orchestration and every test-case trace.
-- Narrow by `span.testcase.id`, `span.run.index`, or `span.result.id`.
+- Narrow by `span.testcase.id`, `span.run.index`, `span.result.id`, `span.request.index` or
+  `span.turn.index` (string values, zero-based).
 - Do not assume reverse-link discovery or one stitched waterfall across traces.
 
 Links do not force sampling or guarantee retention; each root is sampled under the deployment policy.

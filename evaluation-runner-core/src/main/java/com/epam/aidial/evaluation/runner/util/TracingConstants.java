@@ -35,6 +35,12 @@ public final class TracingConstants {
     /** Span name for a single test case execution in {@code EvaluationWorker}. */
     public static final String SPAN_EVAL_TESTCASE_EXECUTE = "eval.testcase.execute";
 
+    /**
+     * Span name for one request turn (one entry of the request chain × one turn) in {@code TurnLoopExecutor};
+     * child of {@link #SPAN_EVAL_TESTCASE_EXECUTE}, parent of that turn's outbound HTTP call.
+     */
+    public static final String SPAN_EVAL_TESTCASE_TURN = "eval.testcase.turn";
+
     /** Span name for a single TSMD evaluation in {@code MetricEvaluationWorker}. */
     public static final String SPAN_METRIC_TSMD_EVALUATE = "metric.tsmd.evaluate";
 
@@ -91,6 +97,34 @@ public final class TracingConstants {
 
     /** OTel key for the TSMD declaration provider id. Span attribute only. */
     public static final String TSMD_PROVIDER_ID = "tsmd.provider.id";
+
+    /**
+     * OTel key for the zero-based position of a request in the suite's request chain. Span attribute only,
+     * on {@link #SPAN_EVAL_TESTCASE_TURN}, {@link #SPAN_EVAL_TESTCASE_METRICS} and {@link
+     * #SPAN_METRIC_TSMD_EVALUATE}.
+     */
+    public static final String REQUEST_INDEX = "request.index";
+
+    /** OTel key for the number of requests in the suite's request chain. Span attribute only. */
+    public static final String REQUEST_TOTAL = "request.total";
+
+    /** OTel key for the request's label in the chain (absent when unlabelled). Span attribute only. */
+    public static final String REQUEST_NAME = "request.name";
+
+    /** OTel key for the zero-based turn index within one request. Span attribute only. */
+    public static final String TURN_INDEX = "turn.index";
+
+    /**
+     * OTel key for the planned turn count of one request (not the number actually run: a request that aborts
+     * after two of three turns still reports {@code 3}). Span attribute only.
+     */
+    public static final String TURN_TOTAL = "turn.total";
+
+    /** Span event recorded on an aborted {@link #SPAN_EVAL_TESTCASE_TURN}, carrying the turn's failure details. */
+    public static final String EVENT_TURN_FAILURE = "eval.turn.failure";
+
+    /** Attribute on {@link #EVENT_TURN_FAILURE} holding the turn's diagnostic log details (JSON). */
+    public static final String TURN_FAILURE_DETAILS = "eval.turn.failure.details";
 
     /** OTel key for the MCP tool name on try-it-out MCP spans. Span attribute only. */
     public static final String MCP_TOOL_NAME = "mcp.tool.name";

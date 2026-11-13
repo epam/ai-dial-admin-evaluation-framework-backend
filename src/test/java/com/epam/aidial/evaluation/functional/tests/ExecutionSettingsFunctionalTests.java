@@ -21,6 +21,7 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunConfigResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import java.util.List;
 import java.util.Map;
@@ -104,6 +105,27 @@ public abstract class ExecutionSettingsFunctionalTests extends BaseFunctionalTes
         assertThat(persistedConfig.getRetry().getMaxRetries()).isEqualTo(3);
         assertThat(persistedConfig.getRetry().getRetryDelayMs()).isEqualTo(2000L);
         assertThat(persistedConfig.getRetry().getRetryBackoffMultiplier()).isEqualTo(2.0);
+    }
+
+    @Test
+    @DisplayName("Should reject a run whose concurrencyLevel exceeds the returned maxConcurrencyLevel")
+    void shouldRejectRunAboveReturnedMax() {
+        final int max = restTemplate
+                .getForObject(apiUrl("/test-suite-runs/config"), TestSuiteRunConfigResponseDto.class)
+                .getMaxConcurrencyLevel();
+        final TestSuiteResponseDto suite = createTestSuite("Suite Run Config Max");
+        final RunConfigDto runConfig = RunConfigDto.builder()
+                .numberOfRuns(1)
+                .execution(ExecutionSettingsDto.builder().concurrencyLevel(max + 1).build())
+                .build();
+
+        final ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/runs"),
+                jsonEntity(TestSuiteRunRequestDto.builder().runConfig(runConfig).build()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("concurrencyLevel must not exceed " + max);
     }
 
     @Test

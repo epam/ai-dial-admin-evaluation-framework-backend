@@ -112,7 +112,7 @@ Status: **Implemented**
     "runConfig": {
       "numberOfRuns": 5,
       "execution": {
-        "concurrencyLevel": 10,
+        "concurrencyLevel": 5,
         "requestTimeoutMs": 120000,
         "rateLimitRps": 5.0
       },
@@ -265,6 +265,25 @@ Status: **Implemented**
 #### Scenario: Non-existent run
 - **WHEN** client calls `GET /api/v1/test-suite-runs/{id}` for a non-existent id
 - **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
+
+### Requirement: Get test suite run configuration
+The service SHALL provide `GET /api/v1/test-suite-runs/config` returning the run-related limits the backend currently enforces, so clients can bound run-form inputs without a trial submission. The response SHALL be a JSON object with a `maxConcurrencyLevel` integer field equal to the configured `test-suite-run.execution.max-concurrency-level`. The endpoint SHALL be protected by the same authentication as other test suite run endpoints.
+Status: **Implemented**
+
+#### Scenario: Returns configured max concurrency level
+- **WHEN** `test-suite-run.execution.max-concurrency-level` is configured to `N` and a client calls `GET /api/v1/test-suite-runs/config`
+- **THEN** system SHALL respond with HTTP 200 and body `{"maxConcurrencyLevel": N}`
+
+#### Scenario: Value matches the enforced ceiling
+- **WHEN** a client submits a run with `execution.concurrencyLevel` greater than the `maxConcurrencyLevel` returned by `GET /api/v1/test-suite-runs/config`
+- **THEN** system SHALL reject the run with HTTP 400
+
+#### Scenario: Literal path is not treated as a run id
+- **WHEN** a client calls `GET /api/v1/test-suite-runs/config`
+- **THEN** system SHALL NOT resolve `config` as a run id (no 400 for an invalid UUID, no 404 `NOT_FOUND`)
+
+#### Implementation notes
+- `TestSuiteRunController`, `TestSuiteRunConfigService`, `TestSuiteRunConfigResponseDto`
 
 ### Requirement: TestSuiteRunResponseDto structure
 The response DTO for a test suite run SHALL include all relevant run information, including the extended `runConfig` with execution and retry settings.
@@ -562,7 +581,7 @@ Status: **Implemented**
 
 #### Scenario: Execution defaults and limits
 - **WHEN** the application starts
-- **THEN** it SHALL read `test-suite-run.execution.default-concurrency-level` (default 1), `test-suite-run.execution.max-concurrency-level` (default 50), `test-suite-run.execution.default-request-timeout-ms` (default 600000), `test-suite-run.execution.max-request-timeout-ms` (default 1200000), `test-suite-run.execution.result-batch-size` (default 100), and `test-suite-run.execution.max-response-size-bytes` (default 52428800)
+- **THEN** it SHALL read `test-suite-run.execution.default-concurrency-level` (default 1), `test-suite-run.execution.max-concurrency-level` (default 5; environment variable `TEST_SUITE_RUN_EXECUTION_MAX_CONCURRENCY_LEVEL`), `test-suite-run.execution.default-request-timeout-ms` (default 600000), `test-suite-run.execution.max-request-timeout-ms` (default 1200000), `test-suite-run.execution.result-batch-size` (default 100), and `test-suite-run.execution.max-response-size-bytes` (default 52428800)
 
 #### Scenario: Retry defaults and limits
 - **WHEN** the application starts

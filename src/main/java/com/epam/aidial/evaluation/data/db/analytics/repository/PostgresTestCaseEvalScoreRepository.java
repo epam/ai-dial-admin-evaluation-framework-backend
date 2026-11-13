@@ -2,13 +2,21 @@ package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 
+import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCounts;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.Query;
+import org.jooq.Row2;
+import org.jooq.impl.DSL;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
@@ -56,5 +64,36 @@ public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRep
                 .toList();
         dsl.batch(queries).execute();
         log.debug("Batch inserted {} eval summary scores", scores.size());
+    }
+
+    @Override
+    public Map<UUID, RunPassCounts> countByRunAndComputation(Map<UUID, UUID> runToComputation) {
+        if (runToComputation == null || runToComputation.isEmpty()) {
+            return Map.of();
+        }
+        final List<Row2<String, String>> pairs = runToComputation.entrySet().stream()
+                .map(e -> DSL.row(e.getKey().toString(), e.getValue().toString()))
+                .toList();
+        final String success = ExecutionStatus.SUCCESS.name();
+        final Field<Integer> passedTrue = DSL.count().filterWhere(TEST_CASE_EVAL_SCORES.PASSED.isTrue());
+        final Field<Integer> passedFalse = DSL.count().filterWhere(TEST_CASE_EVAL_SCORES.PASSED.isFalse());
+        final Field<Integer> unscored = DSL.count()
+                .filterWhere(TEST_CASE_EVAL_SCORES.PASSED.isNull().and(TEST_CASE_EVAL_SCORES.EXECUTION_STATUS.eq(success)));
+        final Field<Integer> failed = DSL.count().filterWhere(TEST_CASE_EVAL_SCORES.EXECUTION_STATUS.ne(success));
+
+        final Map<UUID, RunPassCounts> result = new HashMap<>();
+        dsl.select(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID, passedTrue, passedFalse, unscored, failed)
+                .from(TEST_CASE_EVAL_SCORES)
+                .where(DSL.row(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID, TEST_CASE_EVAL_SCORES.COMPUTATION_ID)
+                        .in(pairs))
+                .and(RunDeletionFilter.notDeleted(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID))
+                .groupBy(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID)
+                .forEach(r -> {
+                    final UUID runId = UUID.fromString(r.value1());
+                    result.put(
+                            runId,
+                            new RunPassCounts(runId, r.value2(), r.value3(), r.value4(), r.value5()));
+                });
+        return result;
     }
 }

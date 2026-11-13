@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
@@ -8,6 +9,7 @@ import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
+import com.epam.aidial.evaluation.data.db.analytics.model.SuiteRunRank;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
@@ -34,6 +36,7 @@ import org.jooq.JSONB;
 import org.jooq.Query;
 import org.jooq.Record;
 import org.jooq.Record1;
+import org.jooq.Record3;
 import org.jooq.SelectLimitStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -59,6 +62,10 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     private static final String RUN_ID_COLUMN = "run_id";
     private static final String LATEST_TABLE = "latest";
     private static final String COMPUTATION_ID_COLUMN = "computation_id";
+    private static final String PER_RUN_TABLE = "per_run";
+    private static final String RANKED_TABLE = "ranked";
+    private static final String NEWEST_COLUMN = "newest_created_at_ms";
+    private static final String RANK_COLUMN = "run_rank";
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
@@ -224,6 +231,48 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .crossJoin(latestPerRun)
                 .forEach(r -> result.put(UUID.fromString(r.value1()), UUID.fromString(r.value2())));
         return result;
+    }
+
+    @Override
+    public List<SuiteRunRank> findLatestScoredRuns(Collection<UUID> suiteIds, int perSuite) {
+        if (suiteIds == null || suiteIds.isEmpty()) {
+            return List.of();
+        }
+        final List<String> ids = suiteIds.stream().distinct().map(UUID::toString).toList();
+
+        final Field<String> suiteField = TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID;
+        final Field<String> runField = TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID;
+        final Field<Long> newestField = DSL.max(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS);
+
+        final Table<Record3<String, String, Long>> perRun = dsl.select(suiteField, runField, newestField.as(NEWEST_COLUMN))
+                .from(TEST_CASE_EVAL_SUMMARIES)
+                .where(suiteField.in(ids))
+                .and(notDeleted())
+                .and(DSL.exists(DSL.selectOne()
+                        .from(TEST_CASE_EVAL_SCORES)
+                        .where(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID.eq(runField))))
+                .groupBy(suiteField, runField)
+                .asTable(PER_RUN_TABLE);
+        final Field<String> perRunSuite = perRun.field(suiteField);
+        final Field<String> perRunRun = perRun.field(runField);
+        final Field<Long> perRunNewest = perRun.field(NEWEST_COLUMN, Long.class);
+
+        final Table<Record3<String, String, Integer>> ranked = dsl.select(
+                        perRunSuite,
+                        perRunRun,
+                        DSL.rowNumber()
+                                .over(DSL.partitionBy(perRunSuite).orderBy(perRunNewest.desc(), perRunRun.desc()))
+                                .as(RANK_COLUMN))
+                .from(perRun)
+                .asTable(RANKED_TABLE);
+        final Field<String> rankedSuite = ranked.field(perRunSuite);
+        final Field<String> rankedRun = ranked.field(perRunRun);
+        final Field<Integer> rankedRank = ranked.field(RANK_COLUMN, Integer.class);
+
+        return dsl.select(rankedSuite, rankedRun, rankedRank)
+                .from(ranked)
+                .where(rankedRank.le(perSuite))
+                .fetch(r -> new SuiteRunRank(UUID.fromString(r.value1()), UUID.fromString(r.value2()), r.value3()));
     }
 
     @Override

@@ -42,6 +42,7 @@ import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import com.epam.aidial.evaluation.utils.CorrelationIdContext;
 import io.opentelemetry.context.Context;
 import java.io.InputStream;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -377,6 +378,16 @@ public class TestSuiteRunService {
                 .findLatestByTestSuiteId(suiteId)
                 .orElseThrow(() -> new EntityNotFoundException("No runs found for test suite with id: " + suiteId));
         return mapper.toDto(run);
+    }
+
+    /**
+     * Each run's {@code overallScoreThreshold} as captured in its suite snapshot, in one read. A run with no
+     * snapshot or no threshold is absent from the map (callers treat that as "no threshold"); unknown run ids
+     * are ignored.
+     */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public Map<UUID, Double> getThresholdsByRunIds(Collection<UUID> runIds) {
+        return testSuiteRunRepository.findThresholdsByRunIds(runIds);
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)

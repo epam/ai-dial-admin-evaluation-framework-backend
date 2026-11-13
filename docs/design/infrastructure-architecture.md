@@ -100,7 +100,7 @@ the run. [dial-app-mode](../patterns/dial-app-mode.md)
 
 ## 4. Deployment
 
-- **Single Docker image** (multi-stage: Gradle 9.7.1/JDK 25 build → Amazon Corretto 25 Alpine runtime,
+- **Single Docker image** (multi-stage: Gradle 9.9.1/JDK 25 build → Amazon Corretto 25 Alpine runtime,
   non-root `appuser`), entrypoint passes `JAVA_OPTS`/`DEBUG_OPTS`; optional system CA import.
 - **Ports**: `8080` application, `9464` management (actuator `health`, `info`, `prometheus`, `metrics`).
 - **Probes**: `/api/v1/health/live` and `/api/v1/health/ready` on 8080 are static (no dependency checks);

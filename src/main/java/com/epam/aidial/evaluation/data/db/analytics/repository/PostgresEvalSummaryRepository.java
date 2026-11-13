@@ -36,7 +36,7 @@ import org.jooq.JSONB;
 import org.jooq.Query;
 import org.jooq.Record;
 import org.jooq.Record1;
-import org.jooq.Record3;
+import org.jooq.Record4;
 import org.jooq.SelectLimitStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -66,6 +66,8 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     private static final String RANKED_TABLE = "ranked";
     private static final String NEWEST_COLUMN = "newest_created_at_ms";
     private static final String RANK_COLUMN = "run_rank";
+    private static final String LATEST_ALIAS = "latest_summary";
+    private static final String LATEST_COMPUTATION_COLUMN = "latest_computation_id";
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
@@ -244,7 +246,16 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         final Field<String> runField = TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID;
         final Field<Long> newestField = DSL.max(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS);
 
-        final Table<Record3<String, String, Long>> perRun = dsl.select(suiteField, runField, newestField.as(NEWEST_COLUMN))
+        final TestCaseEvalSummaries latest = TEST_CASE_EVAL_SUMMARIES.as(LATEST_ALIAS);
+        final Field<String> latestComputationField = DSL.field(dsl.select(latest.COMPUTATION_ID)
+                        .from(latest)
+                        .where(latest.TEST_SUITE_RUN_ID.eq(runField))
+                        .orderBy(latest.COMPUTED_AT_MS.desc(), latest.COMPUTATION_ID.asc())
+                        .limit(1))
+                .as(LATEST_COMPUTATION_COLUMN);
+
+        final Table<Record4<String, String, Long, String>> perRun = dsl.select(
+                        suiteField, runField, newestField.as(NEWEST_COLUMN), latestComputationField)
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .where(suiteField.in(ids))
                 .and(notDeleted())
@@ -256,10 +267,12 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         final Field<String> perRunSuite = perRun.field(suiteField);
         final Field<String> perRunRun = perRun.field(runField);
         final Field<Long> perRunNewest = perRun.field(NEWEST_COLUMN, Long.class);
+        final Field<String> perRunComputation = perRun.field(LATEST_COMPUTATION_COLUMN, String.class);
 
-        final Table<Record3<String, String, Integer>> ranked = dsl.select(
+        final Table<Record4<String, String, String, Integer>> ranked = dsl.select(
                         perRunSuite,
                         perRunRun,
+                        perRunComputation,
                         DSL.rowNumber()
                                 .over(DSL.partitionBy(perRunSuite).orderBy(perRunNewest.desc(), perRunRun.desc()))
                                 .as(RANK_COLUMN))
@@ -267,12 +280,17 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .asTable(RANKED_TABLE);
         final Field<String> rankedSuite = ranked.field(perRunSuite);
         final Field<String> rankedRun = ranked.field(perRunRun);
+        final Field<String> rankedComputation = ranked.field(perRunComputation);
         final Field<Integer> rankedRank = ranked.field(RANK_COLUMN, Integer.class);
 
-        return dsl.select(rankedSuite, rankedRun, rankedRank)
+        return dsl.select(rankedSuite, rankedRun, rankedComputation, rankedRank)
                 .from(ranked)
                 .where(rankedRank.le(perSuite))
-                .fetch(r -> new SuiteRunRank(UUID.fromString(r.value1()), UUID.fromString(r.value2()), r.value3()));
+                .fetch(r -> new SuiteRunRank(
+                        UUID.fromString(r.value1()),
+                        UUID.fromString(r.value2()),
+                        UUID.fromString(r.value3()),
+                        r.value4()));
     }
 
     @Override

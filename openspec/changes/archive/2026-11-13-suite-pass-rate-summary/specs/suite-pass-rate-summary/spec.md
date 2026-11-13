@@ -89,7 +89,7 @@ Status: **Planned**
 - **THEN** the suite is counted once
 
 ### Requirement: Datasource separation
-The system SHALL read analytics data (run selection, latest computation, test-case counts) in one read-only analytics transaction, and SHALL read run thresholds from the meta datasource outside that transaction, through the owning domain service. A meta query SHALL NOT execute inside the analytics transaction.
+The system SHALL read analytics data (run selection with each run's latest computation, test-case counts) in one read-only analytics transaction, and SHALL read run thresholds from the meta datasource outside that transaction, through the owning domain service. A meta query SHALL NOT execute inside the analytics transaction.
 Status: **Planned**
 
 #### Scenario: Meta read outside the analytics transaction
@@ -104,4 +104,4 @@ Status: **Planned**
 - **WHEN** `/v3/api-docs` is requested
 - **THEN** the operation `POST /api/v1/analytics/test-suites/pass-rate` carries the request and `200` response examples
 
-**Implementation notes:** `SuitePassRateController` (`web.controller`), `SuitePassRateService` and `PassRateCalculator` (`service.domain.analytics`), reuses `ComputationResolver.resolveLatest`, new `TestCaseEvalScoreRepository` count method and `TestSuiteRunService` threshold read.
+**Implementation notes:** `SuitePassRateController` (`web.controller`), `SuitePassRateService` and `PassRateCalculator` (`service.domain.analytics`), `EvalSummaryRepository.findLatestScoredRuns` returns each run's latest computation together with its rank (same ordering as `ComputationResolver`: `computed_at_ms DESC, computation_id ASC`), new `TestCaseEvalScoreRepository` count method and `TestSuiteRunService` threshold read.

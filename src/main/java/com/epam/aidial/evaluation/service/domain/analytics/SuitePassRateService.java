@@ -31,7 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * per-suite rates (each suite counts once); a suite without a previous run is left out of the previous
  * mean only.
  *
- * <p>Two datasources, no nesting: the analytics reads (run selection, latest computation, counts) run in one
+ * <p>Two datasources, no nesting: the analytics reads (run selection with each run's latest computation, counts) run in one
  * read-only analytics transaction; the run thresholds are then read from the meta datasource through
  * {@link TestSuiteRunService}, after that transaction has completed. A meta query never runs inside the
  * analytics transaction.
@@ -45,7 +45,6 @@ public class SuitePassRateService {
 
     private final EvalSummaryRepository evalSummaryRepository;
     private final TestCaseEvalScoreRepository testCaseEvalScoreRepository;
-    private final ComputationResolver computationResolver;
     private final TestSuiteRunService testSuiteRunService;
     private final PassRateCalculator passRateCalculator;
     private final TransactionTemplate analyticsTransactionTemplate;
@@ -53,13 +52,11 @@ public class SuitePassRateService {
     public SuitePassRateService(
             EvalSummaryRepository evalSummaryRepository,
             TestCaseEvalScoreRepository testCaseEvalScoreRepository,
-            ComputationResolver computationResolver,
             TestSuiteRunService testSuiteRunService,
             PassRateCalculator passRateCalculator,
             @Qualifier("analyticsTransactionManager") PlatformTransactionManager analyticsTxManager) {
         this.evalSummaryRepository = evalSummaryRepository;
         this.testCaseEvalScoreRepository = testCaseEvalScoreRepository;
-        this.computationResolver = computationResolver;
         this.testSuiteRunService = testSuiteRunService;
         this.passRateCalculator = passRateCalculator;
         this.analyticsTransactionTemplate = new TransactionTemplate(analyticsTxManager);
@@ -83,8 +80,8 @@ public class SuitePassRateService {
 
     private AnalyticsReads readAnalytics(List<UUID> suiteIds) {
         final List<SuiteRunRank> ranks = evalSummaryRepository.findLatestScoredRuns(suiteIds, RUNS_PER_SUITE);
-        final List<UUID> runIds = ranks.stream().map(SuiteRunRank::runId).toList();
-        final Map<UUID, UUID> computations = computationResolver.resolveLatest(runIds);
+        final Map<UUID, UUID> computations =
+                ranks.stream().collect(Collectors.toMap(SuiteRunRank::runId, SuiteRunRank::computationId));
         final Map<UUID, RunPassCounts> counts = testCaseEvalScoreRepository.countByRunAndComputation(computations);
         return new AnalyticsReads(ranks, counts);
     }

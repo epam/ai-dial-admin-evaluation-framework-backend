@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static com.epam.aidial.evaluation.functional.helper.EvalScoreFixtures.row;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCounts;
 import com.epam.aidial.evaluation.data.db.analytics.model.SuiteRunRank;
@@ -133,7 +134,8 @@ public abstract class SuitePassRateRepositoryFunctionalTests extends BaseFunctio
         List<SuiteRunRank> ranks = evalSummaryRepository.findLatestScoredRuns(List.of(suiteId), TWO_RUNS);
 
         assertThat(ranks)
-                .containsExactlyInAnyOrder(new SuiteRunRank(suiteId, newest, 1), new SuiteRunRank(suiteId, middle, 2));
+                .extracting(SuiteRunRank::suiteId, SuiteRunRank::runId, SuiteRunRank::rank)
+                .containsExactlyInAnyOrder(tuple(suiteId, newest, 1), tuple(suiteId, middle, 2));
         assertThat(ranks).extracting(SuiteRunRank::runId).doesNotContain(oldest);
     }
 
@@ -147,7 +149,7 @@ public abstract class SuitePassRateRepositoryFunctionalTests extends BaseFunctio
 
         List<SuiteRunRank> ranks = evalSummaryRepository.findLatestScoredRuns(List.of(suiteId), TWO_RUNS);
 
-        assertThat(ranks).containsExactly(new SuiteRunRank(suiteId, scored, 1));
+        assertThat(ranks).extracting(SuiteRunRank::suiteId, SuiteRunRank::runId, SuiteRunRank::rank).containsExactly(tuple(suiteId, scored, 1));
     }
 
     @Test
@@ -162,7 +164,8 @@ public abstract class SuitePassRateRepositoryFunctionalTests extends BaseFunctio
         List<SuiteRunRank> ranks = evalSummaryRepository.findLatestScoredRuns(List.of(suiteId), TWO_RUNS);
 
         assertThat(ranks)
-                .containsExactlyInAnyOrder(new SuiteRunRank(suiteId, larger, 1), new SuiteRunRank(suiteId, smaller, 2));
+                .extracting(SuiteRunRank::suiteId, SuiteRunRank::runId, SuiteRunRank::rank)
+                .containsExactlyInAnyOrder(tuple(suiteId, larger, 1), tuple(suiteId, smaller, 2));
     }
 
     @Test
@@ -175,7 +178,7 @@ public abstract class SuitePassRateRepositoryFunctionalTests extends BaseFunctio
 
         List<SuiteRunRank> ranks = evalSummaryRepository.findLatestScoredRuns(List.of(suiteId), TWO_RUNS);
 
-        assertThat(ranks).containsExactly(new SuiteRunRank(suiteId, kept, 1));
+        assertThat(ranks).extracting(SuiteRunRank::suiteId, SuiteRunRank::runId, SuiteRunRank::rank).containsExactly(tuple(suiteId, kept, 1));
     }
 
     @Test
@@ -191,11 +194,10 @@ public abstract class SuitePassRateRepositoryFunctionalTests extends BaseFunctio
         List<SuiteRunRank> ranks =
                 evalSummaryRepository.findLatestScoredRuns(List.of(suiteA, suiteB, suiteWithoutRuns), TWO_RUNS);
 
-        assertThat(ranks)
-                .containsExactlyInAnyOrder(
-                        new SuiteRunRank(suiteA, firstSuiteRun, 1),
-                        new SuiteRunRank(suiteB, secondSuiteNewer, 1),
-                        new SuiteRunRank(suiteB, secondSuiteOlder, 2));
+        assertThat(ranks).extracting(SuiteRunRank::suiteId, SuiteRunRank::runId, SuiteRunRank::rank).containsExactlyInAnyOrder(
+                        tuple(suiteA, firstSuiteRun, 1),
+                        tuple(suiteB, secondSuiteNewer, 1),
+                        tuple(suiteB, secondSuiteOlder, 2));
     }
 
     @Test
@@ -214,9 +216,41 @@ public abstract class SuitePassRateRepositoryFunctionalTests extends BaseFunctio
 
         List<SuiteRunRank> ranks = evalSummaryRepository.findLatestScoredRuns(List.of(suiteId), TWO_RUNS);
 
-        assertThat(ranks)
-                .containsExactlyInAnyOrder(
-                        new SuiteRunRank(suiteId, earlyThenLate, 1), new SuiteRunRank(suiteId, middle, 2));
+        assertThat(ranks).extracting(SuiteRunRank::suiteId, SuiteRunRank::runId, SuiteRunRank::rank).containsExactlyInAnyOrder(
+                        tuple(suiteId, earlyThenLate, 1), tuple(suiteId, middle, 2));
+    }
+
+    @Test
+    @DisplayName("findLatestScoredRuns returns each run's latest computation, the newest computed_at_ms")
+    void returnsLatestComputationOfEachRun() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID olderComputation = UUID.randomUUID();
+        UUID latestComputation = UUID.randomUUID();
+        seedSummary(suiteId, runId, olderComputation, 1_000L, 1_000L);
+        seedSummary(suiteId, runId, latestComputation, 2_000L, 8_000L);
+        scoreRepository.saveAll(List.of(row(runId, latestComputation, ExecutionStatus.SUCCESS, true)));
+
+        List<SuiteRunRank> ranks = evalSummaryRepository.findLatestScoredRuns(List.of(suiteId), TWO_RUNS);
+
+        assertThat(ranks).extracting(SuiteRunRank::runId, SuiteRunRank::computationId)
+                .containsExactly(tuple(runId, latestComputation));
+    }
+
+    @Test
+    @DisplayName("findLatestScoredRuns breaks a computed_at_ms tie on the smaller computation id")
+    void breaksComputationTieOnSmallerId() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID smaller = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID larger = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        seedSummary(suiteId, runId, larger, 5_000L, 5_000L);
+        seedSummary(suiteId, runId, smaller, 5_000L, 5_000L);
+        scoreRepository.saveAll(List.of(row(runId, smaller, ExecutionStatus.SUCCESS, true)));
+
+        List<SuiteRunRank> ranks = evalSummaryRepository.findLatestScoredRuns(List.of(suiteId), TWO_RUNS);
+
+        assertThat(ranks).extracting(SuiteRunRank::computationId).containsExactly(smaller);
     }
 
     @Test
@@ -240,13 +274,17 @@ public abstract class SuitePassRateRepositoryFunctionalTests extends BaseFunctio
     }
 
     private void seedSummary(UUID suiteId, UUID runId, UUID computationId, long createdAtMs) {
+        seedSummary(suiteId, runId, computationId, createdAtMs, createdAtMs);
+    }
+
+    private void seedSummary(UUID suiteId, UUID runId, UUID computationId, long createdAtMs, long computedAtMs) {
         analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
                 .suiteId(suiteId)
                 .runId(runId)
                 .computationId(computationId)
                 .testCaseName("case")
                 .createdAtMs(createdAtMs)
-                .computedAtMs(createdAtMs)
+                .computedAtMs(computedAtMs)
                 .build());
     }
 }

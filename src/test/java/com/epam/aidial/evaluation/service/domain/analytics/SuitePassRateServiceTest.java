@@ -39,7 +39,6 @@ class SuitePassRateServiceTest {
 
     private EvalSummaryRepository evalSummaryRepository;
     private TestCaseEvalScoreRepository testCaseEvalScoreRepository;
-    private ComputationResolver computationResolver;
     private TestSuiteRunService testSuiteRunService;
     private SuitePassRateService service;
 
@@ -47,12 +46,10 @@ class SuitePassRateServiceTest {
     void setUp() {
         evalSummaryRepository = mock(EvalSummaryRepository.class);
         testCaseEvalScoreRepository = mock(TestCaseEvalScoreRepository.class);
-        computationResolver = mock(ComputationResolver.class);
         testSuiteRunService = mock(TestSuiteRunService.class);
         service = new SuitePassRateService(
                 evalSummaryRepository,
                 testCaseEvalScoreRepository,
-                computationResolver,
                 testSuiteRunService,
                 new PassRateCalculator(),
                 directTransactionManager());
@@ -60,10 +57,7 @@ class SuitePassRateServiceTest {
 
     /** Stubs the analytics reads and the threshold read for one scenario. */
     private void stub(List<SuiteRunRank> ranks, Map<UUID, RunPassCounts> counts, Map<UUID, Double> thresholds) {
-        Map<UUID, UUID> computations = new HashMap<>();
-        ranks.forEach(rank -> computations.put(rank.runId(), UUID.randomUUID()));
         when(evalSummaryRepository.findLatestScoredRuns(anyCollection(), eq(2))).thenReturn(ranks);
-        when(computationResolver.resolveLatest(anyCollection())).thenReturn(computations);
         when(testCaseEvalScoreRepository.countByRunAndComputation(anyMap())).thenReturn(counts);
         when(testSuiteRunService.getThresholdsByRunIds(anyCollection())).thenReturn(thresholds);
     }
@@ -90,9 +84,9 @@ class SuitePassRateServiceTest {
         UUID secondSuiteLatest = UUID.randomUUID();
         stub(
                 List.of(
-                        new SuiteRunRank(suiteA, firstSuiteLatest, 1),
-                        new SuiteRunRank(suiteA, firstSuitePrevious, 2),
-                        new SuiteRunRank(suiteB, secondSuiteLatest, 1)),
+                        new SuiteRunRank(suiteA, firstSuiteLatest, UUID.randomUUID(), 1),
+                        new SuiteRunRank(suiteA, firstSuitePrevious, UUID.randomUUID(), 2),
+                        new SuiteRunRank(suiteB, secondSuiteLatest, UUID.randomUUID(), 1)),
                 byRun(counts(firstSuiteLatest, 1, 0, 0, 1), counts(firstSuitePrevious, 0, 0, 0, 2), counts(secondSuiteLatest, 0, 0, 2, 0)),
                 Map.of(firstSuiteLatest, 0.5, firstSuitePrevious, 0.5));
 
@@ -108,7 +102,6 @@ class SuitePassRateServiceTest {
     @DisplayName("no eligible runs: both rates are null, both counts are 0 and no thresholds are read")
     void noEligibleRuns() {
         when(evalSummaryRepository.findLatestScoredRuns(anyCollection(), eq(2))).thenReturn(List.of());
-        when(computationResolver.resolveLatest(anyCollection())).thenReturn(Map.of());
         when(testCaseEvalScoreRepository.countByRunAndComputation(anyMap())).thenReturn(Map.of());
 
         SuitePassRateSummaryDto summary = service.summarize(List.of(UUID.randomUUID()));
@@ -125,7 +118,7 @@ class SuitePassRateServiceTest {
     void thresholdRunCountsOnlyPassed() {
         UUID suite = UUID.randomUUID();
         UUID run = UUID.randomUUID();
-        stub(List.of(new SuiteRunRank(suite, run, 1)), byRun(counts(run, 1, 1, 1, 1)), Map.of(run, 0.5));
+        stub(List.of(new SuiteRunRank(suite, run, UUID.randomUUID(), 1)), byRun(counts(run, 1, 1, 1, 1)), Map.of(run, 0.5));
 
         assertThat(service.summarize(List.of(suite)).getPassRate()).isEqualTo(0.25);
     }
@@ -135,7 +128,7 @@ class SuitePassRateServiceTest {
     void noThresholdRunCountsSuccessRows() {
         UUID suite = UUID.randomUUID();
         UUID run = UUID.randomUUID();
-        stub(List.of(new SuiteRunRank(suite, run, 1)), byRun(counts(run, 0, 0, 2, 1)), Map.of());
+        stub(List.of(new SuiteRunRank(suite, run, UUID.randomUUID(), 1)), byRun(counts(run, 0, 0, 2, 1)), Map.of());
 
         assertThat(service.summarize(List.of(suite)).getPassRate()).isEqualTo(2.0 / 3.0);
     }
@@ -148,7 +141,7 @@ class SuitePassRateServiceTest {
         UUID bigRun = UUID.randomUUID();
         UUID smallRun = UUID.randomUUID();
         stub(
-                List.of(new SuiteRunRank(big, bigRun, 1), new SuiteRunRank(small, smallRun, 1)),
+                List.of(new SuiteRunRank(big, bigRun, UUID.randomUUID(), 1), new SuiteRunRank(small, smallRun, UUID.randomUUID(), 1)),
                 byRun(counts(bigRun, 100, 0, 0, 0), counts(smallRun, 0, 0, 0, 2)),
                 Map.of(bigRun, 0.5, smallRun, 0.5));
 
@@ -162,7 +155,7 @@ class SuitePassRateServiceTest {
         UUID newest = UUID.randomUUID();
         UUID older = UUID.randomUUID();
         stub(
-                List.of(new SuiteRunRank(suite, newest, 1), new SuiteRunRank(suite, older, 2)),
+                List.of(new SuiteRunRank(suite, newest, UUID.randomUUID(), 1), new SuiteRunRank(suite, older, UUID.randomUUID(), 2)),
                 byRun(counts(older, 2, 0, 0, 0)),
                 Map.of(older, 0.5));
 
@@ -175,11 +168,31 @@ class SuitePassRateServiceTest {
     }
 
     @Test
+    @DisplayName("each run is counted against the computation the run selection returned for it")
+    void countsAgainstSelectedComputations() {
+        UUID suite = UUID.randomUUID();
+        UUID newest = UUID.randomUUID();
+        UUID older = UUID.randomUUID();
+        UUID newestComputation = UUID.randomUUID();
+        UUID olderComputation = UUID.randomUUID();
+        stub(
+                List.of(
+                        new SuiteRunRank(suite, newest, newestComputation, 1),
+                        new SuiteRunRank(suite, older, olderComputation, 2)),
+                byRun(counts(newest, 1, 0, 0, 0), counts(older, 1, 0, 0, 0)),
+                Map.of());
+
+        service.summarize(List.of(suite));
+
+        verify(testCaseEvalScoreRepository)
+                .countByRunAndComputation(Map.of(newest, newestComputation, older, olderComputation));
+    }
+
+    @Test
     @DisplayName("duplicate suite ids are removed before the run selection")
     void duplicateIdsAreRemoved() {
         UUID suite = UUID.randomUUID();
         when(evalSummaryRepository.findLatestScoredRuns(anyCollection(), eq(2))).thenReturn(List.of());
-        when(computationResolver.resolveLatest(anyCollection())).thenReturn(Map.of());
         when(testCaseEvalScoreRepository.countByRunAndComputation(anyMap())).thenReturn(Map.of());
 
         service.summarize(List.of(suite, suite, suite));

@@ -99,6 +99,8 @@ import com.epam.aidial.evaluation.functional.tests.RunDeletionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SkillFieldFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.SuitePassRateEndpointFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.SuitePassRateRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationBindingFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationFileRefFunctionalTests;
@@ -752,6 +754,12 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class PostgresTestCaseEvalScoreRepositoryTests extends PostgresTestCaseEvalScoreRepositoryFunctionalTests {}
+
+    @Nested
+    class SuitePassRateRepositoryTests extends SuitePassRateRepositoryFunctionalTests {}
+
+    @Nested
+    class SuitePassRateEndpointTests extends SuitePassRateEndpointFunctionalTests {}
 
     @Nested
     class TestCaseMetricScoreAggregatorTests extends TestCaseMetricScoreAggregatorFunctionalTests {}

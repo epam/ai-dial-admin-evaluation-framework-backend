@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.data.db.repository;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Sequences.TEST_SUITE_RUN_NAME_SEQ;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS;
 
+import com.epam.aidial.evaluation.constants.TestSuiteRunConstants;
 import com.epam.aidial.evaluation.data.db.mapper.TestSuiteRunRecordMapper;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
@@ -14,10 +15,15 @@ import com.epam.aidial.evaluation.data.db.repository.sql.OrderByBuilder;
 import com.epam.aidial.evaluation.data.db.repository.sql.PageRequestSqlBuilder;
 import com.epam.aidial.evaluation.data.db.repository.sql.SortWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
+import com.epam.aidial.evaluation.data.db.repository.sql.json.JsonPathAccessor;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +52,7 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
     private final TransactionTimestampContext transactionTimestampContext;
     private final WhereBuilder whereBuilder;
     private final OrderByBuilder orderByBuilder;
+    private final JsonPathAccessor jsonPathAccessor;
 
     // List queries exclude suite_snapshot to avoid TOAST decompression on bulk queries
     private static final Field<?>[] SELECT_LIST_FIELDS = {
@@ -303,6 +310,27 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
                 .from(TEST_SUITE_RUNS)
                 .where(TEST_SUITE_RUNS.TEST_SUITE_ID.eq(testSuiteId.toString()))
                 .fetch(record -> UUID.fromString(record.get(TEST_SUITE_RUNS.ID)));
+    }
+
+    @Override
+    public Map<UUID, Double> findThresholdsByRunIds(Collection<UUID> runIds) {
+        if (runIds == null || runIds.isEmpty()) {
+            return Map.of();
+        }
+        final List<String> ids = runIds.stream().distinct().map(UUID::toString).toList();
+        final Field<BigDecimal> threshold =
+                jsonPathAccessor.jsonbAtAsNumeric(TEST_SUITE_RUNS.SUITE_SNAPSHOT, DSL.val(TestSuiteRunConstants.SNAPSHOT_OVERALL_SCORE_THRESHOLD_KEY));
+
+        final Map<UUID, Double> result = new HashMap<>();
+        dsl.select(TEST_SUITE_RUNS.ID, threshold)
+                .from(TEST_SUITE_RUNS)
+                .where(TEST_SUITE_RUNS.ID.in(ids))
+                .forEach(r -> {
+                    if (r.value2() != null) {
+                        result.put(UUID.fromString(r.value1()), r.value2().doubleValue());
+                    }
+                });
+        return result;
     }
 
     private long count(Condition condition) {

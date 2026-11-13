@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
+import com.epam.aidial.evaluation.data.db.analytics.model.SuiteRunRank;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
@@ -63,6 +64,17 @@ public interface EvalSummaryRepository {
      *     without touching the database
      */
     Map<UUID, UUID> findLatestComputationIds(Collection<UUID> runIds);
+
+    /**
+     * Picks, for each suite, its newest {@code perSuite} runs that have eval summaries <em>and</em> at least
+     * one {@code test_case_eval_scores} row, skipping soft-deleted runs — one statement, bounded by the size
+     * of {@code suiteIds}. Runs are ranked per suite by the newest {@code created_at_ms} of their eval
+     * summaries (descending), breaking a tie on the larger run id; rank 1 is the newest.
+     *
+     * <p>A suite with no qualifying run is absent from the result. An empty or {@code null} {@code suiteIds}
+     * returns an empty list without touching the database.
+     */
+    List<SuiteRunRank> findLatestScoredRuns(Collection<UUID> suiteIds, int perSuite);
 
     /**
      * Tells whether the given computation produced any eval summary for the run, without

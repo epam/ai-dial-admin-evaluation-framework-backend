@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.functional.tests;
 
+import static com.epam.aidial.evaluation.functional.helper.EvalScoreFixtures.scoreRow;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
@@ -467,34 +468,6 @@ public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends B
                         row -> row.get("test_suite_run_id") + "|" + row.get("execution_status") + "|"
                                 + row.get("passed"),
                         row -> ((Number) row.get("n")).longValue()));
-    }
-
-    private static TestCaseEvalScore scoreRow(
-            UUID runId, UUID testCaseId, String testCaseName, UUID computationId, double score, long computedAtMs) {
-        return scoreRow(
-                runId, testCaseId, testCaseName, computationId, score, computedAtMs, ExecutionStatus.SUCCESS, true);
-    }
-
-    private static TestCaseEvalScore scoreRow(
-            UUID runId,
-            UUID testCaseId,
-            String testCaseName,
-            UUID computationId,
-            Double score,
-            long computedAtMs,
-            ExecutionStatus status,
-            Boolean passed) {
-        return TestCaseEvalScore.builder()
-                .id(UUID.randomUUID())
-                .testSuiteRunId(runId)
-                .testCaseId(testCaseId)
-                .testCaseName(testCaseName)
-                .computationId(computationId)
-                .executionStatus(status)
-                .score(score)
-                .passed(passed)
-                .computedAtMs(computedAtMs)
-                .build();
     }
 
     private static StructuredQuery rowQuery(FilterNode filter, List<OutputColumn> select) {

@@ -18,6 +18,9 @@ public final class ValidationConstants {
     /** Maximum number of run ids in a batch run-costs request. Matches {@code pagination.max-size}. */
     public static final int MAX_BATCH_RUN_IDS = 1000;
 
+    /** Maximum number of distinct suite ids in a suite pass-rate summary request. */
+    public static final int MAX_BATCH_SUITE_IDS = 100;
+
     /** Minimum allowed value for {@code TestSuiteRequestDto.overallScoreThreshold} (inclusive). */
     public static final String MIN_OVERALL_SCORE_THRESHOLD = "0.0";
 

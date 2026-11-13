@@ -5,9 +5,11 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.CostService;
+import com.epam.aidial.evaluation.service.domain.TestSuiteRunConfigService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunConfigResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunUpdateDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -46,6 +48,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class TestSuiteRunController {
 
     private final TestSuiteRunService testSuiteRunService;
+    private final TestSuiteRunConfigService testSuiteRunConfigService;
     private final CostService costService;
     private final PaginationParamResolver paginationParamResolver;
     private final CsvDelimiterParser csvDelimiterParser;
@@ -164,6 +167,17 @@ public class TestSuiteRunController {
         int resolvedPage = paginationParamResolver.resolvePage(page);
         int resolvedSize = paginationParamResolver.resolveSize(size);
         return testSuiteRunService.listRuns(resolvedPage, resolvedSize, sort, filter, includeTotalCount);
+    }
+
+    @GetMapping("/api/v1/test-suite-runs/config")
+    @Operation(
+            summary = "Get test suite run configuration",
+            description = "Returns the run-related limits currently enforced by the backend, so clients can bound "
+                    + "run-form inputs. `maxConcurrencyLevel` is the maximum accepted "
+                    + "`runConfig.execution.concurrencyLevel`; a run requesting more is rejected with HTTP 400.")
+    @ApiResponse(responseCode = "200", description = "Configuration retrieved")
+    public TestSuiteRunConfigResponseDto getRunConfig() {
+        return testSuiteRunConfigService.getRunConfig();
     }
 
     @GetMapping("/api/v1/test-suite-runs/{id}")

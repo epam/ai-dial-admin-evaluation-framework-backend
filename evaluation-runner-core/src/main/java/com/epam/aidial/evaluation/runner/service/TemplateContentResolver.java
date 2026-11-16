@@ -100,7 +100,8 @@ public class TemplateContentResolver {
                     Object resolved =
                             templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
                     // Convert FILE (DIAL ref) / SKILL (canonical skill ref) placeholders for JSON/URL-encoded bodies
-                    return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
+                    return resourceRefPlaceholderResolver.resolve(
+                            resolved, typeHint, binding, testCaseSchema, defaultValue == null ? null : () -> defaultValue);
                 }
             }
             // String interpolation

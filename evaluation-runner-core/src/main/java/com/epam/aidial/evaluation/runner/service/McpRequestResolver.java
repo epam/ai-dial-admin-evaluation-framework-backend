@@ -135,7 +135,9 @@ public class McpRequestResolver {
             final InputBindingDto binding = bindingByVar.get(varName);
             Object resolved = resolveVariable(varName, bindingByVar, data);
             if (resolved != null) {
-                return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
+                return resourceRefPlaceholderResolver.resolve(
+                        resolved, typeHint, binding, testCaseSchema,
+                        defaultValue == null ? null : () -> parseDefaultValue(defaultValue));
             }
             if (defaultValue != null) {
                 Object parsedDefault = parseDefaultValue(defaultValue);

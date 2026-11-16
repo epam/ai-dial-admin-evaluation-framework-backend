@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import java.util.List;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -37,10 +38,24 @@ public class ResourceRefPlaceholderResolver {
      * @param schema   test case schema, nullable
      */
     public Object resolve(Object resolved, String typeHint, InputBindingDto binding, List<FieldDefinitionDto> schema) {
+        return resolve(resolved, typeHint, binding, schema, null);
+    }
+
+    /** Selects a caller-parsed default only for blank data-derived FILE strings. */
+    public Object resolve(
+            Object resolved,
+            String typeHint,
+            InputBindingDto binding,
+            List<FieldDefinitionDto> schema,
+            Supplier<Object> defaultValue) {
         if (!(resolved instanceof String ref)) {
             return resolved;
         }
         if (dialFileRefResolver.isFileReference(typeHint, binding, schema)) {
+            if (ref.isBlank() && defaultValue != null && (binding == null || binding.getConstantValue() == null)) {
+                final Object selected = defaultValue.get();
+                return selected instanceof String selectedRef ? dialFileRefResolver.resolveToDialRef(selectedRef) : selected;
+            }
             return dialFileRefResolver.resolveToDialRef(ref);
         }
         if (skillRefResolver.isSkillReference(typeHint, binding, schema)) {

@@ -451,7 +451,8 @@ public class JsonataSourcePreprocessor {
             List<FieldDefinitionDto> testCaseSchema) {
         InputBindingDto binding = bindingByVar.get(varName);
         Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
-        return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
+        return resourceRefPlaceholderResolver.resolve(
+                resolved, typeHint, binding, testCaseSchema, defaultValue == null ? null : () -> defaultValue);
     }
 
     /**

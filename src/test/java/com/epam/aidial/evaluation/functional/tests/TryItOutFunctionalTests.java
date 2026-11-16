@@ -144,6 +144,47 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
     }
 
     @Test
+    @DisplayName("Persisted blank FILE data uses the sentinel default before JSONata filters attachments")
+    void shouldFilterBlankFileDefaultInDataBackedTryOut() {
+        final UUID datasetId = newDatasetWithSchema(List.of(
+                FieldDefinitionDto.builder().name("blankDoc").type(SchemaFieldType.FILE).build(),
+                FieldDefinitionDto.builder().name("validDoc").type(SchemaFieldType.FILE).build()));
+        final TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("FILE default suite " + UUID.randomUUID())
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(buildEndpoint())
+                .datasetId(datasetId)
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/chat/completions")
+                        .body(JsonRequestBodyDto.builder()
+                                .jsonataContent("{\"attachments\": [\"${{blank:public/no-file}}\", \"${{valid}}\", \"${{valid}}\"][$not($contains($, 'no-file'))]}")
+                                .build())
+                        .build())
+                .inputBindings(List.of(
+                        InputBindingDto.builder().templateVariable("blank").dataField("blankDoc").build(),
+                        InputBindingDto.builder().templateVariable("valid").dataField("validDoc").build()))
+                .build();
+        final ResponseEntity<TestSuiteResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        final TestSuiteResponseDto suite = created.getBody();
+        assertThat(suite).isNotNull();
+        final TestCaseResponseDto testCase = createTestCase(suite.getId(), "blank FILE", Map.of("blankDoc", "", "validDoc", "public/a.pdf"));
+        assertThat(testCase.getData()).containsEntry("blankDoc", "");
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(200, false, Map.of("ok", true), null, new HttpHeaders()));
+
+        final ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + testCase.getId() + "/try-it-out"),
+                null, TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(((ResolvedJsonBodyDto) response.getBody().getResolvedRequest().getBody()).getContent())
+                .containsEntry("attachments", List.of("files/public/a.pdf", "files/public/a.pdf"));
+    }
+
+    @Test
     @DisplayName("Should try out a ROUTE suite against the DIAL Core root path")
     void shouldTryOutRouteAtCoreRoot() {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()

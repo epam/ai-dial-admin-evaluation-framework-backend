@@ -29,6 +29,15 @@ public class ResourceRefPlaceholderResolver {
     private final SkillRefResolver skillRefResolver;
 
     /**
+     * Whether this full-value placeholder is a FILE or SKILL reference. Used before default selection
+     * so empty resource strings can be treated as absent without changing ordinary string values.
+     */
+    public boolean isResourceReference(String typeHint, InputBindingDto binding, List<FieldDefinitionDto> schema) {
+        return dialFileRefResolver.isFileReference(typeHint, binding, schema)
+                || skillRefResolver.isSkillReference(typeHint, binding, schema);
+    }
+
+    /**
      * Converts {@code resolved} when it is a {@code String} and the placeholder is a FILE or SKILL reference.
      *
      * @param resolved the placeholder's resolved value

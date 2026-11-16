@@ -62,7 +62,7 @@ public class TemplateContentResolver {
             String varName = matcher.group(1).trim();
             String defaultValue = matcher.group(3); // group 3: default value (group 2 is now type hint)
             InputBindingDto binding = bindingByVar.get(varName);
-            Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
+            Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings, false);
             matcher.appendReplacement(sb, Matcher.quoteReplacement(resolved != null ? resolved.toString() : ""));
         }
         matcher.appendTail(sb);
@@ -97,8 +97,8 @@ public class TemplateContentResolver {
                     String typeHint = m.group(2); // group 2: type hint
                     String defaultValue = m.group(3); // group 3: default value
                     InputBindingDto binding = bindingByVar.get(varName);
-                    Object resolved =
-                            templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
+                    final boolean emptyAsAbsent = resourceRefPlaceholderResolver.isResourceReference(typeHint, binding, testCaseSchema);
+                    Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings, emptyAsAbsent);
                     // Convert FILE (DIAL ref) / SKILL (canonical skill ref) placeholders for JSON/URL-encoded bodies
                     return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
                 }

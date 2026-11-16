@@ -125,6 +125,8 @@ Resolution priority per variable:
 
 When `bindings` is `null` or empty, the resolver falls back directly to step 3 (direct variable name lookup). Duplicate `templateVariable` entries in bindings are deduplicated first-wins.
 
+For full-value FILE and SKILL placeholders (explicit hint or bound schema type), a selected empty string (`""`) SHALL be treated as absent before default selection and resource conversion. An empty constant SHALL use the template default rather than falling through to bound data. Without a default, the resolver SHALL return `null` with the existing `REQUIRED` warning. Ordinary strings, explicit non-resource hints, whitespace-only values, embedded placeholders, and numeric/boolean default parsing SHALL retain their existing behavior. Direct-name lookup priority SHALL remain unchanged, and without binding metadata it SHALL NOT infer a resource type from the schema. Empty strings selected by direct-name lookup SHALL follow the same absence rule when the full-value placeholder carries an explicit FILE or SKILL hint.
+
 **File reference resolution:** When a full-value placeholder carries a `|file` type hint (e.g., `${{document|file}}`) and the resolved value is a `String`, the resolver SHALL transform the value via `DialFileRefResolver.resolveToDialRef()` — converting short-format references (e.g., `@ef/suites/abc/data.csv`) to DIAL API paths (e.g., `files/real-bucket/suites/abc/data.csv`). This enables DIAL-aware MCP tools to receive properly resolved file references. File resolution applies only to full-value placeholders (entire argument value is one `${{var|file}}`); embedded placeholders in mixed text are string-concatenated without file resolution.
 
 Status: **Implemented**
@@ -169,6 +171,15 @@ Status: **Implemented**
 #### Scenario: Missing required variable
 - **WHEN** a `${{variable}}` placeholder has no default value, no binding provides a value, and the variable name is not in test case data
 - **THEN** the resolver SHALL produce a `REQUIRED` validation warning with `fieldName` = variable name, `path` = `$.argumentTemplate.arguments`, and set the resolved value to `null` (full-value mode) or empty string (embedded mode)
+
+#### Scenario: Empty optional MCP resource uses the default
+- **WHEN** `${{doc|file:public/no-file}}` resolves from an empty bound or directly named data value
+- **THEN** the argument SHALL resolve to `files/public/no-file` without a warning
+- **AND** the same absence rule SHALL apply to SKILL placeholders and schema-derived resource types
+
+#### Scenario: Empty required MCP resource produces a warning
+- **WHEN** a full-value FILE or SKILL placeholder resolves from an empty string without a default
+- **THEN** the argument SHALL be `null` with a `REQUIRED` warning
 
 #### Scenario: |file type hint resolves to DIAL ref
 - **WHEN** the argument template contains `{"document": "${{contract|file}}"}`

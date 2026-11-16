@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.runner.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -65,7 +66,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("entire double-quoted literal placeholder serializes typed String value as JSON string literal")
         void fullValueDoubleQuotedString() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("question"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("question"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("What is AI?");
 
             String result =
@@ -78,7 +79,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("entire single-quoted literal placeholder serializes typed value, preserving quote style")
         void fullValueSingleQuotedString() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("Alice");
 
             String result = preprocessor.preprocess("greeting = '${{name}}'", Map.of(), Map.of(), warnings, null);
@@ -90,7 +91,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("full-value placeholder resolving to a number produces a bare numeric JSONata literal")
         void fullValueNumber() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("temp"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("temp"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(0.7);
 
             String result =
@@ -103,7 +104,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("full-value placeholder resolving to an array produces a JSONata array literal")
         void fullValueArray() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("items"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("items"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(List.of("a", "b"));
 
             String result = preprocessor.preprocess("\"${{items}}\"", Map.of(), Map.of(), warnings, null);
@@ -117,7 +118,7 @@ class JsonataSourcePreprocessorTest {
             setUp();
             String shortRef = "@ef/suites/abc/file.bin";
             String dialRef = "files/real-bucket/suites/abc/file.bin";
-            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(shortRef);
             when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
@@ -130,7 +131,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("unresolved full-value placeholder serializes as JSON null literal")
         void fullValueUnresolved() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(null);
 
             String result = preprocessor.preprocess("\"${{missing}}\"", Map.of(), Map.of(), warnings, null);
@@ -144,7 +145,7 @@ class JsonataSourcePreprocessorTest {
             setUp();
             Map<String, Object> withNull = new HashMap<>();
             withNull.put("key", null);
-            when(templateVariableResolver.resolveVariable(eq("obj"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("obj"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(withNull);
 
             String result = preprocessor.preprocess("\"${{obj}}\"", Map.of(), Map.of(), warnings, null);
@@ -171,7 +172,7 @@ class JsonataSourcePreprocessorTest {
                 .build();
 
         private void stubDocValue() {
-            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(fileBinding), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(fileBinding), anyMap(), any(), anyBoolean()))
                     .thenReturn(SHORT_REF);
         }
 
@@ -239,7 +240,7 @@ class JsonataSourcePreprocessorTest {
             Map<String, Object> newMessage = new LinkedHashMap<>();
             newMessage.put("role", "user");
             newMessage.put("content", "hi");
-            when(templateVariableResolver.resolveVariable(eq("messages"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("messages"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(List.of(newMessage));
 
             String result =
@@ -252,7 +253,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("bare unresolved placeholder serializes as JSON null literal")
         void bareUnresolved() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(null);
 
             String result = preprocessor.preprocess("$exists(${{missing}})", Map.of(), Map.of(), warnings, null);
@@ -269,7 +270,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("placeholder embedded with surrounding text is stringified in place")
         void embeddedWithSurroundingText() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("Alice");
 
             String result = preprocessor.preprocess("\"Hello ${{name}}!\"", Map.of(), Map.of(), warnings, null);
@@ -281,7 +282,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("unresolved embedded placeholder substitutes an empty string (mirrors resolveString)")
         void embeddedUnresolved() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(null);
 
             String result = preprocessor.preprocess("\"Value: [${{missing}}]\"", Map.of(), Map.of(), warnings, null);
@@ -293,7 +294,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("embedded value containing the active double-quote char is escaped")
         void embeddedValueContainingDoubleQuote() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("quoted"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("quoted"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("say \"hi\"");
 
             String result = preprocessor.preprocess("\"text: ${{quoted}}\"", Map.of(), Map.of(), warnings, null);
@@ -305,7 +306,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("embedded value containing a backslash is escaped")
         void embeddedValueContainingBackslash() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("path"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("path"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("C:\\temp");
 
             String result = preprocessor.preprocess("\"path: ${{path}}\"", Map.of(), Map.of(), warnings, null);
@@ -317,7 +318,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("embedded value containing a newline is escaped")
         void embeddedValueContainingNewline() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("multiline"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("multiline"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("line1\nline2");
 
             String result = preprocessor.preprocess("\"text: ${{multiline}}\"", Map.of(), Map.of(), warnings, null);
@@ -330,7 +331,7 @@ class JsonataSourcePreprocessorTest {
                 "embedded value that itself looks like a placeholder is escaped as literal text, not re-substituted")
         void embeddedValueLooksLikePlaceholder() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("evil"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("evil"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("${{other}}");
 
             String result = preprocessor.preprocess("\"text: ${{evil}}\"", Map.of(), Map.of(), warnings, null);
@@ -343,7 +344,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("embedded placeholder inside a single-quoted literal is escaped for that quote context")
         void embeddedInSingleQuotedLiteral() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("it's ok");
 
             String result = preprocessor.preprocess("'value: ${{name}}'", Map.of(), Map.of(), warnings, null);
@@ -382,7 +383,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("backtick-quoted field names are passed through as plain code")
         void backtickFieldNamePassthrough() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(5);
 
             String result = preprocessor.preprocess("`field name`.value + ${{x}}", Map.of(), Map.of(), warnings, null);
@@ -418,7 +419,7 @@ class JsonataSourcePreprocessorTest {
                 + "a following placeholder is still substituted")
         void backtickNameWithApostropheFollowedByPlaceholder() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(5);
 
             String result =
@@ -432,7 +433,7 @@ class JsonataSourcePreprocessorTest {
                 + "placeholder is still substituted")
         void regexLiteralContainingQuoteFollowedByPlaceholder() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(5);
 
             String result =
@@ -445,9 +446,9 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("a division expression between two placeholders resolves both sides, not misdetected as regex")
         void divisionBetweenTwoPlaceholdersIsNotMisdetectedAsRegex() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("a"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("a"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(10);
-            when(templateVariableResolver.resolveVariable(eq("b"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("b"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(2);
 
             String result = preprocessor.preprocess("${{a}} / ${{b}}", Map.of(), Map.of(), warnings, null);
@@ -475,7 +476,7 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("a placeholder after a comment containing an apostrophe is still substituted")
         void placeholderAfterCommentWithApostrophe() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(5);
 
             String result = preprocessor.preprocess("/* it's a comment */ ${{x}}", Map.of(), Map.of(), warnings, null);
@@ -613,7 +614,7 @@ class JsonataSourcePreprocessorTest {
                     .templateVariable("question")
                     .dataField("questionCol")
                     .build();
-            when(templateVariableResolver.resolveVariable(eq("question"), isNull(), eq(binding), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("question"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                     .thenReturn("bound value");
 
             String result = preprocessor.preprocess(
@@ -637,7 +638,7 @@ class JsonataSourcePreprocessorTest {
                 .build());
 
         private void stubSkill(Object value) {
-            when(templateVariableResolver.resolveVariable(eq("s"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("s"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(value);
         }
 

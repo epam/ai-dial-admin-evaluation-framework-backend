@@ -1,0 +1,7 @@
+## 1. Run configuration endpoint
+
+- [x] 1.1 Lower `test-suite-run.execution.max-concurrency-level` default 50 → 5 in `src/main/resources/application.yml`; update the row in `docs/configuration.md` (default `5`, note it is exposed via `GET /api/v1/test-suite-runs/config`) (done: yml + docs show 5)
+- [x] 1.2 Add `TestSuiteRunConfigResponseDto` (`service.domain.dto`, single `Integer maxConcurrencyLevel` with `@Schema(example = "5")`) and `@LogExecution @Service TestSuiteRunConfigService` (`service.domain`) returning it from `EvaluationRunProperties.getExecution().getMaxConcurrencyLevel()` (done: compiles)
+- [x] 1.3 Add `GET /api/v1/test-suite-runs/config` handler to `TestSuiteRunController` with `@Operation`/`@ApiResponse`; add OpenAPI example `src/main/resources/openapi/examples/api-v1-test-suite-runs-config-GET-response-200-minimal.json` (done: example appears in `/v3/api-docs`)
+- [x] 1.4 Unit test `TestSuiteRunConfigServiceTest` + functional test `TestSuiteRunConfigFunctionalTests` registered in `PostgresFunctionalTests` (asserts 200 + configured value, `/config` not routed to `/{id}`, OpenAPI example present; the max+1 → 400 ceiling test lives in `ExecutionSettingsFunctionalTests` to reuse its suite fixture) (done: both pass)
+- [x] 1.5 Run `spotlessApply`, `checkstyleMain checkstyleTest`, `ExecutionSettingsFunctionalTests` + `ExecutionSettingsValidatorTest` against the new default; mark the spec requirement `Implemented` in the delta (done: all green)

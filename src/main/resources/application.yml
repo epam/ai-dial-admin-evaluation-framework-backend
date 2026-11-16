@@ -158,7 +158,7 @@ test-suite-run:
     cleanup-interval-ms: 300000
   execution:
     default-concurrency-level: 1
-    max-concurrency-level: 50
+    max-concurrency-level: 5
     default-request-timeout-ms: ${TEST_SUITE_RUN_EXEC_DEFAULT_TIMEOUT:600000}
     max-request-timeout-ms: ${TEST_SUITE_RUN_EXEC_MAX_TIMEOUT:1200000}
     result-batch-size: 100

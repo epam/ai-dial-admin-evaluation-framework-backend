@@ -122,6 +122,7 @@ import com.epam.aidial.evaluation.functional.tests.TestSuiteCloneFunctionalTests
 import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteMetricDefinitionFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteRunConfigFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunCostExtensionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTests;
@@ -524,6 +525,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class ExecutionSettingsTests extends ExecutionSettingsFunctionalTests {}
+
+    @Nested
+    class TestSuiteRunConfigTests extends TestSuiteRunConfigFunctionalTests {}
 
     @Nested
     class EvaluationExecutorFailureModesTests extends EvaluationExecutorFailureModesFunctionalTests {}

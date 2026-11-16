@@ -390,6 +390,16 @@ public class TestSuiteRunService {
         return testSuiteRunRepository.findThresholdsByRunIds(runIds);
     }
 
+    /**
+     * Each suite's newest {@code perSuite} {@code COMPLETED} run ids, newest first, in one read. Runs that
+     * are not COMPLETED (in flight, failed or cancelled) are never returned; a suite with no completed run is
+     * absent from the map.
+     */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public Map<UUID, List<UUID>> getLatestCompletedRunIdsBySuite(Collection<UUID> suiteIds, int perSuite) {
+        return testSuiteRunRepository.findLatestCompletedRunIds(suiteIds, perSuite);
+    }
+
     @Transactional(value = "metaTransactionManager", readOnly = true)
     public PageResponseDto<TestSuiteRunResponseDto> listRuns(
             int page, int size, List<String> sort, List<String> filter, Boolean includeTotalCount) {

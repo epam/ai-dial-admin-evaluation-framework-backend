@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.service.domain.analytics;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCounts;
-import com.epam.aidial.evaluation.data.db.analytics.model.SuiteRunRank;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseEvalScoreRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
@@ -10,13 +9,11 @@ import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.SuitePassRateSummaryDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -26,15 +23,17 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Mean pass rate of a set of suites' latest runs, and of their previous runs.
  *
- * <p>Per suite, the latest two runs that have {@code test_case_eval_scores} rows are used, each at its
- * latest computation, with the pass rule of {@link PassRateCalculator}. The summary is the mean of the
- * per-suite rates (each suite counts once); a suite without a previous run is left out of the previous
- * mean only.
+ * <p>Per suite, the latest two {@code COMPLETED} runs are used, each at its latest computation, with the pass
+ * rule of {@link PassRateCalculator}. Runs that are in flight, failed or cancelled are never used: their
+ * scores are partial or still being written, so they would skew the rate. The summary is the mean of the
+ * per-suite rates (each suite counts once); a suite without a previous run is left out of the previous mean
+ * only. A selected run that has no score rows at its latest computation contributes nothing for its
+ * position; it is not replaced by an older run.
  *
- * <p>Two datasources, no nesting: the analytics reads (run selection with each run's latest computation, counts) run in one
- * read-only analytics transaction; the run thresholds are then read from the meta datasource through
- * {@link TestSuiteRunService}, after that transaction has completed. A meta query never runs inside the
- * analytics transaction.
+ * <p>Two datasources, no nesting, three steps: the run selection (status lives in the meta datasource) goes
+ * through {@link TestSuiteRunService}; the analytics reads (each run's latest computation, counts) then run in
+ * one read-only analytics transaction; finally the run thresholds are read from meta again, after that
+ * transaction has completed. A meta query never runs inside the analytics transaction.
  */
 @Slf4j
 @Service
@@ -42,6 +41,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class SuitePassRateService {
 
     private static final int RUNS_PER_SUITE = 2;
+    private static final int LATEST_POSITION = 0;
+    private static final int PREVIOUS_POSITION = 1;
 
     private final EvalSummaryRepository evalSummaryRepository;
     private final TestCaseEvalScoreRepository testCaseEvalScoreRepository;
@@ -70,34 +71,36 @@ public class SuitePassRateService {
     public SuitePassRateSummaryDto summarize(List<UUID> suiteIds) {
         final List<UUID> distinctIds = validateAndDedupe(suiteIds);
 
-        final AnalyticsReads reads = analyticsTransactionTemplate.execute(status -> readAnalytics(distinctIds));
-        final Map<UUID, Double> thresholds = reads.countsByRun().isEmpty()
+        final Map<UUID, List<UUID>> completedRunsBySuite =
+                testSuiteRunService.getLatestCompletedRunIdsBySuite(distinctIds, RUNS_PER_SUITE);
+        final List<UUID> runIds =
+                completedRunsBySuite.values().stream().flatMap(List::stream).toList();
+        if (runIds.isEmpty()) {
+            return buildSummary(completedRunsBySuite, Map.of(), Map.of());
+        }
+
+        final Map<UUID, RunPassCounts> countsByRun = analyticsTransactionTemplate.execute(status -> readCounts(runIds));
+        final Map<UUID, Double> thresholds = countsByRun.isEmpty()
                 ? Map.of()
-                : testSuiteRunService.getThresholdsByRunIds(reads.countsByRun().keySet());
+                : testSuiteRunService.getThresholdsByRunIds(countsByRun.keySet());
 
-        return buildSummary(reads, thresholds);
+        return buildSummary(completedRunsBySuite, countsByRun, thresholds);
     }
 
-    private AnalyticsReads readAnalytics(List<UUID> suiteIds) {
-        final List<SuiteRunRank> ranks = evalSummaryRepository.findLatestScoredRuns(suiteIds, RUNS_PER_SUITE);
-        final Map<UUID, UUID> computations =
-                ranks.stream().collect(Collectors.toMap(SuiteRunRank::runId, SuiteRunRank::computationId));
-        final Map<UUID, RunPassCounts> counts = testCaseEvalScoreRepository.countByRunAndComputation(computations);
-        return new AnalyticsReads(ranks, counts);
+    private Map<UUID, RunPassCounts> readCounts(List<UUID> runIds) {
+        final Map<UUID, UUID> computations = evalSummaryRepository.findLatestComputationIds(runIds);
+        return testCaseEvalScoreRepository.countByRunAndComputation(computations);
     }
 
-    private SuitePassRateSummaryDto buildSummary(AnalyticsReads reads, Map<UUID, Double> thresholds) {
-        final Map<UUID, List<SuiteRunRank>> runsBySuite = reads.ranks().stream()
-                .filter(rank -> reads.countsByRun().containsKey(rank.runId()))
-                .collect(Collectors.groupingBy(SuiteRunRank::suiteId));
-
+    private SuitePassRateSummaryDto buildSummary(
+            Map<UUID, List<UUID>> completedRunsBySuite,
+            Map<UUID, RunPassCounts> countsByRun,
+            Map<UUID, Double> thresholds) {
         final List<Double> latestRates = new ArrayList<>();
         final List<Double> previousRates = new ArrayList<>();
-        for (final List<SuiteRunRank> suiteRuns : runsBySuite.values()) {
-            final List<SuiteRunRank> ordered =
-                    suiteRuns.stream().sorted(Comparator.comparingInt(SuiteRunRank::rank)).toList();
-            addRate(latestRates, ordered, 0, reads, thresholds);
-            addRate(previousRates, ordered, 1, reads, thresholds);
+        for (final List<UUID> suiteRuns : completedRunsBySuite.values()) {
+            addRate(latestRates, suiteRuns, LATEST_POSITION, countsByRun, thresholds);
+            addRate(previousRates, suiteRuns, PREVIOUS_POSITION, countsByRun, thresholds);
         }
 
         return SuitePassRateSummaryDto.builder()
@@ -108,18 +111,22 @@ public class SuitePassRateService {
                 .build();
     }
 
-    /** Adds the pass rate of the run at {@code position} in the suite's ordered runs, if there is one. */
+    /** Adds the pass rate of the run at {@code position} in the suite's newest-first runs, if there is one. */
     private void addRate(
             List<Double> target,
-            List<SuiteRunRank> ordered,
+            List<UUID> suiteRuns,
             int position,
-            AnalyticsReads reads,
+            Map<UUID, RunPassCounts> countsByRun,
             Map<UUID, Double> thresholds) {
-        if (position >= ordered.size()) {
+        if (position >= suiteRuns.size()) {
             return;
         }
-        final UUID runId = ordered.get(position).runId();
-        final Double rate = passRateCalculator.rate(reads.countsByRun().get(runId), thresholds.containsKey(runId));
+        final UUID runId = suiteRuns.get(position);
+        final RunPassCounts counts = countsByRun.get(runId);
+        if (counts == null) {
+            return;
+        }
+        final Double rate = passRateCalculator.rate(counts, thresholds.containsKey(runId));
         if (rate != null) {
             target.add(rate);
         }
@@ -139,6 +146,4 @@ public class SuitePassRateService {
         }
         return distinct;
     }
-
-    private record AnalyticsReads(List<SuiteRunRank> ranks, Map<UUID, RunPassCounts> countsByRun) {}
 }

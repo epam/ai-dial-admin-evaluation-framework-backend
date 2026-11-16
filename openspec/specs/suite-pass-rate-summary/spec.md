@@ -31,27 +31,27 @@ Status: **Implemented**
 - **THEN** `passRate` is 0.5, not the pooled value over all test cases
 
 ### Requirement: Eligible runs for a suite
-For each requested suite the system SHALL consider only runs that have at least one row in `test_case_eval_scores` and are not soft-deleted. Among them the latest run SHALL be the one whose newest eval-summary row (`max(created_at_ms)`) is greatest, with ties broken by the larger run id, and the previous run SHALL be the eligible run ranked immediately after it. A run without score rows SHALL be skipped. A suite with exactly one eligible run SHALL contribute to `passRate` only. Each run SHALL be read at its latest computation (see `latest-computation-resolution`).
+For each requested suite the system SHALL consider only runs whose status is `COMPLETED` (runs that are PENDING, RUNNING, CANCELLING, FAILED or CANCELLED SHALL never be selected, even when they already have score rows). Among them the latest run SHALL be the one with the greatest run `created_at_ms`, with ties broken by the larger run id, and the previous run SHALL be the completed run ranked immediately after it. A suite with exactly one completed run SHALL contribute to `passRate` only. Each selected run SHALL be read at its latest computation (see `latest-computation-resolution`). A selected run that is soft-deleted, or that has no `test_case_eval_scores` rows at its latest computation, SHALL contribute nothing for its position; it SHALL NOT be replaced by an older run.
 Status: **Implemented**
 
-#### Scenario: Run without score rows is skipped
-- **WHEN** a suite's newest run has eval summaries but no score rows
-- **THEN** that run is not eligible and the latest eligible run is the next newest one
+#### Scenario: Failed or cancelled run is skipped
+- **WHEN** a suite's newest runs are FAILED or CANCELLED and have partial score rows
+- **THEN** they are not eligible and the latest and previous runs are the two newest COMPLETED runs
+
+#### Scenario: Run still in flight is skipped
+- **WHEN** a suite's newest run is RUNNING (for example in Phase 3) and its score rows are already written
+- **THEN** it is not eligible and is not counted as latest or previous
+
+#### Scenario: Completed run without score rows contributes nothing
+- **WHEN** a suite's newest COMPLETED run has no score rows at its latest computation
+- **THEN** the suite contributes nothing to `passRate`, and the older completed run still counts as the previous run
 
 #### Scenario: Latest computation is used
 - **WHEN** an eligible run has been scored by two computations
 - **THEN** only the rows of its latest computation are counted
 
-#### Scenario: Re-scored older run becomes the latest
-- **WHEN** an older eligible run is re-computed so that its newest eval-summary row is more recent than that of a genuinely newer run
-- **THEN** the re-scored run is ranked latest (using its newest computation's rate) and the newer run becomes the previous run
-
-#### Scenario: Latest computation has no score rows
-- **WHEN** a run is among a suite's two newest runs that have score rows, but its latest computation has none (only an older computation was scored)
-- **THEN** that run is skipped but still occupies one of the two ranks considered, so the suite may contribute to `passRate` only, even when a third eligible run exists
-
 #### Scenario: Deleted run is excluded
-- **WHEN** a run has a deletion tombstone
+- **WHEN** a run has been deleted (deletion tombstone written, then the run row removed)
 - **THEN** it is not eligible and is not counted as latest or previous
 
 ### Requirement: Threshold-aware pass rate per run
@@ -99,12 +99,12 @@ Status: **Implemented**
 - **THEN** the suite is counted once
 
 ### Requirement: Datasource separation
-The system SHALL read analytics data (run selection with each run's latest computation, test-case counts) in one read-only analytics transaction, and SHALL read run thresholds from the meta datasource outside that transaction, through the owning domain service. A meta query SHALL NOT execute inside the analytics transaction.
+The system SHALL select each suite's latest completed runs from the meta datasource (run status lives only there) through the owning domain service, then read analytics data (each run's latest computation, test-case counts) in one read-only analytics transaction, and SHALL read run thresholds from the meta datasource again, outside that transaction. A meta query SHALL NOT execute inside the analytics transaction.
 Status: **Implemented**
 
 #### Scenario: Meta read outside the analytics transaction
 - **WHEN** the summary is computed
-- **THEN** the thresholds are fetched after the analytics transaction has completed
+- **THEN** the completed runs are selected before, and the thresholds are fetched after, the analytics transaction
 
 ### Requirement: OpenAPI documentation
 The endpoint SHALL be documented with request and response examples (minimal and full) under `src/main/resources/openapi/examples/` named for the registered path `/api/v1/analytics/test-suites/pass-rate`, and those examples SHALL appear in `/v3/api-docs`.
@@ -114,4 +114,4 @@ Status: **Implemented**
 - **WHEN** `/v3/api-docs` is requested
 - **THEN** the operation `POST /api/v1/analytics/test-suites/pass-rate` carries the request and `200` response examples
 
-**Implementation notes:** `SuitePassRateController` (`web.controller`), `SuitePassRateService` and `PassRateCalculator` (`service.domain.analytics`), `EvalSummaryRepository.findLatestScoredRuns` returns each run's latest computation together with its rank (same ordering as `ComputationResolver`: `computed_at_ms DESC, computation_id ASC`), new `TestCaseEvalScoreRepository` count method and `TestSuiteRunService` threshold read.
+**Implementation notes:** `SuitePassRateController` (`web.controller`), `SuitePassRateService` and `PassRateCalculator` (`service.domain.analytics`); `TestSuiteRunService.getLatestCompletedRunIdsBySuite` (backed by `TestSuiteRunRepository.findLatestCompletedRunIds`, a per-suite `row_number()` over `status = 'COMPLETED'`) selects the runs; `EvalSummaryRepository.findLatestComputationIds` resolves each run's latest computation (`computed_at_ms DESC, computation_id ASC`, same as `ComputationResolver`); `TestCaseEvalScoreRepository.countByRunAndComputation` counts; `TestSuiteRunService.getThresholdsByRunIds` reads the thresholds.

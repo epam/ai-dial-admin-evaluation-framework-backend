@@ -13,7 +13,6 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCounts;
-import com.epam.aidial.evaluation.data.db.analytics.model.SuiteRunRank;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseEvalScoreRepository;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
@@ -55,9 +54,22 @@ class SuitePassRateServiceTest {
                 directTransactionManager());
     }
 
-    /** Stubs the analytics reads and the threshold read for one scenario. */
-    private void stub(List<SuiteRunRank> ranks, Map<UUID, RunPassCounts> counts, Map<UUID, Double> thresholds) {
-        when(evalSummaryRepository.findLatestScoredRuns(anyCollection(), eq(2))).thenReturn(ranks);
+    /** Stubs the completed-run selection, the analytics reads and the threshold read for one scenario. */
+    private void stub(
+            Map<UUID, List<UUID>> completedRuns, Map<UUID, RunPassCounts> counts, Map<UUID, Double> thresholds) {
+        Map<UUID, UUID> computations = new HashMap<>();
+        completedRuns.values().stream().flatMap(List::stream).forEach(run -> computations.put(run, UUID.randomUUID()));
+        stub(completedRuns, computations, counts, thresholds);
+    }
+
+    private void stub(
+            Map<UUID, List<UUID>> completedRuns,
+            Map<UUID, UUID> computations,
+            Map<UUID, RunPassCounts> counts,
+            Map<UUID, Double> thresholds) {
+        when(testSuiteRunService.getLatestCompletedRunIdsBySuite(anyCollection(), eq(2)))
+                .thenReturn(completedRuns);
+        when(evalSummaryRepository.findLatestComputationIds(anyCollection())).thenReturn(computations);
         when(testCaseEvalScoreRepository.countByRunAndComputation(anyMap())).thenReturn(counts);
         when(testSuiteRunService.getThresholdsByRunIds(anyCollection())).thenReturn(thresholds);
     }
@@ -83,11 +95,11 @@ class SuitePassRateServiceTest {
         UUID firstSuitePrevious = UUID.randomUUID();
         UUID secondSuiteLatest = UUID.randomUUID();
         stub(
-                List.of(
-                        new SuiteRunRank(suiteA, firstSuiteLatest, UUID.randomUUID(), 1),
-                        new SuiteRunRank(suiteA, firstSuitePrevious, UUID.randomUUID(), 2),
-                        new SuiteRunRank(suiteB, secondSuiteLatest, UUID.randomUUID(), 1)),
-                byRun(counts(firstSuiteLatest, 1, 0, 0, 1), counts(firstSuitePrevious, 0, 0, 0, 2), counts(secondSuiteLatest, 0, 0, 2, 0)),
+                Map.of(suiteA, List.of(firstSuiteLatest, firstSuitePrevious), suiteB, List.of(secondSuiteLatest)),
+                byRun(
+                        counts(firstSuiteLatest, 1, 0, 0, 1),
+                        counts(firstSuitePrevious, 0, 0, 0, 2),
+                        counts(secondSuiteLatest, 0, 0, 2, 0)),
                 Map.of(firstSuiteLatest, 0.5, firstSuitePrevious, 0.5));
 
         SuitePassRateSummaryDto summary = service.summarize(List.of(suiteA, suiteB));
@@ -99,10 +111,10 @@ class SuitePassRateServiceTest {
     }
 
     @Test
-    @DisplayName("no eligible runs: both rates are null, both counts are 0 and no thresholds are read")
-    void noEligibleRuns() {
-        when(evalSummaryRepository.findLatestScoredRuns(anyCollection(), eq(2))).thenReturn(List.of());
-        when(testCaseEvalScoreRepository.countByRunAndComputation(anyMap())).thenReturn(Map.of());
+    @DisplayName("no completed runs: both rates are null, counts are 0 and neither analytics nor thresholds are read")
+    void noCompletedRuns() {
+        when(testSuiteRunService.getLatestCompletedRunIdsBySuite(anyCollection(), eq(2)))
+                .thenReturn(Map.of());
 
         SuitePassRateSummaryDto summary = service.summarize(List.of(UUID.randomUUID()));
 
@@ -110,6 +122,21 @@ class SuitePassRateServiceTest {
         assertThat(summary.getPreviousPassRate()).isNull();
         assertThat(summary.getSuiteCount()).isZero();
         assertThat(summary.getPreviousSuiteCount()).isZero();
+        verify(evalSummaryRepository, never()).findLatestComputationIds(anyCollection());
+        verify(testCaseEvalScoreRepository, never()).countByRunAndComputation(anyMap());
+        verify(testSuiteRunService, never()).getThresholdsByRunIds(anyCollection());
+    }
+
+    @Test
+    @DisplayName("completed runs without any score rows: both rates are null and no thresholds are read")
+    void completedRunsWithoutScores() {
+        UUID suite = UUID.randomUUID();
+        stub(Map.of(suite, List.of(UUID.randomUUID())), Map.of(), Map.of());
+
+        SuitePassRateSummaryDto summary = service.summarize(List.of(suite));
+
+        assertThat(summary.getPassRate()).isNull();
+        assertThat(summary.getSuiteCount()).isZero();
         verify(testSuiteRunService, never()).getThresholdsByRunIds(anyCollection());
     }
 
@@ -118,7 +145,7 @@ class SuitePassRateServiceTest {
     void thresholdRunCountsOnlyPassed() {
         UUID suite = UUID.randomUUID();
         UUID run = UUID.randomUUID();
-        stub(List.of(new SuiteRunRank(suite, run, UUID.randomUUID(), 1)), byRun(counts(run, 1, 1, 1, 1)), Map.of(run, 0.5));
+        stub(Map.of(suite, List.of(run)), byRun(counts(run, 1, 1, 1, 1)), Map.of(run, 0.5));
 
         assertThat(service.summarize(List.of(suite)).getPassRate()).isEqualTo(0.25);
     }
@@ -128,7 +155,7 @@ class SuitePassRateServiceTest {
     void noThresholdRunCountsSuccessRows() {
         UUID suite = UUID.randomUUID();
         UUID run = UUID.randomUUID();
-        stub(List.of(new SuiteRunRank(suite, run, UUID.randomUUID(), 1)), byRun(counts(run, 0, 0, 2, 1)), Map.of());
+        stub(Map.of(suite, List.of(run)), byRun(counts(run, 0, 0, 2, 1)), Map.of());
 
         assertThat(service.summarize(List.of(suite)).getPassRate()).isEqualTo(2.0 / 3.0);
     }
@@ -141,7 +168,7 @@ class SuitePassRateServiceTest {
         UUID bigRun = UUID.randomUUID();
         UUID smallRun = UUID.randomUUID();
         stub(
-                List.of(new SuiteRunRank(big, bigRun, UUID.randomUUID(), 1), new SuiteRunRank(small, smallRun, UUID.randomUUID(), 1)),
+                Map.of(big, List.of(bigRun), small, List.of(smallRun)),
                 byRun(counts(bigRun, 100, 0, 0, 0), counts(smallRun, 0, 0, 0, 2)),
                 Map.of(bigRun, 0.5, smallRun, 0.5));
 
@@ -149,36 +176,32 @@ class SuitePassRateServiceTest {
     }
 
     @Test
-    @DisplayName("a newest run with no score rows at its latest computation is skipped, so the next run is the latest")
-    void runWithoutCountsIsSkipped() {
+    @DisplayName("a latest completed run with no score rows contributes nothing and is not replaced by an older run")
+    void latestRunWithoutCountsContributesNothing() {
         UUID suite = UUID.randomUUID();
         UUID newest = UUID.randomUUID();
         UUID older = UUID.randomUUID();
-        stub(
-                List.of(new SuiteRunRank(suite, newest, UUID.randomUUID(), 1), new SuiteRunRank(suite, older, UUID.randomUUID(), 2)),
-                byRun(counts(older, 2, 0, 0, 0)),
-                Map.of(older, 0.5));
+        stub(Map.of(suite, List.of(newest, older)), byRun(counts(older, 2, 0, 0, 0)), Map.of(older, 0.5));
 
         SuitePassRateSummaryDto summary = service.summarize(List.of(suite));
 
-        assertThat(summary.getPassRate()).isEqualTo(1.0);
-        assertThat(summary.getSuiteCount()).isEqualTo(1);
-        assertThat(summary.getPreviousPassRate()).isNull();
-        assertThat(summary.getPreviousSuiteCount()).isZero();
+        assertThat(summary.getPassRate()).isNull();
+        assertThat(summary.getSuiteCount()).isZero();
+        assertThat(summary.getPreviousPassRate()).isEqualTo(1.0);
+        assertThat(summary.getPreviousSuiteCount()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("each run is counted against the computation the run selection returned for it")
-    void countsAgainstSelectedComputations() {
+    @DisplayName("each run is counted against the latest computation the analytics read returned for it")
+    void countsAgainstLatestComputations() {
         UUID suite = UUID.randomUUID();
         UUID newest = UUID.randomUUID();
         UUID older = UUID.randomUUID();
         UUID newestComputation = UUID.randomUUID();
         UUID olderComputation = UUID.randomUUID();
         stub(
-                List.of(
-                        new SuiteRunRank(suite, newest, newestComputation, 1),
-                        new SuiteRunRank(suite, older, olderComputation, 2)),
+                Map.of(suite, List.of(newest, older)),
+                Map.of(newest, newestComputation, older, olderComputation),
                 byRun(counts(newest, 1, 0, 0, 0), counts(older, 1, 0, 0, 0)),
                 Map.of());
 
@@ -192,14 +215,14 @@ class SuitePassRateServiceTest {
     @DisplayName("duplicate suite ids are removed before the run selection")
     void duplicateIdsAreRemoved() {
         UUID suite = UUID.randomUUID();
-        when(evalSummaryRepository.findLatestScoredRuns(anyCollection(), eq(2))).thenReturn(List.of());
-        when(testCaseEvalScoreRepository.countByRunAndComputation(anyMap())).thenReturn(Map.of());
+        when(testSuiteRunService.getLatestCompletedRunIdsBySuite(anyCollection(), eq(2)))
+                .thenReturn(Map.of());
 
         service.summarize(List.of(suite, suite, suite));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<UUID>> captor = ArgumentCaptor.forClass(Collection.class);
-        verify(evalSummaryRepository).findLatestScoredRuns(captor.capture(), eq(2));
+        verify(testSuiteRunService).getLatestCompletedRunIdsBySuite(captor.capture(), eq(2));
         assertThat(captor.getValue()).containsExactly(suite);
     }
 
@@ -223,7 +246,7 @@ class SuitePassRateServiceTest {
         ids.add(null);
 
         assertThatThrownBy(() -> service.summarize(ids)).isInstanceOf(ValidationException.class);
-        verify(evalSummaryRepository, never()).findLatestScoredRuns(anyCollection(), any(Integer.class));
+        verify(testSuiteRunService, never()).getLatestCompletedRunIdsBySuite(anyCollection(), any(Integer.class));
     }
 
     @Test
@@ -236,7 +259,7 @@ class SuitePassRateServiceTest {
         assertThatThrownBy(() -> service.summarize(ids))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining(String.valueOf(ValidationConstants.MAX_BATCH_SUITE_IDS));
-        verify(evalSummaryRepository, never()).findLatestScoredRuns(anyCollection(), any(Integer.class));
+        verify(testSuiteRunService, never()).getLatestCompletedRunIdsBySuite(anyCollection(), any(Integer.class));
     }
 
     /** Runs the callback inline, as a real read-only transaction would, without a database. */

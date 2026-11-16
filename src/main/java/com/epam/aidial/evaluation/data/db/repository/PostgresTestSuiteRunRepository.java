@@ -19,9 +19,11 @@ import com.epam.aidial.evaluation.data.db.repository.sql.json.JsonPathAccessor;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,7 +34,9 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.JSONB;
+import org.jooq.Record3;
 import org.jooq.SortField;
+import org.jooq.Table;
 import org.jooq.impl.DSL;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -53,6 +57,9 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
     private final WhereBuilder whereBuilder;
     private final OrderByBuilder orderByBuilder;
     private final JsonPathAccessor jsonPathAccessor;
+
+    private static final String RANKED_TABLE = "ranked_runs";
+    private static final String RANK_COLUMN = "run_rank";
 
     // List queries exclude suite_snapshot to avoid TOAST decompression on bulk queries
     private static final Field<?>[] SELECT_LIST_FIELDS = {
@@ -330,6 +337,38 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
                         result.put(UUID.fromString(r.value1()), r.value2().doubleValue());
                     }
                 });
+        return result;
+    }
+
+    @Override
+    public Map<UUID, List<UUID>> findLatestCompletedRunIds(Collection<UUID> suiteIds, int perSuite) {
+        if (suiteIds == null || suiteIds.isEmpty()) {
+            return Map.of();
+        }
+        final List<String> ids = suiteIds.stream().distinct().map(UUID::toString).toList();
+
+        final Table<Record3<String, String, Integer>> ranked = dsl.select(
+                        TEST_SUITE_RUNS.TEST_SUITE_ID,
+                        TEST_SUITE_RUNS.ID,
+                        DSL.rowNumber()
+                                .over(DSL.partitionBy(TEST_SUITE_RUNS.TEST_SUITE_ID)
+                                        .orderBy(TEST_SUITE_RUNS.CREATED_AT_MS.desc(), TEST_SUITE_RUNS.ID.desc()))
+                                .as(RANK_COLUMN))
+                .from(TEST_SUITE_RUNS)
+                .where(TEST_SUITE_RUNS.TEST_SUITE_ID.in(ids))
+                .and(TEST_SUITE_RUNS.STATUS.eq(RunStatus.COMPLETED.name()))
+                .asTable(RANKED_TABLE);
+        final Field<String> rankedSuite = ranked.field(TEST_SUITE_RUNS.TEST_SUITE_ID);
+        final Field<String> rankedRun = ranked.field(TEST_SUITE_RUNS.ID);
+        final Field<Integer> rankedRank = ranked.field(RANK_COLUMN, Integer.class);
+
+        final Map<UUID, List<UUID>> result = new LinkedHashMap<>();
+        dsl.select(rankedSuite, rankedRun)
+                .from(ranked)
+                .where(rankedRank.le(perSuite))
+                .orderBy(rankedSuite, rankedRank)
+                .forEach(r -> result.computeIfAbsent(UUID.fromString(r.value1()), suite -> new ArrayList<>())
+                        .add(UUID.fromString(r.value2())));
         return result;
     }
 

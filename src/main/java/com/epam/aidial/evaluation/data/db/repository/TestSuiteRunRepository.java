@@ -84,4 +84,14 @@ public interface TestSuiteRunRepository {
      * map without touching the database.
      */
     Map<UUID, Double> findThresholdsByRunIds(Collection<UUID> runIds);
+
+    /**
+     * Each suite's newest {@code perSuite} {@code COMPLETED} runs, newest first, in one statement. Runs are
+     * ordered per suite by {@code created_at_ms} descending, breaking a tie on the larger run id.
+     * PENDING, RUNNING, CANCELLING, FAILED and CANCELLED runs are never returned.
+     *
+     * <p>A suite with no completed run is absent from the map. An empty or {@code null} {@code suiteIds}
+     * returns an empty map without touching the database.
+     */
+    Map<UUID, List<UUID>> findLatestCompletedRunIds(Collection<UUID> suiteIds, int perSuite);
 }

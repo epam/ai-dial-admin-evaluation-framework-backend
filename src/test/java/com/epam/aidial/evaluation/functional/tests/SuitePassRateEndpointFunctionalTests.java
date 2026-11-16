@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunDeletionRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseEvalScoreRepository;
+import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
@@ -68,7 +69,17 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
             long createdAtMs,
             Double threshold,
             Function<UUID, List<TestCaseEvalScore>> rowsForComputation) {
-        UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
+        return seedRun(suiteId, RunStatus.COMPLETED, createdAtMs, threshold, rowsForComputation);
+    }
+
+    private UUID seedRun(
+            UUID suiteId,
+            RunStatus status,
+            long createdAtMs,
+            Double threshold,
+            Function<UUID, List<TestCaseEvalScore>> rowsForComputation) {
+        UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId, status).getId();
+        metaTestDataHelper.forceRunCreatedAt(runId, createdAtMs);
         if (threshold != null) {
             metaTestDataHelper.setRunSuiteSnapshot(
                     runId, "{\"snapshotVersion\":\"2\",\"overallScoreThreshold\":" + threshold + "}");
@@ -181,6 +192,7 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
         seedRun(suiteId, 1_000L, HALF_THRESHOLD, c -> rows(c, success(true), success(true)));
         UUID newest = seedRun(suiteId, 2_000L, HALF_THRESHOLD, c -> rows(c, failed(), failed()));
         runDeletionRepository.insert(newest, 9_000L);
+        metaTestDataHelper.deleteRun(newest);
 
         SuitePassRateSummaryDto body = summarize(List.of(suiteId)).getBody();
 
@@ -188,6 +200,42 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
         assertThat(body.getPassRate()).isEqualTo(1.0);
         assertThat(body.getPreviousPassRate()).isNull();
         assertThat(body.getPreviousSuiteCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("a newer FAILED or CANCELLED run with partial scores is skipped: the completed runs are latest and previous")
+    void failedAndCancelledRunsAreSkipped() {
+        UUID suiteId = newSuite();
+        seedRun(suiteId, 1_000L, HALF_THRESHOLD, c -> rows(c, failed(), failed()));
+        seedRun(suiteId, 2_000L, HALF_THRESHOLD, c -> rows(c, success(true), success(true)));
+        seedRun(suiteId, RunStatus.FAILED, 3_000L, HALF_THRESHOLD, c -> rows(c, failed()));
+        seedRun(suiteId, RunStatus.CANCELLED, 4_000L, HALF_THRESHOLD, c -> rows(c, failed()));
+
+        SuitePassRateSummaryDto body = summarize(List.of(suiteId)).getBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.getPassRate()).isEqualTo(1.0);
+        assertThat(body.getSuiteCount()).isEqualTo(1);
+        assertThat(body.getPreviousPassRate()).isEqualTo(0.0);
+        assertThat(body.getPreviousSuiteCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a RUNNING run whose scores are already written is not the latest until it completes")
+    void runningRunIsSkippedUntilCompleted() {
+        UUID suiteId = newSuite();
+        seedRun(suiteId, 1_000L, HALF_THRESHOLD, c -> rows(c, success(true), success(true)));
+        UUID running = seedRun(suiteId, RunStatus.RUNNING, 2_000L, HALF_THRESHOLD, c -> rows(c, failed(), failed()));
+        try {
+            SuitePassRateSummaryDto beforeCompletion = summarize(List.of(suiteId)).getBody();
+
+            assertThat(beforeCompletion).isNotNull();
+            assertThat(beforeCompletion.getPassRate()).isEqualTo(1.0);
+            assertThat(beforeCompletion.getPreviousSuiteCount()).isZero();
+        } finally {
+            // A RUNNING row left lying around would count toward other tests' active-run limits.
+            metaTestDataHelper.deleteRun(running);
+        }
     }
 
     @Test

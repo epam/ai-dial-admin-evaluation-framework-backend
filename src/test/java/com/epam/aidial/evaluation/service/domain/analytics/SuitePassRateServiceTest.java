@@ -141,13 +141,13 @@ class SuitePassRateServiceTest {
     }
 
     @Test
-    @DisplayName("a run with a threshold counts only passed test cases: 1 passed, 1 below, 1 unscored, 1 failed is 0.25")
-    void thresholdRunCountsOnlyPassed() {
+    @DisplayName("a run with a threshold counts passed and unscored test cases: 1 passed, 1 below, 1 unscored, 1 failed is 0.5")
+    void thresholdRunCountsPassedAndUnscored() {
         UUID suite = UUID.randomUUID();
         UUID run = UUID.randomUUID();
         stub(Map.of(suite, List.of(run)), byRun(counts(run, 1, 1, 1, 1)), Map.of(run, 0.5));
 
-        assertThat(service.summarize(List.of(suite)).getPassRate()).isEqualTo(0.25);
+        assertThat(service.summarize(List.of(suite)).getPassRate()).isEqualTo(0.5);
     }
 
     @Test

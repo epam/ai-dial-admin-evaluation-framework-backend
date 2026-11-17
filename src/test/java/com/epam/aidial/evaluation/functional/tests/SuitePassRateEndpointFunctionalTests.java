@@ -62,7 +62,7 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
 
     /**
      * Seeds one run of {@code suiteId}: the meta run (with {@code threshold} in its snapshot when non-null), one
-     * eval summary and the given score rows for a single computation.
+     * eval summary per score row and the given score rows for a single computation.
      */
     private UUID seedRun(
             UUID suiteId,
@@ -85,27 +85,17 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
                     runId, "{\"snapshotVersion\":\"2\",\"overallScoreThreshold\":" + threshold + "}");
         }
         UUID computationId = UUID.randomUUID();
-        seedSummary(suiteId, runId, computationId, createdAtMs, createdAtMs);
-        scoreRepository.saveAll(rowsForComputation.apply(computationId).stream()
+        final List<TestCaseEvalScore> scoreRows = rowsForComputation.apply(computationId).stream()
                 .map(r -> withRun(r, runId))
-                .toList());
+                .toList();
+        scoreRows.forEach(r -> seedSummaryForTestCase(suiteId, runId, computationId, r.getTestCaseId(), createdAtMs));
+        scoreRepository.saveAll(scoreRows);
         return runId;
     }
 
     private static TestCaseEvalScore withRun(TestCaseEvalScore score, UUID runId) {
         score.setTestSuiteRunId(runId);
         return score;
-    }
-
-    private void seedSummary(UUID suiteId, UUID runId, UUID computationId, long createdAtMs, long computedAtMs) {
-        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
-                .suiteId(suiteId)
-                .runId(runId)
-                .computationId(computationId)
-                .testCaseName("case")
-                .createdAtMs(createdAtMs)
-                .computedAtMs(computedAtMs)
-                .build());
     }
 
     private static List<TestCaseEvalScore> rows(UUID computationId, Object[]... statusAndPassed) {
@@ -145,18 +135,91 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
     }
 
     @Test
-    @DisplayName("with a threshold only passed test cases count: passed, below, unscored and failed give 0.25")
-    void thresholdRunCountsOnlyPassedTestCases() {
+    @DisplayName("with a threshold passed and unscored test cases count: passed, below, unscored and failed give 0.5")
+    void thresholdRunCountsPassedAndUnscoredTestCases() {
         UUID suiteId = newSuite();
         seedRun(suiteId, 1_000L, HALF_THRESHOLD, c -> rows(c, success(true), success(false), success(null), failed()));
 
         SuitePassRateSummaryDto body = summarize(List.of(suiteId)).getBody();
 
         assertThat(body).isNotNull();
-        assertThat(body.getPassRate()).isEqualTo(0.25);
+        assertThat(body.getPassRate()).isEqualTo(0.5);
         assertThat(body.getSuiteCount()).isEqualTo(1);
         assertThat(body.getPreviousPassRate()).isNull();
         assertThat(body.getPreviousSuiteCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("with a threshold a passed case and an omitted SUCCESS case (no score row) give 1.0")
+    void thresholdPassedAndOmittedSuccessIsOne() {
+        UUID suiteId = newSuite();
+        seedRunWithOmittedSuccessCases(suiteId, HALF_THRESHOLD, 1, c -> rows(c, success(true)));
+
+        assertThat(rateOf(suiteId)).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("with a threshold a below-threshold case and an omitted SUCCESS case (no score row) give 0.5")
+    void thresholdFailedAndOmittedSuccessIsHalf() {
+        UUID suiteId = newSuite();
+        seedRunWithOmittedSuccessCases(suiteId, HALF_THRESHOLD, 1, c -> rows(c, success(false)));
+
+        assertThat(rateOf(suiteId)).isEqualTo(0.5);
+    }
+
+    @Test
+    @DisplayName("without a threshold a FAILED case and an omitted SUCCESS case (no score row) give 0.5")
+    void noThresholdFailedAndOmittedSuccessIsHalf() {
+        UUID suiteId = newSuite();
+        seedRunWithOmittedSuccessCases(suiteId, null, 1, c -> rows(c, failed()));
+
+        assertThat(rateOf(suiteId)).isEqualTo(0.5);
+    }
+
+    private Double rateOf(UUID suiteId) {
+        SuitePassRateSummaryDto body = summarize(List.of(suiteId)).getBody();
+        assertThat(body).isNotNull();
+        return body.getPassRate();
+    }
+
+    /**
+     * Like {@link #seedRun}, but each score row and each of {@code omittedSuccessCases} test cases has its own
+     * eval summary; the omitted ones have no score row, as the real writer leaves out unscored SUCCESS cases.
+     */
+    private void seedRunWithOmittedSuccessCases(
+            UUID suiteId,
+            Double threshold,
+            int omittedSuccessCases,
+            Function<UUID, List<TestCaseEvalScore>> rowsForComputation) {
+        UUID runId = metaTestDataHelper
+                .createTestSuiteRun(suiteId, RunStatus.COMPLETED)
+                .getId();
+        metaTestDataHelper.forceRunCreatedAt(runId, 1_000L);
+        if (threshold != null) {
+            metaTestDataHelper.setRunSuiteSnapshot(
+                    runId, "{\"snapshotVersion\":\"2\",\"overallScoreThreshold\":" + threshold + "}");
+        }
+        UUID computationId = UUID.randomUUID();
+        List<TestCaseEvalScore> scoreRows = rowsForComputation.apply(computationId).stream()
+                .map(r -> withRun(r, runId))
+                .toList();
+        scoreRows.forEach(r -> seedSummaryForTestCase(suiteId, runId, computationId, r.getTestCaseId(), 1_000L));
+        IntStream.range(0, omittedSuccessCases)
+                .forEach(i -> seedSummaryForTestCase(suiteId, runId, computationId, UUID.randomUUID(), 1_000L));
+        scoreRepository.saveAll(scoreRows);
+    }
+
+    private void seedSummaryForTestCase(
+            UUID suiteId, UUID runId, UUID computationId, UUID testCaseId, long computedAtMs) {
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseId)
+                .testCaseName("case-" + testCaseId)
+                .createdAtMs(1_000L)
+                .computedAtMs(computedAtMs)
+                .build());
     }
 
     @Test
@@ -246,10 +309,12 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
         metaTestDataHelper.setRunSuiteSnapshot(runId, "{\"snapshotVersion\":\"2\",\"overallScoreThreshold\":0.5}");
         UUID older = UUID.randomUUID();
         UUID newer = UUID.randomUUID();
-        seedSummary(suiteId, runId, older, 1_000L, 1_000L);
-        seedSummary(suiteId, runId, newer, 1_000L, 2_000L);
-        List<TestCaseEvalScore> allRows = new ArrayList<>(rows(older, failed(), failed()));
-        allRows.addAll(rows(newer, success(true), success(true)));
+        List<TestCaseEvalScore> olderRows = rows(older, failed(), failed());
+        List<TestCaseEvalScore> newerRows = rows(newer, success(true), success(true));
+        olderRows.forEach(r -> seedSummaryForTestCase(suiteId, runId, older, r.getTestCaseId(), 1_000L));
+        newerRows.forEach(r -> seedSummaryForTestCase(suiteId, runId, newer, r.getTestCaseId(), 2_000L));
+        List<TestCaseEvalScore> allRows = new ArrayList<>(olderRows);
+        allRows.addAll(newerRows);
         scoreRepository.saveAll(allRows.stream().map(r -> withRun(r, runId)).toList());
 
         SuitePassRateSummaryDto body = summarize(List.of(suiteId)).getBody();

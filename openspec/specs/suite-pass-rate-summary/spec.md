@@ -31,7 +31,7 @@ Status: **Implemented**
 - **THEN** `passRate` is 0.5, not the pooled value over all test cases
 
 ### Requirement: Eligible runs for a suite
-For each requested suite the system SHALL consider only runs whose status is `COMPLETED` (runs that are PENDING, RUNNING, CANCELLING, FAILED or CANCELLED SHALL never be selected, even when they already have score rows). Among them the latest run SHALL be the one with the greatest run `created_at_ms`, with ties broken by the larger run id, and the previous run SHALL be the completed run ranked immediately after it. A suite with exactly one completed run SHALL contribute to `passRate` only. Each selected run SHALL be read at its latest computation (see `latest-computation-resolution`). A selected run that is soft-deleted, or that has no `test_case_eval_scores` rows at its latest computation, SHALL contribute nothing for its position; it SHALL NOT be replaced by an older run.
+For each requested suite the system SHALL consider only runs whose status is `COMPLETED` (runs that are PENDING, RUNNING, CANCELLING, FAILED or CANCELLED SHALL never be selected, even when they already have score rows). Among them the latest run SHALL be the one with the greatest run `created_at_ms`, with ties broken by the larger run id, and the previous run SHALL be the completed run ranked immediately after it. A suite with exactly one completed run SHALL contribute to `passRate` only. Each selected run SHALL be read at its latest computation (see `latest-computation-resolution`). A selected run that is soft-deleted, or that has no eval summaries and no `test_case_eval_scores` rows at its latest computation, SHALL contribute nothing for its position; it SHALL NOT be replaced by an older run.
 Status: **Implemented**
 
 #### Scenario: Failed or cancelled run is skipped
@@ -55,12 +55,24 @@ Status: **Implemented**
 - **THEN** it is not eligible and is not counted as latest or previous
 
 ### Requirement: Threshold-aware pass rate per run
-The system SHALL compute a run's pass rate as passed test cases divided by all test cases of its latest computation, where the threshold is the run's `overallScoreThreshold` captured in its suite snapshot. When the run has a threshold, a test case SHALL count as passed only if `passed` is true; a SUCCESS test case with no `passed` value (unscored) and any test case whose `execution_status` is not SUCCESS SHALL count as not passed. When the run has no threshold (including a run with no snapshot), every test case whose `execution_status` is SUCCESS SHALL count as passed and every other test case as not passed. The denominator SHALL include every row of the run's latest computation.
+The system SHALL compute a run's pass rate as passed test cases divided by all test cases of its latest computation, where the threshold is the run's `overallScoreThreshold` captured in its suite snapshot. When the run has a threshold, a test case SHALL count as passed if `passed` is true, or if it is a SUCCESS test case with no `passed` value (unscored, including a SUCCESS test case that has no `test_case_eval_scores` row because the writer omits SUCCESS test cases without a numeric sample); a test case with `passed` false and any test case whose `execution_status` is not SUCCESS SHALL count as not passed. When the run has no threshold (including a run with no snapshot), every test case whose `execution_status` is SUCCESS SHALL count as passed and every other test case as not passed. The denominator SHALL include every test case of the run's latest computation, counted once however many eval-summary rows (repetitions, turns, requests) it has: the distinct test cases of `test_case_eval_summaries` full-joined with `test_case_eval_scores`, where a test case with no score row is an unscored SUCCESS test case.
 Status: **Implemented**
 
 #### Scenario: Threshold set, mixed outcomes
 - **WHEN** a run with a threshold has 1 test case passed, 1 below the threshold, 1 SUCCESS and unscored, and 1 FAILED
-- **THEN** its pass rate is 0.25
+- **THEN** its pass rate is 0.5
+
+#### Scenario: Unscored SUCCESS test case without a score row
+- **WHEN** a run with a threshold has 1 passed test case and 1 SUCCESS test case that has eval summaries but no score row
+- **THEN** its pass rate is 1.0, and with 1 below-threshold test case instead of the passed one it is 0.5
+
+#### Scenario: No threshold, FAILED and omitted SUCCESS
+- **WHEN** a run has no threshold, 1 FAILED test case and 1 SUCCESS test case without a score row
+- **THEN** its pass rate is 0.5
+
+#### Scenario: Several summary rows per test case
+- **WHEN** a test case has several eval-summary rows (repetitions, turns or requests)
+- **THEN** it counts once in the denominator
 
 #### Scenario: No threshold
 - **WHEN** a run has no threshold and has 2 SUCCESS test cases (null `passed`) and 1 FAILED

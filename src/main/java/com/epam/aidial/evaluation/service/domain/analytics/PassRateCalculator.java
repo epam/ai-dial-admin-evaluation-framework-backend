@@ -10,8 +10,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>A run's pass rate is passed test cases over all test cases of its computation:
  * <ul>
- *   <li>run has a threshold — only {@code passed = true} counts; a SUCCESS test case with no {@code passed}
- *       value (unscored) and any non-SUCCESS test case do not;</li>
+ *   <li>run has a threshold — {@code passed = true} counts, and so does an unscored SUCCESS test case (no
+ *       numeric sample, e.g. every metric condition-skipped; it may have no score row at all); a
+ *       {@code passed = false} and any non-SUCCESS test case do not;</li>
  *   <li>run has no threshold — {@code passed} is never set, so every SUCCESS test case counts.</li>
  * </ul>
  */
@@ -26,7 +27,7 @@ public class PassRateCalculator {
             return null;
         }
         final long passed = hasThreshold
-                ? counts.passedTrue()
+                ? counts.passedTrue() + counts.unscored()
                 : counts.passedTrue() + counts.passedFalse() + counts.unscored();
         return (double) passed / total;
     }

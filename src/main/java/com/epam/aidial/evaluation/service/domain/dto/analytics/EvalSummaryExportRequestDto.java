@@ -44,30 +44,30 @@ public class EvalSummaryExportRequestDto {
             description = "Ordered subset of columns to emit. Empty/omitted = full manifest minus "
                     + "`requestBody`/`responseBody`. Naming either body column explicitly turns on the "
                     + "test_case_run_results JOIN projection. Discover the full manifest via GET /export/preview.",
-            example =
-                    "[\"testCaseName\", \"data::prompt\", \"metric::Accuracy::score\", \"metricInfo::Accuracy::score\", \"metricError::Accuracy\"]")
+            example = "[\"testCaseName\", \"data::prompt\", \"metric::Accuracy::score\","
+                    + " \"metricInfo::Accuracy::score\", \"metricError::Accuracy\"]")
     private List<String> columns;
 
     @Size(
             max = ValidationConstants.MAX_LIST_FILTER_PARAMS,
             message = "filter must not exceed " + ValidationConstants.MAX_LIST_FILTER_PARAMS + " entries")
     @Schema(
-            description =
-                    "Filter tokens (`field:operator:value`, repeatable) evaluated against "
-                            + "`FilterWhitelists.EVAL_SUMMARIES`. Multiple filters combine with AND. Body-supplied "
-                            + "entries are taken verbatim — no comma-splitting.\n\n"
-                            + "| Field | Type | Operators |\n"
-                            + "|-------|------|-----------|\n"
-                            + "| suiteId | uuid | eq, in |\n"
-                            + "| runId | uuid | eq, in |\n"
-                            + "| testCaseId | uuid | eq, in |\n"
-                            + "| testCaseName | string | eq, ne, co, in |\n"
-                            + "| executionStatus | string | eq, ne, in |\n"
-                            + "| runIndex | integer | eq, gt, gte, lt, lte |\n"
-                            + "| execDurationMs | integer | gt, gte, lt, lte |\n"
-                            + "| responseStatusCode | integer | eq, gt, gte, lt, lte |\n"
-                            + "| testCaseData | jsonb string | eq, ne, co |\n"
-                            + "| metricValues | jsonb numeric (two-level path: metricName.outputName) | eq, ne, gt, gte, lt, lte |",
+            description = "Filter tokens (`field:operator:value`, repeatable) evaluated against"
+                    + " `FilterWhitelists.EVAL_SUMMARIES`. Multiple filters combine with AND. Body-supplied"
+                    + " entries are taken verbatim — no comma-splitting.\n\n"
+                    + "| Field | Type | Operators |\n"
+                    + "|-------|------|-----------|\n"
+                    + "| suiteId | uuid | eq, in |\n"
+                    + "| runId | uuid | eq, in |\n"
+                    + "| testCaseId | uuid | eq, in |\n"
+                    + "| testCaseName | string | eq, ne, co, in |\n"
+                    + "| executionStatus | string | eq, ne, in |\n"
+                    + "| runIndex | integer | eq, gt, gte, lt, lte |\n"
+                    + "| execDurationMs | integer | gt, gte, lt, lte |\n"
+                    + "| responseStatusCode | integer | eq, gt, gte, lt, lte |\n"
+                    + "| testCaseData | jsonb string | eq, ne, co |\n"
+                    + "| metricValues | jsonb numeric (two-level path: metricName.outputName) | eq, ne, gt,"
+                    + " gte, lt, lte |",
             example = "[\"executionStatus:eq:SUCCESS\"]")
     private List<String> filter;
 

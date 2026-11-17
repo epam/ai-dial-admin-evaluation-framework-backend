@@ -44,12 +44,12 @@ public class TestCaseBulkPatchController {
     @PatchMapping("/api/v1/datasets/{datasetId}/test-cases:bulk")
     @Operation(
             summary = "Composite bulk partial update of test cases",
-            description = "Atomically applies selector-scoped homogeneous operations and per-row "
-                    + "heterogeneous merge-patch operations in a single transaction. Bulk operations "
-                    + "are applied first (in array order); item operations follow on the already-bulk-updated state. "
-                    + "Bulk patches are restricted to a code-defined whitelist (currently `{testCaseName, data}`); item patches "
-                    + "follow single-row PATCH semantics. Filter selectors are resolved at the moment each op executes, "
-                    + "so `bulkOperations[i+1]` sees the effects of `bulkOperations[i]`. Returns compact counts.",
+            description = "Atomically applies selector-scoped homogeneous operations and per-row heterogeneous"
+                    + " merge-patch operations in a single transaction. Bulk operations are applied first (in array"
+                    + " order); item operations follow on the already-bulk-updated state. Bulk patches are restricted"
+                    + " to a code-defined whitelist (currently `{testCaseName, data}`); item patches follow single-row"
+                    + " PATCH semantics. Filter selectors are resolved at the moment each op executes, so"
+                    + " `bulkOperations[i+1]` sees the effects of `bulkOperations[i]`. Returns compact counts.",
             requestBody =
                     @RequestBody(
                             description = "Composite bulk-patch request",
@@ -60,20 +60,20 @@ public class TestCaseBulkPatchController {
                                             examples = {
                                                 @ExampleObject(
                                                         name = "bulk-rename-by-filter",
-                                                        description =
-                                                                "Bulk-rename test cases matching a filter, then per-row patch two of them.",
+                                                        description = "Bulk-rename test cases matching a filter, then"
+                                                                + " per-row patch two of them.",
                                                         value = "{\"bulkOperations\":["
                                                                 + "{\"selector\":{\"filter\":[\"testCaseName:like:smoke%\"]},"
                                                                 + "\"patch\":{\"testCaseName\":\"smoke-archived\"}}],"
                                                                 + "\"itemOperations\":["
-                                                                + "{\"id\":\"11111111-1111-1111-1111-111111111111\","
-                                                                + "\"patch\":{\"testCaseName\":\"Renamed A\"}},"
+                                                                + "{\"id\":\"11111111-1111-1111-1111-111111111111\",\"patch\":{\"testCaseName\":\"Renamed"
+                                                                + " A\"}},"
                                                                 + "{\"id\":\"22222222-2222-2222-2222-222222222222\","
                                                                 + "\"patch\":{\"data\":{\"prompt\":\"updated\"}}}]}"),
                                                 @ExampleObject(
                                                         name = "ids-selector-patch-data",
-                                                        description =
-                                                                "Selector by ids with patch updating data on two specific rows.",
+                                                        description = "Selector by ids with patch updating data on two"
+                                                                + " specific rows.",
                                                         value = "{\"bulkOperations\":["
                                                                 + "{\"selector\":{\"ids\":[\"11111111-1111-1111-1111-111111111111\","
                                                                 + "\"22222222-2222-2222-2222-222222222222\"]},"

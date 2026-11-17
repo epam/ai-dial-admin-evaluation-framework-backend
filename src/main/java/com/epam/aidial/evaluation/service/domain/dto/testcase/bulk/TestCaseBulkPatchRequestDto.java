@@ -14,9 +14,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Schema(
         description =
-                "Composite bulk-patch request. At least one of `bulkOperations` or `itemOperations` "
-                        + "MUST be non-empty. Bulk operations are applied first (in array order) via SQL UPDATE; "
-                        + "item operations are then applied (in array order) via merge-patch on the already-bulk-updated state.")
+                "Composite bulk-patch request. At least one of `bulkOperations` or `itemOperations` MUST be non-empty."
+                        + " Bulk operations are applied first (in array order) via SQL UPDATE; item operations are"
+                        + " then applied (in array order) via merge-patch on the already-bulk-updated state.")
 public class TestCaseBulkPatchRequestDto {
 
     @Valid

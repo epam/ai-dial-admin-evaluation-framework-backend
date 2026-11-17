@@ -108,8 +108,8 @@ class AdasCostQueryBuilderTest {
     }
 
     @Test
-    @DisplayName(
-            "builds the deployment-scoped metric-evaluation-phase query with the same shape but a different phase value")
+    @DisplayName("builds the deployment-scoped metric-evaluation-phase query with the same shape but a different phase"
+            + " value")
     void buildsDeploymentMetricEvaluationPhaseQuery() {
         StructuredQuery query =
                 builder.buildDeploymentAggregateQuery(DEPLOYMENT_ID, FROM_MS, TO_MS, EvalPhase.METRIC_EVALUATION);
@@ -151,50 +151,50 @@ class AdasCostQueryBuilderTest {
         JsonNode actual = objectMapper.valueToTree(query);
 
         JsonNode expected = objectMapper.readTree("""
-                {
-                  "entity": "dial_usage_log",
-                  "mode": "aggregate",
-                  "distinct": false,
-                  "filter": {
-                    "op": "and",
+            {
+              "entity": "dial_usage_log",
+              "mode": "aggregate",
+              "distinct": false,
+              "filter": {
+                "op": "and",
+                "args": [
+                  {
+                    "op": "eq",
                     "args": [
-                      {
-                        "op": "eq",
-                        "args": [
-                          { "type": "field", "name": "deployment" },
-                          { "type": "value", "value_type": "string", "value": "gpt-4o-2024-08-06" }
-                        ]
-                      },
-                      {
-                        "op": "ge",
-                        "args": [
-                          { "type": "field", "name": "request_time" },
-                          { "type": "value", "value_type": "timestamp", "value": "1735689600000" }
-                        ]
-                      },
-                      {
-                        "op": "le",
-                        "args": [
-                          { "type": "field", "name": "request_time" },
-                          { "type": "value", "value_type": "timestamp", "value": "1738368000000" }
-                        ]
-                      },
-                      {
-                        "op": "co",
-                        "args": [
-                          { "type": "field", "name": "usage_request_baggage.baggage" },
-                          { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
-                        ]
-                      }
+                      { "type": "field", "name": "deployment" },
+                      { "type": "value", "value_type": "string", "value": "gpt-4o-2024-08-06" }
                     ]
                   },
-                  "group_by": [],
-                  "select": [
-                    { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
-                    { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" }
-                  ]
-                }
-                """);
+                  {
+                    "op": "ge",
+                    "args": [
+                      { "type": "field", "name": "request_time" },
+                      { "type": "value", "value_type": "timestamp", "value": "1735689600000" }
+                    ]
+                  },
+                  {
+                    "op": "le",
+                    "args": [
+                      { "type": "field", "name": "request_time" },
+                      { "type": "value", "value_type": "timestamp", "value": "1738368000000" }
+                    ]
+                  },
+                  {
+                    "op": "co",
+                    "args": [
+                      { "type": "field", "name": "usage_request_baggage.baggage" },
+                      { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
+                    ]
+                  }
+                ]
+              },
+              "group_by": [],
+              "select": [
+                { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
+                { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" }
+              ]
+            }
+            """);
 
         assertThat(actual).isEqualTo(expected);
     }
@@ -261,99 +261,99 @@ class AdasCostQueryBuilderTest {
         JsonNode actual = objectMapper.valueToTree(query);
 
         JsonNode expected = objectMapper.readTree("""
-                {
-                  "entity": "dial_usage_log",
-                  "mode": "aggregate",
-                  "distinct": false,
-                  "filter": {
-                    "op": "or",
+            {
+              "entity": "dial_usage_log",
+              "mode": "aggregate",
+              "distinct": false,
+              "filter": {
+                "op": "or",
+                "args": [
+                  {
+                    "op": "co",
                     "args": [
-                      {
-                        "op": "co",
-                        "args": [
-                          { "type": "field", "name": "usage_request_baggage.baggage" },
-                          { "type": "value", "value_type": "string", "value": "eval.run.id=1f810de3-cb9b-4e50-b9c5-794c41d99f6c" }
-                        ]
-                      },
-                      {
-                        "op": "co",
-                        "args": [
-                          { "type": "field", "name": "usage_request_baggage.baggage" },
-                          { "type": "value", "value_type": "string", "value": "eval.run.id=2a25d443-a673-47cf-a766-47b752118925" }
-                        ]
-                      }
+                      { "type": "field", "name": "usage_request_baggage.baggage" },
+                      { "type": "value", "value_type": "string", "value": "eval.run.id=1f810de3-cb9b-4e50-b9c5-794c41d99f6c" }
                     ]
                   },
-                  "group_by": ["run_id"],
-                  "select": [
-                    {
-                      "expr": {
-                        "type": "case",
-                        "when": [
-                          {
-                            "when": {
-                              "op": "co",
-                              "args": [
-                                { "type": "field", "name": "usage_request_baggage.baggage" },
-                                { "type": "value", "value_type": "string", "value": "eval.run.id=1f810de3-cb9b-4e50-b9c5-794c41d99f6c" }
-                              ]
-                            },
-                            "then": { "type": "value", "value_type": "string", "value": "1f810de3-cb9b-4e50-b9c5-794c41d99f6c" }
-                          },
-                          {
-                            "when": {
-                              "op": "co",
-                              "args": [
-                                { "type": "field", "name": "usage_request_baggage.baggage" },
-                                { "type": "value", "value_type": "string", "value": "eval.run.id=2a25d443-a673-47cf-a766-47b752118925" }
-                              ]
-                            },
-                            "then": { "type": "value", "value_type": "string", "value": "2a25d443-a673-47cf-a766-47b752118925" }
-                          }
-                        ],
-                        "else": { "type": "value", "value_type": "string", "value": "other" }
+                  {
+                    "op": "co",
+                    "args": [
+                      { "type": "field", "name": "usage_request_baggage.baggage" },
+                      { "type": "value", "value_type": "string", "value": "eval.run.id=2a25d443-a673-47cf-a766-47b752118925" }
+                    ]
+                  }
+                ]
+              },
+              "group_by": ["run_id"],
+              "select": [
+                {
+                  "expr": {
+                    "type": "case",
+                    "when": [
+                      {
+                        "when": {
+                          "op": "co",
+                          "args": [
+                            { "type": "field", "name": "usage_request_baggage.baggage" },
+                            { "type": "value", "value_type": "string", "value": "eval.run.id=1f810de3-cb9b-4e50-b9c5-794c41d99f6c" }
+                          ]
+                        },
+                        "then": { "type": "value", "value_type": "string", "value": "1f810de3-cb9b-4e50-b9c5-794c41d99f6c" }
                       },
-                      "as": "run_id"
-                    },
-                    { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
-                    { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" },
-                    {
-                      "expr": {
-                        "type": "fn", "name": "sum", "distinct": false,
-                        "args": [{
-                          "type": "case",
-                          "when": [{
-                            "when": { "op": "co", "args": [
-                              { "type": "field", "name": "usage_request_baggage.baggage" },
-                              { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
-                            ]},
-                            "then": { "type": "field", "name": "total_price" }
-                          }],
-                          "else": { "type": "value", "value_type": "decimal", "value": "0" }
-                        }]
-                      },
-                      "as": "test_case_cost"
-                    },
-                    {
-                      "expr": {
-                        "type": "fn", "name": "sum", "distinct": false,
-                        "args": [{
-                          "type": "case",
-                          "when": [{
-                            "when": { "op": "co", "args": [
-                              { "type": "field", "name": "usage_request_baggage.baggage" },
-                              { "type": "value", "value_type": "string", "value": "eval.phase=metric-evaluation" }
-                            ]},
-                            "then": { "type": "field", "name": "total_price" }
-                          }],
-                          "else": { "type": "value", "value_type": "decimal", "value": "0" }
-                        }]
-                      },
-                      "as": "metric_eval_cost"
-                    }
-                  ]
+                      {
+                        "when": {
+                          "op": "co",
+                          "args": [
+                            { "type": "field", "name": "usage_request_baggage.baggage" },
+                            { "type": "value", "value_type": "string", "value": "eval.run.id=2a25d443-a673-47cf-a766-47b752118925" }
+                          ]
+                        },
+                        "then": { "type": "value", "value_type": "string", "value": "2a25d443-a673-47cf-a766-47b752118925" }
+                      }
+                    ],
+                    "else": { "type": "value", "value_type": "string", "value": "other" }
+                  },
+                  "as": "run_id"
+                },
+                { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
+                { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" },
+                {
+                  "expr": {
+                    "type": "fn", "name": "sum", "distinct": false,
+                    "args": [{
+                      "type": "case",
+                      "when": [{
+                        "when": { "op": "co", "args": [
+                          { "type": "field", "name": "usage_request_baggage.baggage" },
+                          { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
+                        ]},
+                        "then": { "type": "field", "name": "total_price" }
+                      }],
+                      "else": { "type": "value", "value_type": "decimal", "value": "0" }
+                    }]
+                  },
+                  "as": "test_case_cost"
+                },
+                {
+                  "expr": {
+                    "type": "fn", "name": "sum", "distinct": false,
+                    "args": [{
+                      "type": "case",
+                      "when": [{
+                        "when": { "op": "co", "args": [
+                          { "type": "field", "name": "usage_request_baggage.baggage" },
+                          { "type": "value", "value_type": "string", "value": "eval.phase=metric-evaluation" }
+                        ]},
+                        "then": { "type": "field", "name": "total_price" }
+                      }],
+                      "else": { "type": "value", "value_type": "decimal", "value": "0" }
+                    }]
+                  },
+                  "as": "metric_eval_cost"
                 }
-                """);
+              ]
+            }
+            """);
 
         assertThat(actual).isEqualTo(expected);
     }

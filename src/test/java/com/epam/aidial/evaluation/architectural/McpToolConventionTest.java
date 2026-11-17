@@ -170,8 +170,9 @@ class McpToolConventionTest {
                                 events.add(new SimpleConditionEvent(
                                         method,
                                         satisfied,
-                                        method.getFullName() + "'s @McpTool#annotations() must have a non-blank "
-                                                + "title, readOnlyHint == !destructiveHint and openWorldHint == false, but title='"
+                                        method.getFullName() + "'s @McpTool#annotations() must have a non-blank title,"
+                                                + " readOnlyHint == !destructiveHint and openWorldHint =="
+                                                + " false, but title='"
                                                 + annotations.title() + "', readOnlyHint=" + annotations.readOnlyHint()
                                                 + ", destructiveHint=" + annotations.destructiveHint()
                                                 + ", openWorldHint=" + annotations.openWorldHint()));

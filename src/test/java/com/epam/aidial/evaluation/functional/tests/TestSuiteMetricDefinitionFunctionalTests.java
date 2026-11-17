@@ -584,32 +584,32 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     @DisplayName("Should persist and return all binding source types")
     void shouldPersistAndReturnBindings() {
         String requestJson = """
-                {
-                    "name": "Binding Round-Trip",
-                    "metricDeclarationId": "%s",
-                    "metricDeclarationVersionId": "%s",
-                    "configBindings": [
-                        {
-                            "property": "threshold",
-                            "source": {"$type": "Constant", "value": 0.8}
-                        }
-                    ],
-                    "inputBindings": [
-                        {
-                            "property": "reference",
-                            "source": {"$type": "TestCase", "columnName": "expected_output"}
-                        },
-                        {
-                            "property": "actual",
-                            "source": {"$type": "Response", "columnName": "model_answer"}
-                        },
-                        {
-                            "property": "options",
-                            "source": {"$type": "Constant", "value": {"key": "val"}}
-                        }
-                    ]
-                }
-                """.formatted(SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID);
+            {
+                "name": "Binding Round-Trip",
+                "metricDeclarationId": "%s",
+                "metricDeclarationVersionId": "%s",
+                "configBindings": [
+                    {
+                        "property": "threshold",
+                        "source": {"$type": "Constant", "value": 0.8}
+                    }
+                ],
+                "inputBindings": [
+                    {
+                        "property": "reference",
+                        "source": {"$type": "TestCase", "columnName": "expected_output"}
+                    },
+                    {
+                        "property": "actual",
+                        "source": {"$type": "Response", "columnName": "model_answer"}
+                    },
+                    {
+                        "property": "options",
+                        "source": {"$type": "Constant", "value": {"key": "val"}}
+                    }
+                ]
+            }
+            """.formatted(SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID);
 
         ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
                 tsmdUrl(), jsonEntity(requestJson), TestSuiteMetricDefinitionResponseDto.class);
@@ -829,22 +829,22 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     }
 
     @Test
-    @DisplayName(
-            "Should mark TSMD invalid with UNRESOLVED_REFERENCE when TestCase binding column not in suite testCaseSchema")
+    @DisplayName("Should mark TSMD invalid with UNRESOLVED_REFERENCE when TestCase binding column not in suite"
+            + " testCaseSchema")
     void shouldMarkInvalid_whenTestCaseBindingReferencesNonExistentColumn() {
         // testSuite has testCaseSchema=[] — "non_existent" column will be unresolved
         // SCHEMA_VERSION_ID has inputSchema with required "reference" and optional "actual"
         String requestJson = """
-                {
-                    "name": "Unresolved TestCase Binding",
-                    "metricDeclarationId": "%s",
-                    "metricDeclarationVersionId": "%s",
-                    "configBindings": [],
-                    "inputBindings": [
-                        {"property": "reference", "source": {"$type": "TestCase", "columnName": "non_existent"}}
-                    ]
-                }
-                """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
+            {
+                "name": "Unresolved TestCase Binding",
+                "metricDeclarationId": "%s",
+                "metricDeclarationVersionId": "%s",
+                "configBindings": [],
+                "inputBindings": [
+                    {"property": "reference", "source": {"$type": "TestCase", "columnName": "non_existent"}}
+                ]
+            }
+            """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
 
         ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
                 tsmdUrl(), jsonEntity(requestJson), TestSuiteMetricDefinitionResponseDto.class);
@@ -858,22 +858,22 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     }
 
     @Test
-    @DisplayName(
-            "Should mark TSMD invalid with UNRESOLVED_REFERENCE when Response binding column not in suite responseColumns")
+    @DisplayName("Should mark TSMD invalid with UNRESOLVED_REFERENCE when Response binding column not in suite"
+            + " responseColumns")
     void shouldMarkInvalid_whenResponseBindingReferencesNonExistentColumn() {
         // testSuite has responseColumns=[] — "non_existent" column will be unresolved
         // SCHEMA_VERSION_ID has inputSchema with required "reference" and optional "actual"
         String requestJson = """
-                {
-                    "name": "Unresolved Response Binding",
-                    "metricDeclarationId": "%s",
-                    "metricDeclarationVersionId": "%s",
-                    "configBindings": [],
-                    "inputBindings": [
-                        {"property": "reference", "source": {"$type": "Response", "columnName": "non_existent"}}
-                    ]
-                }
-                """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
+            {
+                "name": "Unresolved Response Binding",
+                "metricDeclarationId": "%s",
+                "metricDeclarationVersionId": "%s",
+                "configBindings": [],
+                "inputBindings": [
+                    {"property": "reference", "source": {"$type": "Response", "columnName": "non_existent"}}
+                ]
+            }
+            """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
 
         ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
                 tsmdUrl(), jsonEntity(requestJson), TestSuiteMetricDefinitionResponseDto.class);
@@ -891,16 +891,16 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     void shouldMarkInvalid_whenRequiredPropertyBoundToNullConstant() {
         // SCHEMA_VERSION_ID has "reference" as a required property
         String requestJson = """
-                {
-                    "name": "Null Required Binding",
-                    "metricDeclarationId": "%s",
-                    "metricDeclarationVersionId": "%s",
-                    "configBindings": [],
-                    "inputBindings": [
-                        {"property": "reference", "source": {"$type": "Constant", "value": null}}
-                    ]
-                }
-                """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
+            {
+                "name": "Null Required Binding",
+                "metricDeclarationId": "%s",
+                "metricDeclarationVersionId": "%s",
+                "configBindings": [],
+                "inputBindings": [
+                    {"property": "reference", "source": {"$type": "Constant", "value": null}}
+                ]
+            }
+            """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
 
         ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
                 tsmdUrl(), jsonEntity(requestJson), TestSuiteMetricDefinitionResponseDto.class);
@@ -917,17 +917,17 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     @DisplayName("Should return 400 VALIDATION_ERROR when configBindings contain duplicate property")
     void shouldReturn400_whenDuplicatePropertyInConfigBindings() {
         String requestJson = """
-                {
-                    "name": "Duplicate Config Binding",
-                    "metricDeclarationId": "%s",
-                    "metricDeclarationVersionId": "%s",
-                    "configBindings": [
-                        {"property": "threshold", "source": {"$type": "Constant", "value": 0.8}},
-                        {"property": "threshold", "source": {"$type": "Constant", "value": 0.9}}
-                    ],
-                    "inputBindings": []
-                }
-                """.formatted(SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID);
+            {
+                "name": "Duplicate Config Binding",
+                "metricDeclarationId": "%s",
+                "metricDeclarationVersionId": "%s",
+                "configBindings": [
+                    {"property": "threshold", "source": {"$type": "Constant", "value": 0.8}},
+                    {"property": "threshold", "source": {"$type": "Constant", "value": 0.9}}
+                ],
+                "inputBindings": []
+            }
+            """.formatted(SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID);
 
         ResponseEntity<String> response = restTemplate.postForEntity(tsmdUrl(), jsonEntity(requestJson), String.class);
 
@@ -939,17 +939,17 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     @DisplayName("Should return 400 VALIDATION_ERROR when inputBindings contain duplicate property")
     void shouldReturn400_whenDuplicatePropertyInInputBindings() {
         String requestJson = """
-                {
-                    "name": "Duplicate Input Binding",
-                    "metricDeclarationId": "%s",
-                    "metricDeclarationVersionId": "%s",
-                    "configBindings": [],
-                    "inputBindings": [
-                        {"property": "reference", "source": {"$type": "Constant", "value": "a"}},
-                        {"property": "reference", "source": {"$type": "Constant", "value": "b"}}
-                    ]
-                }
-                """.formatted(SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID);
+            {
+                "name": "Duplicate Input Binding",
+                "metricDeclarationId": "%s",
+                "metricDeclarationVersionId": "%s",
+                "configBindings": [],
+                "inputBindings": [
+                    {"property": "reference", "source": {"$type": "Constant", "value": "a"}},
+                    {"property": "reference", "source": {"$type": "Constant", "value": "b"}}
+                ]
+            }
+            """.formatted(SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID);
 
         ResponseEntity<String> response = restTemplate.postForEntity(tsmdUrl(), jsonEntity(requestJson), String.class);
 
@@ -1042,17 +1042,17 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
         // Binding "actual" (optional) to null constant → no REQUIRED warning
         // Binding "reference" (required) to a non-null constant → satisfies required check
         String requestJson = """
-                {
-                    "name": "Null Optional Binding",
-                    "metricDeclarationId": "%s",
-                    "metricDeclarationVersionId": "%s",
-                    "configBindings": [],
-                    "inputBindings": [
-                        {"property": "reference", "source": {"$type": "Constant", "value": "valid-value"}},
-                        {"property": "actual", "source": {"$type": "Constant", "value": null}}
-                    ]
-                }
-                """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
+            {
+                "name": "Null Optional Binding",
+                "metricDeclarationId": "%s",
+                "metricDeclarationVersionId": "%s",
+                "configBindings": [],
+                "inputBindings": [
+                    {"property": "reference", "source": {"$type": "Constant", "value": "valid-value"}},
+                    {"property": "actual", "source": {"$type": "Constant", "value": null}}
+                ]
+            }
+            """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
 
         ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
                 tsmdUrl(), jsonEntity(requestJson), TestSuiteMetricDefinitionResponseDto.class);
@@ -1066,14 +1066,14 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     @DisplayName("Should mark TSMD invalid with INVALID_OUTPUT_SCHEMA when metric version has empty output schema")
     void shouldMarkInvalid_whenOutputSchemaHasNoProperties() {
         String requestJson = """
-                {
-                    "name": "Empty Output Schema Metric",
-                    "metricDeclarationId": "%s",
-                    "metricDeclarationVersionId": "%s",
-                    "configBindings": [],
-                    "inputBindings": []
-                }
-                """.formatted(SEED_ACCURACY_ID, EMPTY_OUTPUT_SCHEMA_VERSION_ID);
+            {
+                "name": "Empty Output Schema Metric",
+                "metricDeclarationId": "%s",
+                "metricDeclarationVersionId": "%s",
+                "configBindings": [],
+                "inputBindings": []
+            }
+            """.formatted(SEED_ACCURACY_ID, EMPTY_OUTPUT_SCHEMA_VERSION_ID);
 
         ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
                 tsmdUrl(), jsonEntity(requestJson), TestSuiteMetricDefinitionResponseDto.class);
@@ -1179,16 +1179,16 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
 
         // Create TSMD via API with Response binding for "model_answer" — valid since column exists
         String tsmdRequest = """
-                {
-                    "name": "Response Metric",
-                    "metricDeclarationId": "%s",
-                    "metricDeclarationVersionId": "%s",
-                    "configBindings": [],
-                    "inputBindings": [
-                        {"property": "reference", "source": {"$type": "Response", "columnName": "model_answer"}}
-                    ]
-                }
-                """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
+            {
+                "name": "Response Metric",
+                "metricDeclarationId": "%s",
+                "metricDeclarationVersionId": "%s",
+                "configBindings": [],
+                "inputBindings": [
+                    {"property": "reference", "source": {"$type": "Response", "columnName": "model_answer"}}
+                ]
+            }
+            """.formatted(SEED_ACCURACY_ID, SCHEMA_VERSION_ID);
         ResponseEntity<TestSuiteMetricDefinitionResponseDto> tsmdCreate = restTemplate.postForEntity(
                 apiUrl("/test-suites/" + suite.getId() + "/metric-definitions"),
                 jsonEntity(tsmdRequest),
@@ -1311,8 +1311,7 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     // --- Helper Methods ---
 
     private TestSuiteResponseDto createSuiteWithWeightedScore(String metricName, boolean withRequestTemplate) {
-        TestSuiteRequestDto request =
-                buildSuiteRequest("score-suite-" + UUID.randomUUID(), List.of(), List.of());
+        TestSuiteRequestDto request = buildSuiteRequest("score-suite-" + UUID.randomUUID(), List.of(), List.of());
         request.setOverallScore(new WeightedMean(List.of(new WeightedMetric(metricName, "score", BigDecimal.ONE))));
         if (!withRequestTemplate) {
             request.setRequestTemplate(null);
@@ -1338,7 +1337,6 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         return response.getBody();
     }
-
 
     private TestSuiteResponseDto createSuiteViaApi(
             String name, List<FieldDefinitionDto> testCaseSchema, List<ResponseColumnDefinitionDto> responseColumns) {

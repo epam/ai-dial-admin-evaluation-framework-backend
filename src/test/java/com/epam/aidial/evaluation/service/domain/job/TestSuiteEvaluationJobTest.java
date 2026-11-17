@@ -209,8 +209,8 @@ class TestSuiteEvaluationJobTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    @DisplayName(
-            "dispatch preserves native span context, baggage and correlation ID on the configured virtual/platform executor")
+    @DisplayName("dispatch preserves native span context, baggage and correlation ID on the configured virtual/platform"
+            + " executor")
     void dispatchPropagatesNativeContext(boolean virtual) throws Exception {
         final UUID runId = UUID.randomUUID();
         final RunHandle handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
@@ -326,8 +326,8 @@ class TestSuiteEvaluationJobTest {
             // Legacy v1 snapshots predate the dataset entity. CURRENT_VERSION is "2"; the resolver
             // rejects any version that is not equal to CURRENT_VERSION.
             String snapshotJson = """
-                    {"snapshotVersion":"1","suiteType":"DEPLOYMENT"}
-                    """;
+                {"snapshotVersion":"1","suiteType":"DEPLOYMENT"}
+                """;
 
             TestSuiteRun run = TestSuiteRun.builder()
                     .id(UUID.randomUUID())
@@ -345,8 +345,8 @@ class TestSuiteEvaluationJobTest {
         void defaultsMissingSnapshotVersionToCurrentVersion() {
             // JSON without snapshotVersion field — resolver defaults to CURRENT_VERSION
             String snapshotJson = """
-                    {"suiteType":"DEPLOYMENT"}
-                    """;
+                {"suiteType":"DEPLOYMENT"}
+                """;
 
             TestSuiteRun run = TestSuiteRun.builder()
                     .id(UUID.randomUUID())
@@ -364,8 +364,8 @@ class TestSuiteEvaluationJobTest {
         @DisplayName("throws UnsupportedSnapshotVersionException for unknown snapshot version")
         void throwsForUnknownSnapshotVersion() {
             String snapshotJson = """
-                    {"snapshotVersion":"99","suiteType":"DEPLOYMENT"}
-                    """;
+                {"snapshotVersion":"99","suiteType":"DEPLOYMENT"}
+                """;
 
             TestSuiteRun run = TestSuiteRun.builder()
                     .id(UUID.randomUUID())
@@ -859,7 +859,8 @@ class TestSuiteEvaluationJobTest {
         @ParameterizedTest
         @ValueSource(strings = {"completed", "failed", "cancelled"})
         @DisplayName(
-                "the same tracing session spans both phases, links metrics to execution, and is released on completed, failed and cancelled exits")
+                "the same tracing session spans both phases, links metrics to execution, and is released on completed,"
+                        + " failed and cancelled exits")
         void sessionIsSharedAndAlwaysClosed(String outcome) {
             stubResolvableRun();
             stubExecutionRunProperties();

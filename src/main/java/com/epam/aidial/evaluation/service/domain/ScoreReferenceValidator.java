@@ -63,8 +63,7 @@ public class ScoreReferenceValidator {
             return;
         }
         switch (definition) {
-            case WeightedMean weightedMean ->
-                checkWeights(weightedMean, OVERALL_SCORE_ROOT, metricNames, warnings);
+            case WeightedMean weightedMean -> checkWeights(weightedMean, OVERALL_SCORE_ROOT, metricNames, warnings);
             case CustomFunction customFunction -> checkCustomFunction(customFunction, metricNames, warnings);
             case null, default -> {}
         }

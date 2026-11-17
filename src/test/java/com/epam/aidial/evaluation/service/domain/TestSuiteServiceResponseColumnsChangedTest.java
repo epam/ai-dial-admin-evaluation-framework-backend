@@ -64,8 +64,7 @@ class TestSuiteServiceResponseColumnsChangedTest {
                         .valid(true)
                         .warnings(List.of())
                         .build());
-        when(suiteValidationService.withScoreReferences(any(), any(), any()))
-                .thenAnswer(inv -> inv.getArgument(0));
+        when(suiteValidationService.withScoreReferences(any(), any(), any())).thenAnswer(inv -> inv.getArgument(0));
         when(testSuiteRepository.save(any(TestSuite.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service = new TestSuiteService(

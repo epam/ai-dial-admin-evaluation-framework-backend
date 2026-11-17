@@ -41,8 +41,8 @@ class EvalSummariesSchemaProviderTest {
     private static final UUID COMPUTATION_ID = UUID.fromString("22222222-2222-4222-8222-222222222222");
 
     private static final String ACCURACY_OUTPUT_SCHEMA = """
-            {"properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}}
-            """;
+        {"properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}}
+        """;
 
     @Mock
     private TestSuiteRunService testSuiteRunService;

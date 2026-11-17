@@ -35,8 +35,8 @@ public abstract class DatasetCloneFunctionalTests extends BaseFunctionalTest {
     private ObjectMapper objectMapper;
 
     @Test
-    @DisplayName(
-            "POST /datasets/{id}/clone with empty body → 201; new id, derived name, inherited PUBLIC visibility, copied test cases, ETag")
+    @DisplayName("POST /datasets/{id}/clone with empty body → 201; new id, derived name, inherited PUBLIC visibility,"
+            + " copied test cases, ETag")
     void shouldCloneWithDerivedName() {
         Dataset source =
                 metaTestDataHelper.createDataset("Clone-Source-" + UUID.randomUUID(), "[]", DatasetVisibility.PUBLIC);
@@ -152,8 +152,8 @@ public abstract class DatasetCloneFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName(
-            "POST /datasets/{id}/clone on a PRIVATE source → 400 PRIVATE_DATASET_REQUIRES_SUITE_BINDING; nothing persisted")
+    @DisplayName("POST /datasets/{id}/clone on a PRIVATE source → 400 PRIVATE_DATASET_REQUIRES_SUITE_BINDING; nothing"
+            + " persisted")
     void shouldRejectCloningPrivateDataset() {
         Dataset source = metaTestDataHelper.createDataset(
                 "Clone-Private-Src-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
@@ -172,8 +172,8 @@ public abstract class DatasetCloneFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName(
-            "POST /datasets/{id}/clone preserves multi-turn test cases (2-turn and 3-turn) with their content and schema")
+    @DisplayName("POST /datasets/{id}/clone preserves multi-turn test cases (2-turn and 3-turn) with their content and"
+            + " schema")
     void shouldPreserveMultiTurnTestCasesOnClone() {
         String schemaJson = "[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true,\"perTurn\":true}]";
         Dataset source = metaTestDataHelper.createDataset(

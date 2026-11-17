@@ -89,8 +89,8 @@ public class MetricDeclarationController {
     @GetMapping("/{id}/latest")
     @Operation(
             summary = "Get latest version of a metric declaration",
-            description =
-                    "Returns the latest schema version for the given metric declaration (by schema_version descending). 404 if declaration or no version exists.")
+            description = "Returns the latest schema version for the given metric declaration (by schema_version"
+                    + " descending). 404 if declaration or no version exists.")
     @ApiResponse(
             responseCode = "200",
             description = "Latest version found",

@@ -20,9 +20,10 @@ public class TestCasesDefinitionDto {
     @Valid
     @Size(max = ValidationConstants.MAX_FACT_FIELDS)
     @Schema(
-            example =
-                    "[{\"name\":\"expected_status\",\"type\":\"INTEGER\",\"required\":true,\"description\":\"HTTP status code\"},"
-                            + "{\"name\":\"response_time_ms\",\"type\":\"NUMBER\",\"required\":false,\"description\":\"Response time in ms\"}]")
+            example = "[{\"name\":\"expected_status\",\"type\":\"INTEGER\",\"required\":true,\"description\":\"HTTP"
+                    + " status"
+                    + " code\"},{\"name\":\"response_time_ms\",\"type\":\"NUMBER\",\"required\":false,\"description\":\"Response"
+                    + " time in ms\"}]")
     private List<FieldDefinitionDto> factFields;
 
     /**
@@ -30,8 +31,8 @@ public class TestCasesDefinitionDto {
      * Validation in TestSuiteService rejects requests that include non-empty parameterFields.
      */
     @Schema(
-            example =
-                    "[{\"name\":\"model\",\"type\":\"STRING\",\"required\":true,\"description\":\"Model ID\"},"
-                            + "{\"name\":\"temperature\",\"type\":\"NUMBER\",\"required\":false,\"description\":\"Sampling temperature\"}]")
+            example = "[{\"name\":\"model\",\"type\":\"STRING\",\"required\":true,\"description\":\"Model"
+                    + " ID\"},{\"name\":\"temperature\",\"type\":\"NUMBER\",\"required\":false,\"description\":\"Sampling"
+                    + " temperature\"}]")
     private List<FieldDefinitionDto> parameterFields;
 }

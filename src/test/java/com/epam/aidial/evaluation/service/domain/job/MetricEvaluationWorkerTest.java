@@ -156,8 +156,8 @@ class MetricEvaluationWorkerTest {
                 .declarationProviderId(PROVIDER_ID)
                 .configBindings("[]")
                 .inputBindings("""
-                        [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
-                        """)
+                    [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
+                    """)
                 .build();
     }
 
@@ -198,8 +198,8 @@ class MetricEvaluationWorkerTest {
     }
 
     @Test
-    @DisplayName(
-            "each result row gets an eval.testcase.metrics root linked to run and execution; TSMD spans are its children with provider descendants and fresh metric baggage")
+    @DisplayName("each result row gets an eval.testcase.metrics root linked to run and execution; TSMD spans are its"
+            + " children with provider descendants and fresh metric baggage")
     void metricRowsGetLinkedMetricsRoots() throws InterruptedException {
         final InMemorySpanExporter exporter = InMemorySpanExporter.create();
         try (OpenTelemetrySdk telemetry = OpenTelemetrySdk.builder()
@@ -310,7 +310,8 @@ class MetricEvaluationWorkerTest {
             try (EvaluationTraceSession session = new EvaluationTraceSession(runSpan.getSpanContext())) {
                 new MetricEvaluationWorker(metricProviderClient, bindingResolver, telemetry)
                         .startMetricsSpan(
-                                result, original.toBuilder().traceSession(session).build())
+                                result,
+                                original.toBuilder().traceSession(session).build())
                         .end();
                 assertThat(result.getTraceId()).isEqualTo("11111111111111111111111111111111");
             }
@@ -335,7 +336,8 @@ class MetricEvaluationWorkerTest {
                         .addSpanProcessor(SimpleSpanProcessor.create(exporter))
                         .build())
                 .build()) {
-            final Span parent = telemetry.getTracer("test").spanBuilder("parent").startSpan();
+            final Span parent =
+                    telemetry.getTracer("test").spanBuilder("parent").startSpan();
             try (Scope ignored = parent.makeCurrent()) {
                 new MetricEvaluationWorker(metricProviderClient, bindingResolver, telemetry)
                         .startMetricsSpan(buildResult(), buildContext(0))
@@ -420,8 +422,8 @@ class MetricEvaluationWorkerTest {
         private MetricProviderClient mockMetricProviderClient;
 
         @Test
-        @DisplayName(
-                "Should set all span attributes including testcase.id, testcase.name, eval.suite.id, metric.declaration.name, eval.phase")
+        @DisplayName("Should set all span attributes including testcase.id, testcase.name, eval.suite.id,"
+                + " metric.declaration.name, eval.phase")
         void shouldSetAllSpanAttributes() throws InterruptedException {
             // given
             UUID testCaseId = UUID.fromString("11111111-1111-1111-1111-111111111111");

@@ -70,8 +70,8 @@ class DashjoinJsonataEvaluationServiceTest {
     @DisplayName("evaluates nested array path against JSON data")
     void evaluate_nestedPath_returnsValue() {
         String json = """
-                {"choices": [{"message": {"content": "Hello"}}]}
-                """;
+            {"choices": [{"message": {"content": "Hello"}}]}
+            """;
         Object result = service.evaluate("choices[0].message.content", json);
         assertThat(result).isEqualTo("Hello");
     }
@@ -80,8 +80,8 @@ class DashjoinJsonataEvaluationServiceTest {
     @DisplayName("evaluates numeric field")
     void evaluate_numericField_returnsNumber() {
         String json = """
-                {"usage": {"total_tokens": 42}}
-                """;
+            {"usage": {"total_tokens": 42}}
+            """;
         Object result = service.evaluate("usage.total_tokens", json);
         assertThat(result).isEqualTo(42);
     }
@@ -90,8 +90,8 @@ class DashjoinJsonataEvaluationServiceTest {
     @DisplayName("returns null for missing path")
     void evaluate_missingPath_returnsNull() {
         String json = """
-                {"usage": {"total_tokens": 42}}
-                """;
+            {"usage": {"total_tokens": 42}}
+            """;
         Object result = service.evaluate("usage.missing_field", json);
         assertThat(result).isNull();
     }
@@ -171,8 +171,8 @@ class DashjoinJsonataEvaluationServiceTest {
     }
 
     @Test
-    @DisplayName(
-            "bindings overload: a Java null VALUE in the map is bound as explicit JSON null, distinguishable from unbound via $exists")
+    @DisplayName("bindings overload: a Java null VALUE in the map is bound as explicit JSON null, distinguishable from"
+            + " unbound via $exists")
     void evaluateWithBindings_nullValueInMap_bindsExplicitJsonNull() {
         Map<String, Object> boundNull = new HashMap<>();
         boundNull.put("history", null);
@@ -187,7 +187,8 @@ class DashjoinJsonataEvaluationServiceTest {
 
     @Test
     @DisplayName(
-            "bindings overload: $append($history, [1]) with $history bound to a null map value yields [null, 1] (real null-append semantics)")
+            "bindings overload: $append($history, [1]) with $history bound to a null map value yields [null, 1] (real"
+                    + " null-append semantics)")
     void evaluateWithBindings_nullValueInMap_appendYieldsNullPrepended() {
         Map<String, Object> bindings = new HashMap<>();
         bindings.put("history", null);

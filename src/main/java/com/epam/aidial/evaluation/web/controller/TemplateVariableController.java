@@ -52,11 +52,12 @@ public class TemplateVariableController {
     @Operation(
             summary = "Get effective template variables for a test case",
             description =
-                    "Returns template variables for every request of the suite (the suite's own requestTemplate and "
-                            + "each additionalRequests[i].requestTemplate), with bindings resolved against the "
-                            + "specified test case's data. Per-test-case template/binding overrides were removed when test "
-                            + "cases moved to datasets, so the suite is the single source of truth; the only difference from "
-                            + "the suite-level endpoint is that resolvedValue reflects the test case's data. "
+                    "Returns template variables for every request of the suite (the suite's own requestTemplate and"
+                            + " each additionalRequests[i].requestTemplate), with bindings resolved against the"
+                            + " specified test case's data. Per-test-case template/binding overrides were removed when"
+                            + " test cases moved to datasets, so the suite is the single source of truth; the only"
+                            + " difference from the suite-level endpoint is that resolvedValue reflects the test"
+                            + " case's data. "
                             + RESPONSE_SHAPE)
     @ApiResponse(responseCode = "200", description = "Template variables retrieved successfully")
     @ApiResponse(responseCode = "404", description = "Test suite or test case not found")

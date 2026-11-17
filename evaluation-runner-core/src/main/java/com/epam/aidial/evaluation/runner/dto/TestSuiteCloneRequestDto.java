@@ -39,7 +39,8 @@ public class TestSuiteCloneRequestDto {
     @Schema(
             example = "550e8400-e29b-41d4-a716-446655440000",
             description =
-                    "Optional override of the source suite's datasetId. When omitted, the clone shares the source's dataset.")
+                    "Optional override of the source suite's datasetId. When omitted, the clone shares the source's"
+                            + " dataset.")
     private UUID datasetId;
 
     @Valid

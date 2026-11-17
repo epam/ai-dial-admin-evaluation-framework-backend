@@ -317,7 +317,7 @@ class CsvImportServiceSchemaHintsTest {
                 .build();
         CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(manifestContext, manifestPrompt), Set.of());
 
-        String csv = "testCaseName,turnIndex,context,prompt\n" + "Conv1,0,shared-ctx,hi\n" + "Conv1,1,shared-ctx,hello";
+        String csv = "testCaseName,turnIndex,context,prompt\nConv1,0,shared-ctx,hi\nConv1,1,shared-ctx,hello";
         CsvImportResultDto result = importCsv(csv, CsvImportMode.OVERRIDE, hints);
 
         assertThat(result.getInvalidCount()).isZero();
@@ -537,7 +537,7 @@ class CsvImportServiceSchemaHintsTest {
         when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(1), anyInt()))
                 .thenReturn(List.of());
 
-        String csv = "testCaseName,turnIndex,code,flag\n" + "Conv1,0,42,true\n" + "Conv1,1,43,false";
+        String csv = "testCaseName,turnIndex,code,flag\nConv1,0,42,true\nConv1,1,43,false";
         importCsv(csv, CsvImportMode.OVERRIDE, hints);
 
         @SuppressWarnings("unchecked")
@@ -661,7 +661,7 @@ class CsvImportServiceSchemaHintsTest {
         when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(1), anyInt()))
                 .thenReturn(List.of());
 
-        String csv = "testCaseName,turnIndex,meta\n" + "Conv1,0," + csvQuote("{\"k\":\"v0\"}") + "\n" + "Conv1,1,"
+        String csv = "testCaseName,turnIndex,meta\nConv1,0," + csvQuote("{\"k\":\"v0\"}") + "\nConv1,1,"
                 + csvQuote("{\"k\":\"v1\"}");
         importCsv(csv, CsvImportMode.OVERRIDE, hints);
 
@@ -763,7 +763,7 @@ class CsvImportServiceSchemaHintsTest {
                 .build();
         CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(manifestCode), Set.of());
 
-        String csv = "testCaseName,turnIndex,code\n" + "Conv1,0,007\n" + "Conv1,1,1.50";
+        String csv = "testCaseName,turnIndex,code\nConv1,0,007\nConv1,1,1.50";
         importCsv(csv, CsvImportMode.OVERRIDE, hints);
 
         ArgumentCaptor<TestCase> captor = ArgumentCaptor.forClass(TestCase.class);

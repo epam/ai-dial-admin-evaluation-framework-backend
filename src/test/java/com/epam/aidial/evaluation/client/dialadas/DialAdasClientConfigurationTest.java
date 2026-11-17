@@ -62,8 +62,8 @@ class DialAdasClientConfigurationTest {
     }
 
     @Test
-    @DisplayName(
-            "testSuiteRunCostExtensionDialAdasRestClient reuses the base URL and registers the caller-credential interceptor")
+    @DisplayName("testSuiteRunCostExtensionDialAdasRestClient reuses the base URL and registers the caller-credential"
+            + " interceptor")
     void extensionRestClient_reusesBaseUrlAndRegistersInterceptor() {
         AuthorizationTokenHolder.setCredential(CallerCredential.apiKey("key-extension"));
         DialAdasProperties properties = dialAdasProperties("http://dial-adas.local", 5000, 30000);

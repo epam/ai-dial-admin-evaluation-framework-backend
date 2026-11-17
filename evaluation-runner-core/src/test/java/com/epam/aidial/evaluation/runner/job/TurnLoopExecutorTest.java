@@ -676,22 +676,21 @@ class TurnLoopExecutorTest {
         assertThat(turnSpans.get(0).getStatus().getStatusCode()).isEqualTo(StatusCode.UNSET);
         assertThat(turnSpans.get(1).getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
         assertThat(turnSpans.get(1).getStatus().getDescription()).isEqualTo("Turn aborted with status FAILED");
-        assertThat(turnSpans.get(1).getEvents())
-                .singleElement()
-                .satisfies(event -> {
-                    assertThat(event.getName()).isEqualTo(TracingConstants.EVENT_TURN_FAILURE);
-                    assertThat(event.getAttributes()
-                                    .get(AttributeKey.stringKey(TracingConstants.TURN_FAILURE_DETAILS)))
-                            .isEqualTo("boom");
-                });
+        assertThat(turnSpans.get(1).getEvents()).singleElement().satisfies(event -> {
+            assertThat(event.getName()).isEqualTo(TracingConstants.EVENT_TURN_FAILURE);
+            assertThat(event.getAttributes().get(AttributeKey.stringKey(TracingConstants.TURN_FAILURE_DETAILS)))
+                    .isEqualTo("boom");
+        });
     }
 
     @Test
     @DisplayName("Turn spans of a chained request carry its request.index, request.total and request.name")
     void chainedRequestTurnSpansCarryRequestPosition() {
         stubCommonInfra();
-        final TestCaseRunInput input =
-                baseInputBuilder().testCaseName("second-req-span").testCaseData("{}").build();
+        final TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("second-req-span")
+                .testCaseData("{}")
+                .build();
         final EvaluationContext context = baseContextBuilder()
                 .inputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
@@ -728,8 +727,10 @@ class TurnLoopExecutorTest {
         when(evaluationRunProperties.getExecution()).thenReturn(execution);
         when(execution.getHeaderBlacklist()).thenReturn(List.of());
         when(serializerRegistry.serialize(any())).thenThrow(new IllegalStateException("Unsupported content type"));
-        final TestCaseRunInput input =
-                baseInputBuilder().testCaseName("throwing-turn").testCaseData("{}").build();
+        final TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("throwing-turn")
+                .testCaseData("{}")
+                .build();
         final EvaluationContext context = baseContextBuilder()
                 .requestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
                 .inputBindings(List.of())
@@ -747,7 +748,9 @@ class TurnLoopExecutorTest {
                         FIXED_CLOCK.millis())
                 .rows();
 
-        assertThat(rows).singleElement().extracting(TestCaseRunResult::getExecutionStatus)
+        assertThat(rows)
+                .singleElement()
+                .extracting(TestCaseRunResult::getExecutionStatus)
                 .isEqualTo(ExecutionStatus.ERROR);
         assertThat(turnSpans()).singleElement().satisfies(span -> {
             assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);

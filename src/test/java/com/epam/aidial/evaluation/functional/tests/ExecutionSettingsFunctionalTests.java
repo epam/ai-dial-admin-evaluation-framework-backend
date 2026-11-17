@@ -116,7 +116,8 @@ public abstract class ExecutionSettingsFunctionalTests extends BaseFunctionalTes
         final TestSuiteResponseDto suite = createTestSuite("Suite Run Config Max");
         final RunConfigDto runConfig = RunConfigDto.builder()
                 .numberOfRuns(1)
-                .execution(ExecutionSettingsDto.builder().concurrencyLevel(max + 1).build())
+                .execution(
+                        ExecutionSettingsDto.builder().concurrencyLevel(max + 1).build())
                 .build();
 
         final ResponseEntity<String> response = restTemplate.postForEntity(

@@ -165,8 +165,8 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
             assertThat(span.getTraceId()).isEqualTo(incoming.getTraceId());
         });
         verify(deploymentInvoker).invokeWithStreaming(any(), any(), any(), any(), any());
-        final SpanData execution =
-                spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE).getFirst();
+        final SpanData execution = spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE)
+                .getFirst();
         assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
                 .hasSize(1);
         assertThat(execution.getParentSpanContext().isValid()).isFalse();
@@ -202,7 +202,8 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
     }
 
     @Test
-    @DisplayName("CSV import preserves historical execution trace IDs while metrics get a fresh run-linked metrics root")
+    @DisplayName(
+            "CSV import preserves historical execution trace IDs while metrics get a fresh run-linked metrics root")
     void importedMetricsUseFreshRoots() throws Exception {
         final var suite = createChatSuite("Imported tracing");
         createSingleTurnCase(suite.getDatasetId(), "imported", Map.of("prompt", "hello"));
@@ -255,8 +256,8 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
         assertThat(rowsFor(run))
                 .singleElement()
                 .satisfies(row -> assertThat(row.getTraceId()).isEqualTo(historical));
-        final var root =
-                spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_METRICS).getFirst();
+        final var root = spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_METRICS)
+                .getFirst();
         assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_METRICS))
                 .hasSize(1);
         assertThat(root.getParentSpanContext().isValid()).isFalse();
@@ -310,7 +311,8 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
 
     @Test
     @DisplayName(
-            "multiple requests and turns across repetitions get one execution trace per repetition, one linked metrics trace per row, and unchanged cost-attribution baggage")
+            "multiple requests and turns across repetitions get one execution trace per repetition, one linked metrics"
+                    + " trace per row, and unchanged cost-attribution baggage")
     void multiRequestMultiTurnMetricHierarchy() {
         final RequestDefinitionDto additional = RequestDefinitionDto.builder()
                 .name("second")
@@ -404,9 +406,8 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
 
     private void assertCostAttributionBaggage(TestSuiteRunResponseDto run, List<TestCaseRunResult> rows) {
         final String runId = run.getId().toString();
-        final Set<String> caseIds = rows.stream()
-                .map(row -> row.getTestCaseId().toString())
-                .collect(Collectors.toSet());
+        final Set<String> caseIds =
+                rows.stream().map(row -> row.getTestCaseId().toString()).collect(Collectors.toSet());
         assertThat(deploymentBaggage).hasSize(16).allSatisfy(baggage -> {
             assertThat(baggage)
                     .containsEntry(TracingConstants.EVAL_RUN_ID, runId)
@@ -415,9 +416,11 @@ public abstract class EvaluationTracingFunctionalTests extends AbstractMultiTurn
                     .doesNotContainKey(TracingConstants.RESULT_ID);
             assertThat(caseIds).contains(baggage.get(TracingConstants.TESTCASE_ID));
         });
-        assertThat(providerBaggage).hasSize(16).allSatisfy(baggage -> assertThat(baggage)
-                .containsEntry(TracingConstants.EVAL_RUN_ID, runId)
-                .containsEntry(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION));
+        assertThat(providerBaggage)
+                .hasSize(16)
+                .allSatisfy(baggage -> assertThat(baggage)
+                        .containsEntry(TracingConstants.EVAL_RUN_ID, runId)
+                        .containsEntry(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION));
         assertThat(providerBaggage)
                 .extracting(
                         baggage -> baggage.get(TracingConstants.TESTCASE_ID),

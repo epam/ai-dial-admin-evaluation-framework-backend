@@ -248,8 +248,7 @@ class TotalCostTestSuiteRunsPageExtenderTest {
     }
 
     @Test
-    @DisplayName(
-            "a projection already carrying the derived key via an alias is untouched, with zero dial-adas" + " calls")
+    @DisplayName("a projection already carrying the derived key via an alias is untouched, with zero dial-adas calls")
     void skipsProjectionAlreadyCarryingKey() {
         final Map<String, Object> row = row(RUN_ID.toString(), TestSuiteRunQueryFields.TOTAL_COST_FIELD, "run-1");
         final QueryResultPage page = new QueryResultPage(List.of(row), 1L);
@@ -266,8 +265,7 @@ class TotalCostTestSuiteRunsPageExtenderTest {
     }
 
     @Test
-    @DisplayName(
-            "on a multi-row page, only rows with a cost gain the key; row/key order and totalCount are" + " unchanged")
+    @DisplayName("on a multi-row page, only rows with a cost gain the key; row/key order and totalCount are unchanged")
     void extendsOnlyCostedRowsAndPreservesOrder() {
         final Map<String, Object> uncostedRow = row(RUN_ID.toString(), "existing", "value");
         final Map<String, Object> costedRow = row(RUN_ID_2.toString(), "existing", "value");
@@ -436,8 +434,7 @@ class TotalCostTestSuiteRunsPageExtenderTest {
     }
 
     @Test
-    @DisplayName(
-            "a submission rejected by a closed extension executor returns the page unchanged, with no" + " lookup call")
+    @DisplayName("a submission rejected by a closed extension executor returns the page unchanged, with no lookup call")
     void rejectedSubmissionReturnsPageUnchanged() {
         final SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor();
         executor.close();

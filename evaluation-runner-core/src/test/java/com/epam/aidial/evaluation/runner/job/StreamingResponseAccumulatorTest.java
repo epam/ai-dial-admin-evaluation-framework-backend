@@ -728,34 +728,41 @@ class StreamingResponseAccumulatorTest {
             // Each text block is one SSE event; trailing `\` joins the wrapped JSON back into a single
             // data: line (SSE data must stay on one line).
             InputStream stream = buildSseStream("""
-                    event: response.created
-                    data: {"response":{"id":"dial_gpt_1","created_at":1788525428,"model":"gpt-5.6-sol",\
-                    "object":"response","output":[],"status":"in_progress","usage":null},\
-                    "sequence_number":0,"type":"response.created"}""", """
-                    event: response.in_progress
-                    data: {"response":{"id":"dial_gpt_1","output":[],"status":"in_progress","usage":null},\
-                    "sequence_number":1,"type":"response.in_progress"}""", """
-                    event: response.output_item.added
-                    data: {"item":{"id":"msg_1","content":[],"role":"assistant","status":"in_progress",\
-                    "type":"message","phase":"final_answer"},"output_index":0,"sequence_number":2,\
-                    "type":"response.output_item.added"}""", """
-                    event: response.output_text.delta
-                    data: {"content_index":0,"delta":"Hello","item_id":"msg_1","output_index":0,\
-                    "sequence_number":4,"type":"response.output_text.delta","obfuscation":"O1brxaqajdo"}""", """
-                    event: response.output_text.delta
-                    data: {"content_index":0,"delta":"! How can I help?","item_id":"msg_1","output_index":0,\
-                    "sequence_number":5,"type":"response.output_text.delta","obfuscation":"4fP95F7XZ"}""", """
-                    event: response.output_text.done
-                    data: {"content_index":0,"item_id":"msg_1","output_index":0,"sequence_number":11,\
-                    "text":"Hello! How can I help?","type":"response.output_text.done"}""", """
-                    event: response.completed
-                    data: {"response":{"id":"dial_gpt_1","model":"gpt-5.6-sol","object":"response",\
-                    "output":[{"id":"msg_1","content":[{"annotations":[],"text":"Hello! How can I help?",\
-                    "type":"output_text","logprobs":[]}],"role":"assistant","status":"completed",\
-                    "type":"message","phase":"final_answer"}],"status":"completed","reasoning":\
-                    {"context":"all_turns","effort":"medium","mode":"standard","summary":null},\
-                    "usage":{"input_tokens":7,"output_tokens":11,"total_tokens":18}},\
-                    "sequence_number":14,"type":"response.completed"}""");
+                event: response.created
+                data: {"response":{"id":"dial_gpt_1","created_at":1788525428,"model":"gpt-5.6-sol",\
+                "object":"response","output":[],"status":"in_progress","usage":null},\
+                "sequence_number":0,"type":"response.created"}\
+                """, """
+                event: response.in_progress
+                data: {"response":{"id":"dial_gpt_1","output":[],"status":"in_progress","usage":null},\
+                "sequence_number":1,"type":"response.in_progress"}\
+                """, """
+                event: response.output_item.added
+                data: {"item":{"id":"msg_1","content":[],"role":"assistant","status":"in_progress",\
+                "type":"message","phase":"final_answer"},"output_index":0,"sequence_number":2,\
+                "type":"response.output_item.added"}\
+                """, """
+                event: response.output_text.delta
+                data: {"content_index":0,"delta":"Hello","item_id":"msg_1","output_index":0,\
+                "sequence_number":4,"type":"response.output_text.delta","obfuscation":"O1brxaqajdo"}\
+                """, """
+                event: response.output_text.delta
+                data: {"content_index":0,"delta":"! How can I help?","item_id":"msg_1","output_index":0,\
+                "sequence_number":5,"type":"response.output_text.delta","obfuscation":"4fP95F7XZ"}\
+                """, """
+                event: response.output_text.done
+                data: {"content_index":0,"item_id":"msg_1","output_index":0,"sequence_number":11,\
+                "text":"Hello! How can I help?","type":"response.output_text.done"}\
+                """, """
+                event: response.completed
+                data: {"response":{"id":"dial_gpt_1","model":"gpt-5.6-sol","object":"response",\
+                "output":[{"id":"msg_1","content":[{"annotations":[],"text":"Hello! How can I help?",\
+                "type":"output_text","logprobs":[]}],"role":"assistant","status":"completed",\
+                "type":"message","phase":"final_answer"}],"status":"completed","reasoning":\
+                {"context":"all_turns","effort":"medium","mode":"standard","summary":null},\
+                "usage":{"input_tokens":7,"output_tokens":11,"total_tokens":18}},\
+                "sequence_number":14,"type":"response.completed"}\
+                """);
 
             StreamingResponseAccumulator accumulator = createAccumulator();
             accumulator.accumulate(stream);

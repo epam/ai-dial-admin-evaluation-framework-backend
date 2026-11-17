@@ -206,8 +206,8 @@ public abstract class MultiRequestChainRunFunctionalTests extends AbstractMultiT
         // the "request.last" condition this would resolve to missing on request #0's row; the condition
         // skips the metric on that row entirely instead (design.md D21).
         String inputBindings = """
-                [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
-                """;
+            [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
+            """;
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 suite.getId(), declarationId, versionId, "Accuracy", "[]", inputBindings.trim(), "request.last");
 

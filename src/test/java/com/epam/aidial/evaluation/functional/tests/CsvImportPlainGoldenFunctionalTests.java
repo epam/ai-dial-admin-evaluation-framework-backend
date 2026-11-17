@@ -103,9 +103,7 @@ public abstract class CsvImportPlainGoldenFunctionalTests extends BaseFunctional
 
     private static Map<String, String> corpus() {
         Map<String, String> corpus = new LinkedHashMap<>();
-        corpus.put(
-                "scalars",
-                "testCaseName,prompt,code,count,flag,newNum\n" + "A,hi,007,12,true,3.5\n" + "B,,0042,,false,\n");
+        corpus.put("scalars", "testCaseName,prompt,code,count,flag,newNum\nA,hi,007,12,true,3.5\nB,,0042,,false,\n");
         corpus.put(
                 "json",
                 "testCaseName,meta,tags,newObj,newArr\n"
@@ -113,14 +111,14 @@ public abstract class CsvImportPlainGoldenFunctionalTests extends BaseFunctional
                         + "B,not json,\"[\",{},[]\n");
         corpus.put(
                 "multiturn",
-                "testCaseName,turnIndex,prompt,reply,note\n" + "Conv,0,hello,hi there,n0\n"
-                        + "Conv,1,hello,how are you,n1\n" + "Solo,,one-shot,,\n");
+                "testCaseName,turnIndex,prompt,reply,note\nConv,0,hello,hi there,n0\n"
+                        + "Conv,1,hello,how are you,n1\nSolo,,one-shot,,\n");
         corpus.put(
                 "fileref",
-                "testCaseName,attachment,other\n" + "A,files/1/a.png,files/2/b.txt\n"
+                "testCaseName,attachment,other\nA,files/1/a.png,files/2/b.txt\n"
                         + "B,public/shared/x.png,@ef/datasets/abc/y.txt\n");
-        corpus.put("conflict", "testCaseName,prompt,code\n" + "Seed,replaced,010\n" + "New,fresh,\n" + "New,dup,9\n");
-        corpus.put("newzeros", "testCaseName,zip,ratio\n" + "A,00123,0.50\n" + "B,98,1\n");
+        corpus.put("conflict", "testCaseName,prompt,code\nSeed,replaced,010\nNew,fresh,\nNew,dup,9\n");
+        corpus.put("newzeros", "testCaseName,zip,ratio\nA,00123,0.50\nB,98,1\n");
         return corpus;
     }
 

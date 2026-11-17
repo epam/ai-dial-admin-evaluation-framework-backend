@@ -55,7 +55,8 @@ public class ApiKeyProperties {
 
         if (StringUtils.isBlank(coreUrl)) {
             throw new IllegalStateException(
-                    "config.rest.security.api-key.enabled=true requires config.rest.security.api-key.core-url to be set");
+                    "config.rest.security.api-key.enabled=true requires config.rest.security.api-key.core-url to be"
+                            + " set");
         }
 
         parsedKeyRolesMapping = parseRolesMapping(keyRolesMapping, "config.rest.security.api-key.key-roles-mapping");

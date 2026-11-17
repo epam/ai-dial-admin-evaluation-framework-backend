@@ -37,15 +37,15 @@ import org.springframework.http.ResponseEntity;
 public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctionalTest {
 
     private static final String SNAPSHOT_JSON = """
-            {"snapshotVersion":"2","suiteType":"DEPLOYMENT",
-             "testCaseSchema":[{"name":"question","type":"STRING","required":true},
-                               {"name":"expectedScore","type":"NUMBER","required":false}],
-             "responseColumns":[{"name":"answer","expression":"$.answer","type":"STRING"}]}
-            """;
+        {"snapshotVersion":"2","suiteType":"DEPLOYMENT",
+         "testCaseSchema":[{"name":"question","type":"STRING","required":true},
+                           {"name":"expectedScore","type":"NUMBER","required":false}],
+         "responseColumns":[{"name":"answer","expression":"$.answer","type":"STRING"}]}
+        """;
 
     private static final String ACCURACY_OUTPUT_SCHEMA = """
-            {"properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}}
-            """;
+        {"properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}}
+        """;
 
     @Autowired
     private MetaTestDataHelper metaTestDataHelper;

@@ -42,10 +42,10 @@ class DialFileClientTest {
         @DisplayName("should upload file and return metadata")
         void shouldUploadFileAndReturnMetadata() {
             String json = """
-                    {"name":"data.csv","parentPath":"bucket/suites/abc",\
-                    "bucket":"bucket","url":"/v1/files/bucket/suites/abc/data.csv",\
-                    "contentLength":100,"contentType":"text/csv","createdAt":1000,"updatedAt":2000}
-                    """;
+                {"name":"data.csv","parentPath":"bucket/suites/abc",\
+                "bucket":"bucket","url":"/v1/files/bucket/suites/abc/data.csv",\
+                "contentLength":100,"contentType":"text/csv","createdAt":1000,"updatedAt":2000}
+                """;
             server.expect(requestTo("/v1/files/bucket/suites/abc/data.csv"))
                     .andExpect(method(HttpMethod.PUT))
                     .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -167,10 +167,10 @@ class DialFileClientTest {
         @DisplayName("should return file metadata")
         void shouldReturnMetadata() {
             String json = """
-                    {"name":"data.csv","parentPath":"bucket/suites/abc",\
-                    "bucket":"bucket","url":"/v1/files/bucket/suites/abc/data.csv",\
-                    "contentLength":500,"contentType":"text/csv","createdAt":1000,"updatedAt":2000}
-                    """;
+                {"name":"data.csv","parentPath":"bucket/suites/abc",\
+                "bucket":"bucket","url":"/v1/files/bucket/suites/abc/data.csv",\
+                "contentLength":500,"contentType":"text/csv","createdAt":1000,"updatedAt":2000}
+                """;
             server.expect(requestTo("/v1/metadata/files/bucket/suites/abc/data.csv"))
                     .andExpect(method(HttpMethod.GET))
                     .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -203,12 +203,12 @@ class DialFileClientTest {
         @DisplayName("should return folder items")
         void shouldReturnFolderItems() {
             String json = """
-                    {"name":"abc","parentPath":"bucket/suites","bucket":"bucket",\
-                    "url":"/v1/files/bucket/suites/abc/",\
-                    "items":[{"name":"data.csv","parentPath":"bucket/suites/abc",\
-                    "bucket":"bucket","url":"/v1/files/bucket/suites/abc/data.csv",\
-                    "contentLength":100,"contentType":"text/csv","createdAt":1000,"updatedAt":2000}]}
-                    """;
+                {"name":"abc","parentPath":"bucket/suites","bucket":"bucket",\
+                "url":"/v1/files/bucket/suites/abc/",\
+                "items":[{"name":"data.csv","parentPath":"bucket/suites/abc",\
+                "bucket":"bucket","url":"/v1/files/bucket/suites/abc/data.csv",\
+                "contentLength":100,"contentType":"text/csv","createdAt":1000,"updatedAt":2000}]}
+                """;
             server.expect(requestTo("/v1/metadata/files/bucket/suites/abc/"))
                     .andExpect(method(HttpMethod.GET))
                     .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -237,9 +237,9 @@ class DialFileClientTest {
         @DisplayName("should return empty list when items is null")
         void shouldReturnEmptyListWhenItemsNull() {
             String json = """
-                    {"name":"abc","parentPath":"bucket/suites","bucket":"bucket",\
-                    "url":"/v1/files/bucket/suites/abc/"}
-                    """;
+                {"name":"abc","parentPath":"bucket/suites","bucket":"bucket",\
+                "url":"/v1/files/bucket/suites/abc/"}
+                """;
             server.expect(requestTo("/v1/metadata/files/bucket/suites/abc/"))
                     .andExpect(method(HttpMethod.GET))
                     .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -259,10 +259,10 @@ class DialFileClientTest {
         @DisplayName("should return true when file exists")
         void shouldReturnTrueWhenExists() {
             String json = """
-                    {"name":"data.csv","parentPath":"bucket/suites/abc",\
-                    "bucket":"bucket","url":"/v1/files/bucket/suites/abc/data.csv",\
-                    "contentLength":100,"contentType":"text/csv","createdAt":1000,"updatedAt":2000}
-                    """;
+                {"name":"data.csv","parentPath":"bucket/suites/abc",\
+                "bucket":"bucket","url":"/v1/files/bucket/suites/abc/data.csv",\
+                "contentLength":100,"contentType":"text/csv","createdAt":1000,"updatedAt":2000}
+                """;
             server.expect(requestTo("/v1/metadata/files/bucket/suites/abc/data.csv"))
                     .andExpect(method(HttpMethod.GET))
                     .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -307,8 +307,8 @@ class DialFileClientTest {
         @DisplayName("should discover and cache bucket")
         void shouldDiscoverAndCacheBucket() {
             String json = """
-                    {"bucket":"ef-bucket-123"}
-                    """;
+                {"bucket":"ef-bucket-123"}
+                """;
             server.expect(requestTo("/v1/bucket"))
                     .andExpect(method(HttpMethod.GET))
                     .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -323,8 +323,8 @@ class DialFileClientTest {
         @DisplayName("should return cached bucket on subsequent calls")
         void shouldReturnCachedBucket() {
             String json = """
-                    {"bucket":"ef-bucket-123"}
-                    """;
+                {"bucket":"ef-bucket-123"}
+                """;
             server.expect(requestTo("/v1/bucket"))
                     .andExpect(method(HttpMethod.GET))
                     .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -341,8 +341,8 @@ class DialFileClientTest {
         @DisplayName("should throw on empty bucket response")
         void shouldThrowOnEmptyBucket() {
             String json = """
-                    {"bucket":""}
-                    """;
+                {"bucket":""}
+                """;
             server.expect(requestTo("/v1/bucket"))
                     .andExpect(method(HttpMethod.GET))
                     .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -364,8 +364,8 @@ class DialFileClientTest {
 
             // Second call should retry (not return cached failure)
             String json = """
-                    {"bucket":"ef-bucket-456"}
-                    """;
+                {"bucket":"ef-bucket-456"}
+                """;
             server.reset();
             server.expect(requestTo("/v1/bucket"))
                     .andExpect(method(HttpMethod.GET))

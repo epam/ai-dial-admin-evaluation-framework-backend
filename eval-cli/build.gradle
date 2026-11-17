@@ -51,6 +51,7 @@ spotless {
     java {
         target 'src/*/java/**/*.java'
 
+        palantirJavaFormat()
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()

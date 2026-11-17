@@ -44,7 +44,8 @@ public abstract class McpServerDisabledFunctionalTests extends BaseFunctionalTes
 
     @Test
     @DisplayName(
-            "neither the stateless nor the streamable MCP transport bean exists in the context when the MCP server is disabled")
+            "neither the stateless nor the streamable MCP transport bean exists in the context when the MCP server is"
+                    + " disabled")
     void transportProviderBeanIsAbsentWhenDisabled() {
         assertThat(applicationContext.getBeansOfType(WebMvcStatelessServerTransport.class))
                 .isEmpty();

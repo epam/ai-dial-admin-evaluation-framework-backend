@@ -43,7 +43,8 @@ public class TestSuiteRunReconciliation {
 
         if (failedCount > 0 || cancelledCount > 0) {
             log.info(
-                    "Reconciliation: marked {} orphaned run(s) as FAILED, finalized {} orphaned CANCELLING run(s) as CANCELLED",
+                    "Reconciliation: marked {} orphaned run(s) as FAILED, finalized {} orphaned CANCELLING run(s) as"
+                            + " CANCELLED",
                     failedCount,
                     cancelledCount);
         } else {

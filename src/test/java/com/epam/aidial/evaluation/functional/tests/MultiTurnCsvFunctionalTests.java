@@ -457,7 +457,7 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
         UUID caseId = metaTestDataHelper.seedTestCaseInDataset(datasetId, "conv", "{}");
         metaTestDataHelper.forceRawMultiTurnData(
                 caseId,
-                "[{\"score\":42,\"note\":null,\"label\":\"a\"}," + "{\"score\":\"5\",\"note\":\"b\",\"label\":\"c\"}]");
+                "[{\"score\":42,\"note\":null,\"label\":\"a\"},{\"score\":\"5\",\"note\":\"b\",\"label\":\"c\"}]");
 
         // "score" is the column whose type widens (INTEGER then STRING) — it must match a key actually
         // present in the seeded turns above, or the fixup pass finds nothing to coerce and never rewrites

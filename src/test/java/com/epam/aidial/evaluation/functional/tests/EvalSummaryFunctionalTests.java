@@ -350,8 +350,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName(
-            "Single-request summary write omitting request fields defaults to request_index=0, " + "total_requests=1")
+    @DisplayName("Single-request summary write omitting request fields defaults to request_index=0, total_requests=1")
     void shouldDefaultRequestFieldsForSingleRequestSummary() {
         UUID computationId = UUID.randomUUID();
         insertRunMetricSnapshots(testSuiteRunId, computationId);

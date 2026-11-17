@@ -101,6 +101,7 @@ spotless {
         target 'src/*/java/**/*.java'
         targetExclude 'src/main/java-generated/**'
 
+        palantirJavaFormat()
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()

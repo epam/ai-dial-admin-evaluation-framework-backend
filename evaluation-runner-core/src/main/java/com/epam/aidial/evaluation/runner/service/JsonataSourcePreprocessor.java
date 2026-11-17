@@ -427,7 +427,8 @@ public class JsonataSourcePreprocessor {
             String varName = matcher.group(1).trim();
             String defaultValue = matcher.group(3);
             InputBindingDto binding = bindingByVar.get(varName);
-            Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings, false);
+            Object resolved =
+                    templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings, false);
             String stringified = resolved != null ? resolved.toString() : "";
             sb.append(escapeForLiteral(stringified, quote));
             last = matcher.end();
@@ -450,8 +451,10 @@ public class JsonataSourcePreprocessor {
             List<ValidationWarningDto> warnings,
             List<FieldDefinitionDto> testCaseSchema) {
         InputBindingDto binding = bindingByVar.get(varName);
-        final boolean emptyAsAbsent = resourceRefPlaceholderResolver.isResourceReference(typeHint, binding, testCaseSchema);
-        Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings, emptyAsAbsent);
+        final boolean emptyAsAbsent =
+                resourceRefPlaceholderResolver.isResourceReference(typeHint, binding, testCaseSchema);
+        Object resolved =
+                templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings, emptyAsAbsent);
         return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
     }
 

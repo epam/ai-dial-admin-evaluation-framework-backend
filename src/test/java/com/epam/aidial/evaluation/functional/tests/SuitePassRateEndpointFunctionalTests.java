@@ -57,7 +57,9 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
     }
 
     private UUID newSuite() {
-        return metaTestDataHelper.createTestSuite("pass-rate-" + UUID.randomUUID()).getId();
+        return metaTestDataHelper
+                .createTestSuite("pass-rate-" + UUID.randomUUID())
+                .getId();
     }
 
     /**
@@ -266,7 +268,8 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
     }
 
     @Test
-    @DisplayName("a newer FAILED or CANCELLED run with partial scores is skipped: the completed runs are latest and previous")
+    @DisplayName("a newer FAILED or CANCELLED run with partial scores is skipped: the completed runs are latest and"
+            + " previous")
     void failedAndCancelledRunsAreSkipped() {
         UUID suiteId = newSuite();
         seedRun(suiteId, 1_000L, HALF_THRESHOLD, c -> rows(c, failed(), failed()));
@@ -290,7 +293,8 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
         seedRun(suiteId, 1_000L, HALF_THRESHOLD, c -> rows(c, success(true), success(true)));
         UUID running = seedRun(suiteId, RunStatus.RUNNING, 2_000L, HALF_THRESHOLD, c -> rows(c, failed(), failed()));
         try {
-            SuitePassRateSummaryDto beforeCompletion = summarize(List.of(suiteId)).getBody();
+            SuitePassRateSummaryDto beforeCompletion =
+                    summarize(List.of(suiteId)).getBody();
 
             assertThat(beforeCompletion).isNotNull();
             assertThat(beforeCompletion.getPassRate()).isEqualTo(1.0);
@@ -340,7 +344,9 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
     @DisplayName("an empty suiteIds list is rejected with 400")
     void emptyListIsBadRequest() {
         ResponseEntity<String> response = restTemplate.postForEntity(
-                url(), jsonEntity(SuitePassRateRequestDto.builder().suiteIds(List.of()).build()), String.class);
+                url(),
+                jsonEntity(SuitePassRateRequestDto.builder().suiteIds(List.of()).build()),
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
@@ -353,7 +359,9 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
                 .toList();
 
         ResponseEntity<String> response = restTemplate.postForEntity(
-                url(), jsonEntity(SuitePassRateRequestDto.builder().suiteIds(ids).build()), String.class);
+                url(),
+                jsonEntity(SuitePassRateRequestDto.builder().suiteIds(ids).build()),
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
@@ -384,8 +392,7 @@ public abstract class SuitePassRateEndpointFunctionalTests extends BaseFunctiona
 
         assertThat(requestExamples.propertyNames()).containsExactlyInAnyOrder("minimal", "full");
         assertThat(responseExamples.propertyNames()).containsExactlyInAnyOrder("minimal", "full");
-        assertThat(requestExamples.path("full").path("value").asString())
-                .contains("suiteIds");
+        assertThat(requestExamples.path("full").path("value").asString()).contains("suiteIds");
         assertThat(responseExamples.path("full").path("value").has("previousPassRate"))
                 .isTrue();
     }

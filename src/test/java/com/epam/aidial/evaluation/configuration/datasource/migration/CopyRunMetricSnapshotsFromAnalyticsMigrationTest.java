@@ -358,11 +358,11 @@ class CopyRunMetricSnapshotsFromAnalyticsMigrationTest {
 
     private static void insertAnalyticsSnapshot(DataSource analyticsDs, SnapshotFixture fixture) throws SQLException {
         String sql = """
-                INSERT INTO run_metric_snapshots (id, computation_id, test_suite_run_id, tsmd_id, tsmd_name,
-                    metric_declaration_id, metric_declaration_version_id, config_bindings, input_bindings,
-                    output_schema, computed_at_ms)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?)
-                """;
+            INSERT INTO run_metric_snapshots (id, computation_id, test_suite_run_id, tsmd_id, tsmd_name,
+                metric_declaration_id, metric_declaration_version_id, config_bindings, input_bindings,
+                output_schema, computed_at_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?)
+            """;
         try (Connection connection = analyticsDs.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, fixture.id());

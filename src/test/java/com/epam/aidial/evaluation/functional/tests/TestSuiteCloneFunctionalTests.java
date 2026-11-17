@@ -418,8 +418,8 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName(
-            "8.2 vanilla clone preserves each source TSMD's validity verbatim (valid stays valid, invalid stays invalid)")
+    @DisplayName("8.2 vanilla clone preserves each source TSMD's validity verbatim (valid stays valid, invalid stays"
+            + " invalid)")
     void shouldPreserveTsmdValidityVerbatimOnVanillaClone() {
         TestSuiteResponseDto source = createDeploymentSuite("TSMD Validity Source " + UUID.randomUUID());
         metaTestDataHelper.createTestSuiteMetricDefinition(
@@ -1019,8 +1019,8 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName(
-            "15.8 clone of a PRIVATE-dataset suite passing the SAME datasetId clones the PRIVATE dataset (like omitting it)")
+    @DisplayName("15.8 clone of a PRIVATE-dataset suite passing the SAME datasetId clones the PRIVATE dataset (like"
+            + " omitting it)")
     void cloningPrivateDatasetSuiteWithSameDatasetIdClonesIt() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Private Same Src " + UUID.randomUUID(), promptSchemaJson(), DatasetVisibility.PRIVATE);

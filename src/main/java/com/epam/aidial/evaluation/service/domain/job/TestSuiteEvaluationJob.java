@@ -182,8 +182,7 @@ public class TestSuiteEvaluationJob {
             span.setAttribute(
                     TracingConstants.EVAL_SUITE_ID, run.getTestSuiteId().toString());
             Supplier<SuiteSnapshotDto> snapshot = lazySnapshot(run);
-            traceSession =
-                    new EvaluationTraceSession(span.getSpanContext());
+            traceSession = new EvaluationTraceSession(span.getSpanContext());
 
             if (!skipDeploymentPhase) {
                 // Inconsistent snapshot guard

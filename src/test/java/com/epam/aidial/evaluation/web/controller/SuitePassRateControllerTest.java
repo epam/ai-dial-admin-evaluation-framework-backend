@@ -85,9 +85,7 @@ class SuitePassRateControllerTest {
     @Test
     @DisplayName("returns 400 when a suite id is not a UUID and does not call the service")
     void returns400ForNonUuidId() throws Exception {
-        mockMvc.perform(post(PATH)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"suiteIds\":[\"not-a-uuid\"]}"))
+        mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content("{\"suiteIds\":[\"not-a-uuid\"]}"))
                 .andExpect(status().isBadRequest());
 
         verify(service, never()).summarize(anyList());

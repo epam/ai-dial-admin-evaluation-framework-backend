@@ -391,11 +391,11 @@ public abstract class PostgresTestSuiteRunRepositoryFunctionalTests extends Base
     // --- findLatestCompletedRunIds (suites pass-rate run selection) ---
 
     @Test
-    @DisplayName("findLatestCompletedRunIds returns the newest completed runs first and keeps only the requested number")
+    @DisplayName(
+            "findLatestCompletedRunIds returns the newest completed runs first and keeps only the requested number")
     void latestCompletedRunsNewestFirstLimited() {
-        UUID suiteId = metaTestDataHelper
-                .createTestSuite("Repo latestCompleted Limit")
-                .getId();
+        UUID suiteId =
+                metaTestDataHelper.createTestSuite("Repo latestCompleted Limit").getId();
         UUID oldest = completedRunCreatedAt(suiteId, 1_000L);
         UUID middle = completedRunCreatedAt(suiteId, 2_000L);
         UUID newest = completedRunCreatedAt(suiteId, 3_000L);
@@ -439,9 +439,8 @@ public abstract class PostgresTestSuiteRunRepositoryFunctionalTests extends Base
     @Test
     @DisplayName("findLatestCompletedRunIds breaks a created_at tie on the larger run id")
     void latestCompletedRunsTieBreaksOnLargerRunId() {
-        UUID suiteId = metaTestDataHelper
-                .createTestSuite("Repo latestCompleted Tie")
-                .getId();
+        UUID suiteId =
+                metaTestDataHelper.createTestSuite("Repo latestCompleted Tie").getId();
         UUID first = completedRunCreatedAt(suiteId, 4_000L);
         UUID second = completedRunCreatedAt(suiteId, 4_000L);
         UUID larger = first.toString().compareTo(second.toString()) > 0 ? first : second;
@@ -455,10 +454,13 @@ public abstract class PostgresTestSuiteRunRepositoryFunctionalTests extends Base
     @Test
     @DisplayName("findLatestCompletedRunIds ranks each suite on its own and omits a suite with no completed run")
     void latestCompletedRunsPerSuite() {
-        UUID suiteA = metaTestDataHelper.createTestSuite("Repo latestCompleted A").getId();
-        UUID suiteB = metaTestDataHelper.createTestSuite("Repo latestCompleted B").getId();
-        UUID suiteFailedOnly =
-                metaTestDataHelper.createTestSuite("Repo latestCompleted Failed").getId();
+        UUID suiteA =
+                metaTestDataHelper.createTestSuite("Repo latestCompleted A").getId();
+        UUID suiteB =
+                metaTestDataHelper.createTestSuite("Repo latestCompleted B").getId();
+        UUID suiteFailedOnly = metaTestDataHelper
+                .createTestSuite("Repo latestCompleted Failed")
+                .getId();
         UUID firstSuiteRun = completedRunCreatedAt(suiteA, 9_000L);
         UUID secondSuiteOlder = completedRunCreatedAt(suiteB, 1_000L);
         UUID secondSuiteNewer = completedRunCreatedAt(suiteB, 2_000L);

@@ -54,7 +54,8 @@ class JsonataFrameSpikeTest {
 
     @Test
     @DisplayName(
-            "$append($history, [1]) with $history bound to Java null is indistinguishable from unbound (returns [1], NOT [null, 1])")
+            "$append($history, [1]) with $history bound to Java null is indistinguishable from unbound (returns [1],"
+                    + " NOT [null, 1])")
     void evaluate_appendWithJavaNullBoundHistory_behavesAsUndefined() throws Exception {
         // Pinned finding: Frame.bind(name, (Object) null) is NOT the same as binding a JSON null.
         // Frame#lookup returns Java null for both a bound-null key and a genuinely unbound key, so
@@ -71,8 +72,8 @@ class JsonataFrameSpikeTest {
     }
 
     @Test
-    @DisplayName(
-            "$append($history, [1]) with $history bound to the Jsonata NULL_VALUE sentinel returns [null, 1] (null-append semantics)")
+    @DisplayName("$append($history, [1]) with $history bound to the Jsonata NULL_VALUE sentinel returns [null, 1]"
+            + " (null-append semantics)")
     void evaluate_appendWithNullValueSentinelBoundHistory_prependsNull() throws Exception {
         // The library's explicit-null marker (Jsonata.NULL_VALUE, distinct from Java null) is what
         // actually triggers null-append semantics; append() only special-cases true Java null (arg1 ==
@@ -131,8 +132,8 @@ class JsonataFrameSpikeTest {
     }
 
     @Test
-    @DisplayName(
-            "F1: JSON echo of a legacy chat-completions request body round-trips structurally through JSONata evaluation")
+    @DisplayName("F1: JSON echo of a legacy chat-completions request body round-trips structurally through JSONata"
+            + " evaluation")
     void evaluate_jsonEchoOfChatCompletionsBody_roundTripsWithDocumentedF1Caveat() throws Exception {
         Map<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put(
@@ -180,7 +181,8 @@ class JsonataFrameSpikeTest {
 
     @Test
     @DisplayName(
-            "placeholder-injection precursor: a spliced JSON array literal evaluates correctly with $history bound and unbound")
+            "placeholder-injection precursor: a spliced JSON array literal evaluates correctly with $history bound and"
+                    + " unbound")
     void evaluate_splicedArrayLiteralInObjectConstructor_evaluatesWithAndWithoutHistory() throws Exception {
         String splicedTurn = "[{\"role\":\"user\",\"content\":\"hi\"}]";
         String source = "{\"messages\": $append($history, " + splicedTurn + "), \"temperature\": 0.7}";

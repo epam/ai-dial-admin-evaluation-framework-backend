@@ -127,12 +127,13 @@ public class TestCaseController {
                     String delimiter,
             @Parameter(
                             description =
-                                    "OVERRIDE: replace all. APPEND: add new rows. MERGE: add rows + new schema fields. Default: OVERRIDE.")
+                                    "OVERRIDE: replace all. APPEND: add new rows. MERGE: add rows + new schema fields."
+                                            + " Default: OVERRIDE.")
                     @RequestParam(defaultValue = "OVERRIDE")
                     CsvImportMode importMode,
             @Parameter(
-                            description =
-                                    "FAIL: HTTP 409 on collision. SKIP: skip, first wins. OVERRIDE: replace, last wins. Default: FAIL.")
+                            description = "FAIL: HTTP 409 on collision. SKIP: skip, first wins. OVERRIDE: replace, last"
+                                    + " wins. Default: FAIL.")
                     @RequestParam(defaultValue = "FAIL")
                     CsvConflictStrategy conflictStrategy) {
         validateImportFile(file);
@@ -156,23 +157,21 @@ public class TestCaseController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Import test cases from CSV or ZIP",
-            description = "Imports test cases from a CSV or ZIP file, detected by extension, content type or "
-                    + "the ZIP magic bytes. "
-                    + "A ZIP archive must contain test-cases.csv (header testCaseName,turnIndex,<fields>) and "
-                    + "may include manifest.json (the dataset's full field definitions, used to restore FILE "
-                    + "types and per-turn/required flags) and a files/{n}/{filename} directory. "
-                    + "Each referenced archive file is uploaded to @ef/datasets/{datasetId}/{filename}: a name "
-                    + "already present in the dataset is overwritten (the file name is its identity within the "
-                    + "dataset), and when two archive entries would share a name, one keeps it and the others "
-                    + "get a _1, _2, ... suffix. A referenced path missing from the archive stores a blank "
-                    + "value and a warning naming the row and column; import continues. "
-                    + "importMode=OVERRIDE (default) deletes all existing test cases and replaces the schema. "
-                    + "importMode=APPEND appends new rows while preserving existing ones. "
-                    + "importMode=MERGE appends new rows and merges new schema fields. "
-                    + "conflictStrategy controls name collisions: FAIL (default, HTTP 409), SKIP (first wins), OVERRIDE (last wins). "
-                    + "Archive structure, entry, size, capacity or manifest errors fail with HTTP 400 before any "
-                    + "file is written; a failure partway through rolls back every file this import wrote or "
-                    + "overwrote.")
+            description = "Imports test cases from a CSV or ZIP file, detected by extension, content type or the ZIP"
+                    + " magic bytes. A ZIP archive must contain test-cases.csv (header"
+                    + " testCaseName,turnIndex,<fields>) and may include manifest.json (the dataset's full field"
+                    + " definitions, used to restore FILE types and per-turn/required flags) and a"
+                    + " files/{n}/{filename} directory. Each referenced archive file is uploaded to"
+                    + " @ef/datasets/{datasetId}/{filename}: a name already present in the dataset is overwritten (the"
+                    + " file name is its identity within the dataset), and when two archive entries would share a"
+                    + " name, one keeps it and the others get a _1, _2, ... suffix. A referenced path missing from the"
+                    + " archive stores a blank value and a warning naming the row and column; import continues."
+                    + " importMode=OVERRIDE (default) deletes all existing test cases and replaces the schema."
+                    + " importMode=APPEND appends new rows while preserving existing ones. importMode=MERGE appends"
+                    + " new rows and merges new schema fields. conflictStrategy controls name collisions: FAIL"
+                    + " (default, HTTP 409), SKIP (first wins), OVERRIDE (last wins). Archive structure, entry, size,"
+                    + " capacity or manifest errors fail with HTTP 400 before any file is written; a failure partway"
+                    + " through rolls back every file this import wrote or overwrote.")
     @ApiResponse(responseCode = "200", description = "Import result with counts and warnings")
     @ApiResponse(
             responseCode = "400",
@@ -192,12 +191,13 @@ public class TestCaseController {
                     String delimiter,
             @Parameter(
                             description =
-                                    "OVERRIDE: replace all. APPEND: add new rows. MERGE: add rows + new schema fields. Default: OVERRIDE.")
+                                    "OVERRIDE: replace all. APPEND: add new rows. MERGE: add rows + new schema fields."
+                                            + " Default: OVERRIDE.")
                     @RequestParam(defaultValue = "OVERRIDE")
                     CsvImportMode importMode,
             @Parameter(
-                            description =
-                                    "FAIL: HTTP 409 on collision. SKIP: skip, first wins. OVERRIDE: replace, last wins. Default: FAIL.")
+                            description = "FAIL: HTTP 409 on collision. SKIP: skip, first wins. OVERRIDE: replace, last"
+                                    + " wins. Default: FAIL.")
                     @RequestParam(defaultValue = "FAIL")
                     CsvConflictStrategy conflictStrategy,
             @Parameter(description = "Optional: current version (from ETag) for optimistic locking")
@@ -298,8 +298,9 @@ public class TestCaseController {
                     String delimiter,
             @Parameter(
                             description =
-                                    "When true and FILE fields exist, embeds file bytes in a ZIP archive. "
-                                            + "When false, exports raw DIAL file paths in CSV. Default: true when FILE fields exist.")
+                                    "When true and FILE fields exist, embeds file bytes in a ZIP archive. When false,"
+                                            + " exports raw DIAL file paths in CSV. Default: true when FILE fields"
+                                            + " exist.")
                     @RequestParam(required = false)
                     Boolean materializeFiles,
             @Parameter(description = "Filter conditions") @FilterParam List<String> filter,

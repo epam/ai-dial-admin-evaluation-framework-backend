@@ -66,7 +66,8 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("entire double-quoted literal placeholder serializes typed String value as JSON string literal")
         void fullValueDoubleQuotedString() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("question"), isNull(), any(), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("question"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("What is AI?");
 
             String result =
@@ -131,7 +132,8 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("unresolved full-value placeholder serializes as JSON null literal")
         void fullValueUnresolved() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(null);
 
             String result = preprocessor.preprocess("\"${{missing}}\"", Map.of(), Map.of(), warnings, null);
@@ -172,7 +174,8 @@ class JsonataSourcePreprocessorTest {
                 .build();
 
         private void stubDocValue() {
-            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(fileBinding), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("doc"), isNull(), eq(fileBinding), anyMap(), any(), anyBoolean()))
                     .thenReturn(SHORT_REF);
         }
 
@@ -240,7 +243,8 @@ class JsonataSourcePreprocessorTest {
             Map<String, Object> newMessage = new LinkedHashMap<>();
             newMessage.put("role", "user");
             newMessage.put("content", "hi");
-            when(templateVariableResolver.resolveVariable(eq("messages"), isNull(), any(), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("messages"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(List.of(newMessage));
 
             String result =
@@ -253,7 +257,8 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("bare unresolved placeholder serializes as JSON null literal")
         void bareUnresolved() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(null);
 
             String result = preprocessor.preprocess("$exists(${{missing}})", Map.of(), Map.of(), warnings, null);
@@ -282,7 +287,8 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("unresolved embedded placeholder substitutes an empty string (mirrors resolveString)")
         void embeddedUnresolved() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(null);
 
             String result = preprocessor.preprocess("\"Value: [${{missing}}]\"", Map.of(), Map.of(), warnings, null);
@@ -318,7 +324,8 @@ class JsonataSourcePreprocessorTest {
         @DisplayName("embedded value containing a newline is escaped")
         void embeddedValueContainingNewline() {
             setUp();
-            when(templateVariableResolver.resolveVariable(eq("multiline"), isNull(), any(), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("multiline"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("line1\nline2");
 
             String result = preprocessor.preprocess("\"text: ${{multiline}}\"", Map.of(), Map.of(), warnings, null);
@@ -614,7 +621,8 @@ class JsonataSourcePreprocessorTest {
                     .templateVariable("question")
                     .dataField("questionCol")
                     .build();
-            when(templateVariableResolver.resolveVariable(eq("question"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("question"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                     .thenReturn("bound value");
 
             String result = preprocessor.preprocess(

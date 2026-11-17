@@ -89,8 +89,8 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName(
-            "Should import eval results, extract response columns, and complete Phase 2+3 without invoking a deployment")
+    @DisplayName("Should import eval results, extract response columns, and complete Phase 2+3 without invoking a"
+            + " deployment")
     void shouldImportResultsAndCompleteRun() {
         TestSuiteResponseDto suite = createSuiteWithResponseColumnAndMetric("Suite For Eval Import");
 
@@ -386,8 +386,7 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName(
-            "Should default requestIndex/totalRequests/turnIndex/totalTurns to 0/1/0/1 for a legacy " + "15-column CSV")
+    @DisplayName("Should default requestIndex/totalRequests/turnIndex/totalTurns to 0/1/0/1 for a legacy 15-column CSV")
     void shouldDefaultIdentityColumnsForLegacyCsv() {
         UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
                 .name("expected")
@@ -548,8 +547,8 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
         UUID declarationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID versionId = UUID.fromString("770e8400-e29b-41d4-a716-446655440001");
         String inputBindings = """
-                [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
-                """;
+            [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
+            """;
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 suite.getId(),
                 declarationId,
@@ -929,8 +928,8 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
         UUID declarationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID versionId = UUID.fromString("770e8400-e29b-41d4-a716-446655440001");
         String inputBindings = """
-                [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
-                """;
+            [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
+            """;
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 suite.getId(), declarationId, versionId, "Accuracy", "[]", inputBindings.trim());
 

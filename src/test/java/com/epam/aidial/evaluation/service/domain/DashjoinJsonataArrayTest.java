@@ -27,8 +27,8 @@ class DashjoinJsonataArrayTest {
     @DisplayName("evaluates first element of top-level array via $[0].text")
     void evaluate_topLevelArray_firstElement() {
         String json = """
-                [{"text":"hello"},{"text":"world"}]
-                """;
+            [{"text":"hello"},{"text":"world"}]
+            """;
 
         Object result = service.evaluate("$[0].text", json);
 
@@ -39,8 +39,8 @@ class DashjoinJsonataArrayTest {
     @DisplayName("evaluates last element of top-level array via $[-1].text")
     void evaluate_topLevelArray_lastElement() {
         String json = """
-                [{"text":"hello"},{"text":"world"}]
-                """;
+            [{"text":"hello"},{"text":"world"}]
+            """;
 
         Object result = service.evaluate("$[-1].text", json);
 
@@ -51,8 +51,8 @@ class DashjoinJsonataArrayTest {
     @DisplayName("evaluates all elements of top-level array via $.text")
     void evaluate_topLevelArray_allElements() {
         String json = """
-                [{"text":"hello"},{"text":"world"}]
-                """;
+            [{"text":"hello"},{"text":"world"}]
+            """;
 
         Object result = service.evaluate("$.text", json);
 
@@ -66,8 +66,8 @@ class DashjoinJsonataArrayTest {
     @DisplayName("evaluates non-array JSON object (regression check)")
     void evaluate_topLevelObject_stillWorks() {
         String json = """
-                {"text":"hello","count":42}
-                """;
+            {"text":"hello","count":42}
+            """;
 
         Object textResult = service.evaluate("text", json);
         Object countResult = service.evaluate("count", json);

@@ -515,8 +515,7 @@ public abstract class McpServerFoundationFunctionalTests extends BaseFunctionalT
     }
 
     @Test
-    @DisplayName(
-            "get_deployment on a ResourceAccessException returns a message that never contains the " + "DIAL Core URL")
+    @DisplayName("get_deployment on a ResourceAccessException returns a message that never contains the DIAL Core URL")
     void getDeploymentResourceAccessExceptionMessageNeverContainsUrl() {
         when(dialCoreClient.getDeploymentById(eq("unreachable-id")))
                 .thenThrow(new ResourceAccessException(

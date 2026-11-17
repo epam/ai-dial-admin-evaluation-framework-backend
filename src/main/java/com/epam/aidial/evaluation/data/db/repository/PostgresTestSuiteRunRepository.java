@@ -325,8 +325,8 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
             return Map.of();
         }
         final List<String> ids = runIds.stream().distinct().map(UUID::toString).toList();
-        final Field<BigDecimal> threshold =
-                jsonPathAccessor.jsonbAtAsNumeric(TEST_SUITE_RUNS.SUITE_SNAPSHOT, DSL.val(TestSuiteRunConstants.SNAPSHOT_OVERALL_SCORE_THRESHOLD_KEY));
+        final Field<BigDecimal> threshold = jsonPathAccessor.jsonbAtAsNumeric(
+                TEST_SUITE_RUNS.SUITE_SNAPSHOT, DSL.val(TestSuiteRunConstants.SNAPSHOT_OVERALL_SCORE_THRESHOLD_KEY));
 
         final Map<UUID, Double> result = new HashMap<>();
         dsl.select(TEST_SUITE_RUNS.ID, threshold)
@@ -345,7 +345,8 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
         if (suiteIds == null || suiteIds.isEmpty()) {
             return Map.of();
         }
-        final List<String> ids = suiteIds.stream().distinct().map(UUID::toString).toList();
+        final List<String> ids =
+                suiteIds.stream().distinct().map(UUID::toString).toList();
 
         final Table<Record3<String, String, Integer>> ranked = dsl.select(
                         TEST_SUITE_RUNS.TEST_SUITE_ID,

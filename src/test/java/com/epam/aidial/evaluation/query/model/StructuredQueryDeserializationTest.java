@@ -25,23 +25,23 @@ class StructuredQueryDeserializationTest {
         //   OR (execution_status = 'PARTIAL' AND relevance_score > 0.5)
         // Routed through the real production site (StructuredQuery.filter).
         String json = """
-                {
-                  "entity": "test_case_eval_summaries",
-                  "filter": {
-                    "op": "or",
-                    "args": [
-                      { "op": "and", "args": [
-                          { "op": "eq", "args": [ { "type": "field", "name": "execution_status" }, { "type": "value", "value_type": "string",  "value": "SUCCESS" } ] },
-                          { "op": "gt", "args": [ { "type": "field", "name": "accuracy_score" },   { "type": "value", "value_type": "decimal", "value": "0.8" } ] }
-                      ]},
-                      { "op": "and", "args": [
-                          { "op": "eq", "args": [ { "type": "field", "name": "execution_status" }, { "type": "value", "value_type": "string",  "value": "PARTIAL" } ] },
-                          { "op": "gt", "args": [ { "type": "field", "name": "relevance_score" },  { "type": "value", "value_type": "decimal", "value": "0.5" } ] }
-                      ]}
-                    ]
-                  }
-                }
-                """;
+            {
+              "entity": "test_case_eval_summaries",
+              "filter": {
+                "op": "or",
+                "args": [
+                  { "op": "and", "args": [
+                      { "op": "eq", "args": [ { "type": "field", "name": "execution_status" }, { "type": "value", "value_type": "string",  "value": "SUCCESS" } ] },
+                      { "op": "gt", "args": [ { "type": "field", "name": "accuracy_score" },   { "type": "value", "value_type": "decimal", "value": "0.8" } ] }
+                  ]},
+                  { "op": "and", "args": [
+                      { "op": "eq", "args": [ { "type": "field", "name": "execution_status" }, { "type": "value", "value_type": "string",  "value": "PARTIAL" } ] },
+                      { "op": "gt", "args": [ { "type": "field", "name": "relevance_score" },  { "type": "value", "value_type": "decimal", "value": "0.5" } ] }
+                  ]}
+                ]
+              }
+            }
+            """;
 
         FilterNode node = mapper.readValue(json, StructuredQuery.class).filter();
 
@@ -68,17 +68,17 @@ class StructuredQueryDeserializationTest {
     void deserializesComparisonWithFunctionOnLeftSide() {
         // length(test_suite_id) = 3 — neither side is a bare column; LHS is fn(field), RHS is a value.
         String json = """
-                {
-                  "entity": "test_case_eval_summaries",
-                  "filter": {
-                    "op": "eq",
-                    "args": [
-                      { "type": "fn", "name": "length", "args": [ { "type": "field", "name": "test_suite_id" } ] },
-                      { "type": "value", "value_type": "integer", "value": "3" }
-                    ]
-                  }
-                }
-                """;
+            {
+              "entity": "test_case_eval_summaries",
+              "filter": {
+                "op": "eq",
+                "args": [
+                  { "type": "fn", "name": "length", "args": [ { "type": "field", "name": "test_suite_id" } ] },
+                  { "type": "value", "value_type": "integer", "value": "3" }
+                ]
+              }
+            }
+            """;
 
         ComparisonNode node =
                 (ComparisonNode) mapper.readValue(json, StructuredQuery.class).filter();
@@ -94,11 +94,11 @@ class StructuredQueryDeserializationTest {
     void deserializesNullCheckPredicate() {
         // §4.2 / §8.3: accuracy_score IS NULL — a metric-derived column with no score resolves to NULL.
         String json = """
-                {
-                  "entity": "test_case_eval_summaries",
-                  "filter": { "op": "eq", "args": [ { "type": "field", "name": "accuracy_score" }, { "type": "value", "value_type": "null", "value": null } ] }
-                }
-                """;
+            {
+              "entity": "test_case_eval_summaries",
+              "filter": { "op": "eq", "args": [ { "type": "field", "name": "accuracy_score" }, { "type": "value", "value_type": "null", "value": null } ] }
+            }
+            """;
 
         ComparisonNode node =
                 (ComparisonNode) mapper.readValue(json, StructuredQuery.class).filter();
@@ -112,20 +112,20 @@ class StructuredQueryDeserializationTest {
         // §8.5: execution_status IN ('SUCCESS', 'PARTIAL') — in is an ordinary binary predicate
         // whose right operand is an `array` expression (§4.6).
         String json = """
-                {
-                  "entity": "test_case_eval_summaries",
-                  "filter": {
-                    "op": "in",
-                    "args": [
-                      { "type": "field", "name": "execution_status" },
-                      { "type": "array", "items": [
-                          { "type": "value", "value_type": "string", "value": "SUCCESS" },
-                          { "type": "value", "value_type": "string", "value": "PARTIAL" }
-                      ]}
-                    ]
-                  }
-                }
-                """;
+            {
+              "entity": "test_case_eval_summaries",
+              "filter": {
+                "op": "in",
+                "args": [
+                  { "type": "field", "name": "execution_status" },
+                  { "type": "array", "items": [
+                      { "type": "value", "value_type": "string", "value": "SUCCESS" },
+                      { "type": "value", "value_type": "string", "value": "PARTIAL" }
+                  ]}
+                ]
+              }
+            }
+            """;
 
         ComparisonNode node =
                 (ComparisonNode) mapper.readValue(json, StructuredQuery.class).filter();
@@ -143,14 +143,14 @@ class StructuredQueryDeserializationTest {
     void deserializesNestedFunctionExpression() {
         // §4.1: round(div(sum(accuracy_score), count()), 2)
         String json = """
-                { "type": "fn", "name": "round", "args": [
-                    { "type": "fn", "name": "div", "args": [
-                        { "type": "fn", "name": "sum",   "args": [ { "type": "field", "name": "accuracy_score" } ] },
-                        { "type": "fn", "name": "count", "args": [] }
-                    ]},
-                    { "type": "value", "value_type": "integer", "value": "2" }
-                ]}
-                """;
+            { "type": "fn", "name": "round", "args": [
+                { "type": "fn", "name": "div", "args": [
+                    { "type": "fn", "name": "sum",   "args": [ { "type": "field", "name": "accuracy_score" } ] },
+                    { "type": "fn", "name": "count", "args": [] }
+                ]},
+                { "type": "value", "value_type": "integer", "value": "2" }
+            ]}
+            """;
 
         FnExpr round = (FnExpr) mapper.readValue(json, Expr.class);
         assertThat(round.name()).isEqualTo("round");
@@ -171,21 +171,21 @@ class StructuredQueryDeserializationTest {
     void deserializesFullRowModeEnvelope() {
         // §8.1 row-mode query with offset page + include_total.
         String json = """
-                {
-                  "entity": "test_case_eval_summaries",
-                  "mode": "row",
-                  "filter": {
-                    "op": "lt",
-                    "args": [ { "type": "field", "name": "accuracy_score" }, { "type": "value", "value_type": "decimal", "value": "0.5" } ]
-                  },
-                  "select": [
-                    { "expr": { "type": "field", "name": "id" } },
-                    { "expr": { "type": "field", "name": "accuracy_score" } }
-                  ],
-                  "sort": [ { "field": "accuracy_score", "dir": "asc", "nulls": "last" }, { "field": "id", "dir": "asc" } ],
-                  "page": { "type": "offset", "offset": 0, "limit": 25, "include_total": true }
-                }
-                """;
+            {
+              "entity": "test_case_eval_summaries",
+              "mode": "row",
+              "filter": {
+                "op": "lt",
+                "args": [ { "type": "field", "name": "accuracy_score" }, { "type": "value", "value_type": "decimal", "value": "0.5" } ]
+              },
+              "select": [
+                { "expr": { "type": "field", "name": "id" } },
+                { "expr": { "type": "field", "name": "accuracy_score" } }
+              ],
+              "sort": [ { "field": "accuracy_score", "dir": "asc", "nulls": "last" }, { "field": "id", "dir": "asc" } ],
+              "page": { "type": "offset", "offset": 0, "limit": 25, "include_total": true }
+            }
+            """;
 
         StructuredQuery query = mapper.readValue(json, StructuredQuery.class);
 
@@ -207,20 +207,20 @@ class StructuredQueryDeserializationTest {
     void deserializesFullAggregateModeEnvelope() {
         // §8.2 aggregate-mode query with group_by, fn expressions in select (alias `as`), having, cursor page.
         String json = """
-                {
-                  "entity": "test_case_eval_summaries",
-                  "mode": "aggregate",
-                  "group_by": ["execution_status"],
-                  "select": [
-                    { "expr": { "type": "field", "name": "execution_status" } },
-                    { "expr": { "type": "fn", "name": "count", "args": [] }, "as": "total_cases" },
-                    { "expr": { "type": "fn", "name": "avg", "args": [ { "type": "field", "name": "accuracy_score" } ] }, "as": "avg_accuracy_score" }
-                  ],
-                  "having": { "op": "ge", "args": [ { "type": "field", "name": "avg_accuracy_score" }, { "type": "value", "value_type": "decimal", "value": "0.6" } ] },
-                  "sort": [ { "field": "avg_accuracy_score", "dir": "desc" } ],
-                  "page": { "type": "cursor", "limit": 100 }
-                }
-                """;
+            {
+              "entity": "test_case_eval_summaries",
+              "mode": "aggregate",
+              "group_by": ["execution_status"],
+              "select": [
+                { "expr": { "type": "field", "name": "execution_status" } },
+                { "expr": { "type": "fn", "name": "count", "args": [] }, "as": "total_cases" },
+                { "expr": { "type": "fn", "name": "avg", "args": [ { "type": "field", "name": "accuracy_score" } ] }, "as": "avg_accuracy_score" }
+              ],
+              "having": { "op": "ge", "args": [ { "type": "field", "name": "avg_accuracy_score" }, { "type": "value", "value_type": "decimal", "value": "0.6" } ] },
+              "sort": [ { "field": "avg_accuracy_score", "dir": "desc" } ],
+              "page": { "type": "cursor", "limit": 100 }
+            }
+            """;
 
         StructuredQuery query = mapper.readValue(json, StructuredQuery.class);
 
@@ -242,19 +242,19 @@ class StructuredQueryDeserializationTest {
     void roundTripsEnvelopeThroughSerialization() {
         // deserialize -> serialize -> deserialize must be stable (discriminators + snake_case keys).
         String json = """
-                {
-                  "entity": "test_case_eval_summaries",
-                  "mode": "row",
-                  "filter": { "op": "in", "args": [
-                      { "type": "field", "name": "execution_status" },
-                      { "type": "array", "items": [
-                          { "type": "value", "value_type": "string", "value": "SUCCESS" },
-                          { "type": "value", "value_type": "string", "value": "PARTIAL" }
-                      ]}
-                  ]},
-                  "page": { "type": "offset", "offset": 200, "limit": 100, "include_total": false }
-                }
-                """;
+            {
+              "entity": "test_case_eval_summaries",
+              "mode": "row",
+              "filter": { "op": "in", "args": [
+                  { "type": "field", "name": "execution_status" },
+                  { "type": "array", "items": [
+                      { "type": "value", "value_type": "string", "value": "SUCCESS" },
+                      { "type": "value", "value_type": "string", "value": "PARTIAL" }
+                  ]}
+              ]},
+              "page": { "type": "offset", "offset": 200, "limit": 100, "include_total": false }
+            }
+            """;
 
         StructuredQuery first = mapper.readValue(json, StructuredQuery.class);
         String reserialized = mapper.writeValueAsString(first);

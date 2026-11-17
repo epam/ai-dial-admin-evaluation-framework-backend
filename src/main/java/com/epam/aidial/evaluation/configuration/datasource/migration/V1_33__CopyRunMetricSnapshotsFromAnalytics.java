@@ -43,16 +43,16 @@ public class V1_33__CopyRunMetricSnapshotsFromAnalytics extends BaseJavaMigratio
     private static final int BATCH_SIZE = 1000;
 
     private static final String CHECK_SOURCE_TABLE_EXISTS = """
-            SELECT EXISTS (SELECT 1 FROM information_schema.tables
-                WHERE table_schema = ? AND table_name = 'run_metric_snapshots')
-            """;
+        SELECT EXISTS (SELECT 1 FROM information_schema.tables
+            WHERE table_schema = ? AND table_name = 'run_metric_snapshots')
+        """;
 
     private static final String SELECT_SOURCE_ROWS = """
-            SELECT id, computation_id, test_suite_run_id, tsmd_id, tsmd_name,
-                   metric_declaration_id, metric_declaration_version_id,
-                   config_bindings, input_bindings, output_schema, computed_at_ms
-            FROM run_metric_snapshots
-            """;
+        SELECT id, computation_id, test_suite_run_id, tsmd_id, tsmd_name,
+               metric_declaration_id, metric_declaration_version_id,
+               config_bindings, input_bindings, output_schema, computed_at_ms
+        FROM run_metric_snapshots
+        """;
 
     private static final String SELECT_EXISTING_RUN_IDS = "SELECT id FROM test_suite_runs WHERE id = ANY (?)";
 
@@ -62,13 +62,13 @@ public class V1_33__CopyRunMetricSnapshotsFromAnalytics extends BaseJavaMigratio
     // between that pre-check and this INSERT, under READ COMMITTED isolation — in that one case it
     // silently skips the row instead of letting the FK constraint raise and aborting the batch.
     private static final String INSERT_TARGET_ROW = """
-            INSERT INTO run_metric_snapshots (id, computation_id, test_suite_run_id, tsmd_id, tsmd_name,
-                metric_declaration_id, metric_declaration_version_id, config_bindings, input_bindings,
-                output_schema, computed_at_ms)
-            SELECT ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?
-            WHERE EXISTS (SELECT 1 FROM test_suite_runs WHERE id = ?)
-            ON CONFLICT (computation_id, tsmd_id) DO NOTHING
-            """;
+        INSERT INTO run_metric_snapshots (id, computation_id, test_suite_run_id, tsmd_id, tsmd_name,
+            metric_declaration_id, metric_declaration_version_id, config_bindings, input_bindings,
+            output_schema, computed_at_ms)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?
+        WHERE EXISTS (SELECT 1 FROM test_suite_runs WHERE id = ?)
+        ON CONFLICT (computation_id, tsmd_id) DO NOTHING
+        """;
 
     private final DataSource analyticsDataSource;
     private final String analyticsSchema;

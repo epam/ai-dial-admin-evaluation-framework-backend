@@ -102,8 +102,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName(
-            "POST /datasets with visibility=PRIVATE without bindToSuiteId returns 400 (PRIVATE_DATASET_REQUIRES_SUITE_BINDING)")
+    @DisplayName("POST /datasets with visibility=PRIVATE without bindToSuiteId returns 400"
+            + " (PRIVATE_DATASET_REQUIRES_SUITE_BINDING)")
     void createPrivateWithoutBindingReturns400() {
         DatasetRequestDto request = DatasetRequestDto.builder()
                 .name("Visibility-Private-NoBind-" + UUID.randomUUID())
@@ -118,8 +118,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName(
-            "POST /datasets with visibility=PUBLIC and bindToSuiteId returns 400 (PUBLIC_DATASET_FORBIDS_SUITE_BINDING)")
+    @DisplayName("POST /datasets with visibility=PUBLIC and bindToSuiteId returns 400"
+            + " (PUBLIC_DATASET_FORBIDS_SUITE_BINDING)")
     void createPublicWithBindingReturns400() {
         TestSuite suite = metaTestDataHelper.createTestSuite("Visibility-Public-Bind-" + UUID.randomUUID());
 
@@ -138,7 +138,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
 
     @Test
     @DisplayName(
-            "POST /datasets with visibility=PRIVATE targeting a suite already bound to another PRIVATE dataset returns 409 (PRIVATE_DATASET_REBIND_FORBIDDEN)")
+            "POST /datasets with visibility=PRIVATE targeting a suite already bound to another PRIVATE dataset returns"
+                    + " 409 (PRIVATE_DATASET_REBIND_FORBIDDEN)")
     void createPrivateForSuiteWithOtherPrivateReturns409() {
         TestSuite suite = metaTestDataHelper.createTestSuite("Visibility-AlreadyBound-" + UUID.randomUUID());
 
@@ -208,8 +209,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName(
-            "PATCH /datasets/{id}/visibility PUBLIC→PRIVATE with 0 bindings returns 409 (PRIVATE_TRANSITION_INVALID_BINDING_COUNT)")
+    @DisplayName("PATCH /datasets/{id}/visibility PUBLIC→PRIVATE with 0 bindings returns 409"
+            + " (PRIVATE_TRANSITION_INVALID_BINDING_COUNT)")
     void transitionPublicToPrivateZeroBindingsReturns409() {
         Dataset dataset = metaTestDataHelper.createDataset(
                 "Visibility-Transit-0-" + UUID.randomUUID(), "[]", DatasetVisibility.PUBLIC);
@@ -222,7 +223,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
 
     @Test
     @DisplayName(
-            "PATCH /datasets/{id}/visibility PUBLIC→PRIVATE with exactly 1 binding returns 200 and persists the new visibility")
+            "PATCH /datasets/{id}/visibility PUBLIC→PRIVATE with exactly 1 binding returns 200 and persists the new"
+                    + " visibility")
     void transitionPublicToPrivateOneBindingReturns200() {
         Dataset dataset = metaTestDataHelper.createDataset(
                 "Visibility-Transit-1-" + UUID.randomUUID(), "[]", DatasetVisibility.PUBLIC);
@@ -241,8 +243,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName(
-            "PATCH /datasets/{id}/visibility PUBLIC→PRIVATE with 2+ bindings returns 409 (PRIVATE_TRANSITION_INVALID_BINDING_COUNT)")
+    @DisplayName("PATCH /datasets/{id}/visibility PUBLIC→PRIVATE with 2+ bindings returns 409"
+            + " (PRIVATE_TRANSITION_INVALID_BINDING_COUNT)")
     void transitionPublicToPrivateMultipleBindingsReturns409() {
         Dataset dataset = metaTestDataHelper.createDataset(
                 "Visibility-Transit-2-" + UUID.randomUUID(), "[]", DatasetVisibility.PUBLIC);
@@ -299,7 +301,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
 
     @Test
     @DisplayName(
-            "DELETE /datasets/{id} on PRIVATE dataset → 204; suite remains with datasetId=null, dataset row and test cases gone")
+            "DELETE /datasets/{id} on PRIVATE dataset → 204; suite remains with datasetId=null, dataset row and test"
+                    + " cases gone")
     void deletePrivateDatasetCascadesUnbindAndDelete() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Visibility-Del-Private-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
@@ -324,8 +327,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName(
-            "DELETE /test-suites/{id} on PRIVATE-bound suite → suite, dataset, and test cases all removed in one transaction")
+    @DisplayName("DELETE /test-suites/{id} on PRIVATE-bound suite → suite, dataset, and test cases all removed in one"
+            + " transaction")
     void deletePrivateBoundSuiteCascadesDataset() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Visibility-SuiteDel-Private-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
@@ -366,8 +369,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName(
-            "PUT /test-suites/{id} rebinding away from PRIVATE → 409 (PRIVATE_DATASET_REBIND_FORBIDDEN); unbinding (datasetId=null) → 409 too")
+    @DisplayName("PUT /test-suites/{id} rebinding away from PRIVATE → 409 (PRIVATE_DATASET_REBIND_FORBIDDEN); unbinding"
+            + " (datasetId=null) → 409 too")
     void rebindOrUnbindFromPrivateReturns409() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Visibility-Rebind-Private-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
@@ -407,8 +410,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName(
-            "Unbound suite (datasetId=null) is retrievable and updatable, but POST /runs returns 409 SUITE_HAS_NO_DATASET")
+    @DisplayName("Unbound suite (datasetId=null) is retrievable and updatable, but POST /runs returns 409"
+            + " SUITE_HAS_NO_DATASET")
     void unboundSuiteIsRetrievableButCannotRun() {
         TestSuite suite = metaTestDataHelper.createTestSuite("Visibility-Unbound-" + UUID.randomUUID(), null);
         assertThat(suite.getDatasetId()).isNull();
@@ -430,8 +433,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName(
-            "Run-start guard fires before validity check: an unbound + invalid suite still reports SUITE_HAS_NO_DATASET")
+    @DisplayName("Run-start guard fires before validity check: an unbound + invalid suite still reports"
+            + " SUITE_HAS_NO_DATASET")
     void runStartGuardFiresBeforeValidityCheck() {
         TestSuite suite = metaTestDataHelper.createTestSuite("Visibility-Unbound-Invalid-" + UUID.randomUUID(), null);
         metaTestDataHelper.forceSuiteInvalid(suite.getId());
@@ -455,8 +458,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName(
-            "PUT /test-suites/{id} selecting a PRIVATE dataset already bound to another suite returns 409 PRIVATE_DATASET_ALREADY_BOUND without leaking SQL")
+    @DisplayName("PUT /test-suites/{id} selecting a PRIVATE dataset already bound to another suite returns 409"
+            + " PRIVATE_DATASET_ALREADY_BOUND without leaking SQL")
     void bindAlreadyBoundPrivateDatasetViaUpdateReturns409() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Visibility-AlreadyBound-Private-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
@@ -479,8 +482,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName(
-            "POST /test-suites with a PRIVATE dataset already bound to another suite returns 409 PRIVATE_DATASET_ALREADY_BOUND without leaking SQL")
+    @DisplayName("POST /test-suites with a PRIVATE dataset already bound to another suite returns 409"
+            + " PRIVATE_DATASET_ALREADY_BOUND without leaking SQL")
     void bindAlreadyBoundPrivateDatasetViaCreateReturns409() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Visibility-AlreadyBound-Create-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
@@ -498,7 +501,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
 
     @Test
     @DisplayName(
-            "POST /test-suites/{id}/clone with a datasetId override pointing at an already-bound PRIVATE dataset is rejected by the DB trigger as 409 without leaking SQL")
+            "POST /test-suites/{id}/clone with a datasetId override pointing at an already-bound PRIVATE dataset is"
+                    + " rejected by the DB trigger as 409 without leaking SQL")
     void cloneOverrideToAlreadyBoundPrivateDatasetReturns409() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Visibility-AlreadyBound-Clone-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
@@ -613,8 +617,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName(
-            "POST /datasets/{id}/publish on PRIVATE dataset without metadata → visibility becomes PUBLIC, name preserved, version bumped")
+    @DisplayName("POST /datasets/{id}/publish on PRIVATE dataset without metadata → visibility becomes PUBLIC, name"
+            + " preserved, version bumped")
     void shouldPublishPrivateDatasetWithoutMetadataUpdate() {
         Dataset dataset = metaTestDataHelper.createDataset(
                 "Publish-NoMeta-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
@@ -635,8 +639,8 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName(
-            "POST /datasets/{id}/publish on PRIVATE dataset with name and description → all three fields updated atomically, version bumped")
+    @DisplayName("POST /datasets/{id}/publish on PRIVATE dataset with name and description → all three fields updated"
+            + " atomically, version bumped")
     void shouldPublishPrivateDatasetWithNameAndDescription() {
         Dataset dataset = metaTestDataHelper.createDataset(
                 "Publish-WithMeta-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);

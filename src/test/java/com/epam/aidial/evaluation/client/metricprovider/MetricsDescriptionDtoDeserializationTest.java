@@ -16,10 +16,10 @@ class MetricsDescriptionDtoDeserializationTest {
     @DisplayName("deserializes when provider returns schema fields as JSON objects")
     void deserializesObjectSchemas() throws Exception {
         String json = """
-                {"name":"accuracy","description":"Correctness metric",\
-                "config_schema":{"type":"object","properties":{"threshold":{"type":"number"}}},\
-                "input_schema":{},"output_schema":{"type":"array"}}
-                """;
+            {"name":"accuracy","description":"Correctness metric",\
+            "config_schema":{"type":"object","properties":{"threshold":{"type":"number"}}},\
+            "input_schema":{},"output_schema":{"type":"array"}}
+            """;
         MetricsDescriptionDto dto = objectMapper.readValue(json, MetricsDescriptionDto.class);
 
         assertThat(dto.getName()).isEqualTo("accuracy");
@@ -34,9 +34,9 @@ class MetricsDescriptionDtoDeserializationTest {
     @DisplayName("deserializes when provider returns schema fields as JSON strings")
     void deserializesStringSchemas() throws Exception {
         String json = """
-                {"name":"exact_match","description":"Exact match",\
-                "config_schema":"{}","input_schema":"{\\"type\\":\\"object\\"}","output_schema":"{}"}
-                """;
+            {"name":"exact_match","description":"Exact match",\
+            "config_schema":"{}","input_schema":"{\\"type\\":\\"object\\"}","output_schema":"{}"}
+            """;
         MetricsDescriptionDto dto = objectMapper.readValue(json, MetricsDescriptionDto.class);
 
         assertThat(dto.getName()).isEqualTo("exact_match");

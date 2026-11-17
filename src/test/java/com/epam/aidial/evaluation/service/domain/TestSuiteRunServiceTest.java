@@ -359,8 +359,8 @@ class TestSuiteRunServiceTest {
         }
 
         @Test
-        @DisplayName(
-                "propagates the caller's OpenTelemetry context and correlation ID to the DialRouteTriggerClient virtual thread")
+        @DisplayName("propagates the caller's OpenTelemetry context and correlation ID to the DialRouteTriggerClient"
+                + " virtual thread")
         void propagatesTraceContextToRouteTriggerThread() throws InterruptedException {
             when(dialAppProperties.isEnabled()).thenReturn(true);
             CallerCredential credential = CallerCredential.bearer("jwt-token");

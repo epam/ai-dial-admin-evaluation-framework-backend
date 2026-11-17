@@ -133,9 +133,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("unknown (non-reserved) columns are silently ignored")
         void unknownColumnsIgnored() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData,someUnknownColumn
-                    tc1,0,SUCCESS,1000,1500,{"q":"hello"},ignored_value
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData,someUnknownColumn
+                tc1,0,SUCCESS,1000,1500,{"q":"hello"},ignored_value
+                """;
             final List<TestCaseRunResult> items = parser.parse(datasetId, csvStream(csv), byteSize(csv), ',');
 
             assertThat(items).hasSize(1);
@@ -157,9 +157,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("missing testCaseData column is rejected")
         void missingTestCaseDataRejected() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt
-                    tc1,0,SUCCESS,1000,1500
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt
+                tc1,0,SUCCESS,1000,1500
+                """;
             assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("testCaseData");
@@ -169,9 +169,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("blank testCaseData cell is rejected")
         void blankTestCaseDataRejected() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,
+                """;
             assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("testCaseData");
@@ -181,9 +181,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("non-object JSON in testCaseData (array) is rejected")
         void arrayTestCaseDataRejected() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,[1,2,3]
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,[1,2,3]
+                """;
             assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("testCaseData")
@@ -194,9 +194,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("malformed JSON in testCaseData is rejected")
         void malformedTestCaseDataRejected() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,not-json
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,not-json
+                """;
             assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("testCaseData")
@@ -222,9 +222,9 @@ class EvalResultsCsvParserTest {
                             .build());
 
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,{"wrong_field":"value"}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,{"wrong_field":"value"}
+                """;
             assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("testCaseData validation failed")
@@ -262,9 +262,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("blank requestBody / responseBody / logDetails cells map to null")
         void blankJsonColumnsMapToNull() {
             String csv = """
-                    testCaseName,runIndex,requestBody,responseBody,logDetails,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,,,, SUCCESS,1000,1500,{}
-                    """;
+                testCaseName,runIndex,requestBody,responseBody,logDetails,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,,,, SUCCESS,1000,1500,{}
+                """;
             final List<TestCaseRunResult> items = parser.parse(datasetId, csvStream(csv), byteSize(csv), ',');
 
             assertThat(items).hasSize(1);
@@ -285,9 +285,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("a malformed JSON cell in responseBody is reported with its row number")
         void malformedJsonCellSurfacedWithRowNumber() {
             String csv = """
-                    testCaseName,runIndex,responseBody,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,not-valid-json,SUCCESS,1000,1500,{}
-                    """;
+                testCaseName,runIndex,responseBody,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,not-valid-json,SUCCESS,1000,1500,{}
+                """;
             assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("responseBody")
@@ -298,9 +298,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("an invalid executionStatus value is reported with its row number")
         void invalidExecutionStatusSurfacedWithRowNumber() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,NOT_A_STATUS,1000,1500,{}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,NOT_A_STATUS,1000,1500,{}
+                """;
             assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("executionStatus")
@@ -311,9 +311,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("missing required reserved column (executionStatus) is surfaced via inline check")
         void missingRequiredReservedColumnSurfaced() {
             String csv = """
-                    testCaseName,runIndex,startedAt,completedAt,testCaseData
-                    tc1,0,1000,1500,{}
-                    """;
+                testCaseName,runIndex,startedAt,completedAt,testCaseData
+                tc1,0,1000,1500,{}
+                """;
             assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class);
         }
@@ -322,10 +322,10 @@ class EvalResultsCsvParserTest {
         @DisplayName("violations from multiple independent rows are collected into one exception")
         void multipleRowViolationsCollectedTogether() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,BAD,1000,1500,{}
-                    tc2,0,ALSO_BAD,1000,1500,{}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,BAD,1000,1500,{}
+                tc2,0,ALSO_BAD,1000,1500,{}
+                """;
             assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("row 0")
@@ -384,10 +384,10 @@ class EvalResultsCsvParserTest {
                     testCaseFieldScopeResolver);
 
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,{}
-                    tc2,0,SUCCESS,1000,1500,{}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,{}
+                tc2,0,SUCCESS,1000,1500,{}
+                """;
             assertThatThrownBy(() -> capParser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class);
         }
@@ -437,9 +437,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("a legacy 15-column CSV without identity headers defaults to 0/1/0/1")
         void legacyCsvDefaultsIdentityColumns() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,{}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,{}
+                """;
             List<TestCaseRunResult> items = parser.parse(datasetId, csvStream(csv), byteSize(csv), ',');
 
             assertThat(items).hasSize(1);
@@ -551,10 +551,10 @@ class EvalResultsCsvParserTest {
         @DisplayName("all rows naming the same testCaseName share one generated id")
         void allRowsOfOneNameShareOneGeneratedId() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,{}
-                    tc1,1,SUCCESS,1000,1500,{}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,{}
+                tc1,1,SUCCESS,1000,1500,{}
+                """;
             List<TestCaseRunResult> items = parser.parse(datasetId, csvStream(csv), byteSize(csv), ',');
 
             assertThat(items).hasSize(2);
@@ -567,10 +567,10 @@ class EvalResultsCsvParserTest {
         @DisplayName("distinct testCaseNames get distinct generated ids")
         void distinctNamesGetDistinctIds() {
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,{}
-                    tc2,0,SUCCESS,1000,1500,{}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,{}
+                tc2,0,SUCCESS,1000,1500,{}
+                """;
             List<TestCaseRunResult> items = parser.parse(datasetId, csvStream(csv), byteSize(csv), ',');
 
             assertThat(items).hasSize(2);
@@ -595,9 +595,9 @@ class EvalResultsCsvParserTest {
         @DisplayName("a row with neither testCaseId nor testCaseName keeps a null id")
         void rowWithNeitherIdNorNameKeepsNullId() {
             String csv = """
-                    runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    0,SUCCESS,1000,1500,{}
-                    """;
+                runIndex,executionStatus,startedAt,completedAt,testCaseData
+                0,SUCCESS,1000,1500,{}
+                """;
             List<TestCaseRunResult> items = parser.parse(datasetId, csvStream(csv), byteSize(csv), ',');
 
             assertThat(items).hasSize(1);
@@ -728,9 +728,9 @@ class EvalResultsCsvParserTest {
                                     .build()));
 
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,{"question":"q"}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,{"question":"q"}
+                """;
             List<TestCaseRunResult> items = realSchemaParser.parse(datasetId, csvStream(csv), byteSize(csv), ',');
             assertThat(items).hasSize(1);
         }
@@ -753,9 +753,9 @@ class EvalResultsCsvParserTest {
                                     .build()));
 
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,{"prompt":"p"}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,{"prompt":"p"}
+                """;
             assertThatThrownBy(() -> realSchemaParser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("testCaseData validation failed");
@@ -795,9 +795,9 @@ class EvalResultsCsvParserTest {
                             .build()));
 
             String csv = """
-                    testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
-                    tc1,0,SUCCESS,1000,1500,{}
-                    """;
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1000,1500,{}
+                """;
             assertThatThrownBy(() -> realSchemaParser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("testCaseData validation failed");

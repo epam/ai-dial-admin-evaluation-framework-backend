@@ -78,7 +78,9 @@ public class TemplateVariableResolver {
         if (defaultValue != null) {
             return defaultValue;
         }
-        if (binding != null && binding.getDataField() != null && !binding.getDataField().isBlank()) {
+        if (binding != null
+                && binding.getDataField() != null
+                && !binding.getDataField().isBlank()) {
             warnings.add(warning(
                     binding.getDataField(),
                     "$.data." + binding.getDataField(),

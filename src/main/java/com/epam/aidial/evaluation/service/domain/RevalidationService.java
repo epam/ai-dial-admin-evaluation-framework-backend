@@ -249,7 +249,8 @@ public class RevalidationService {
                 validationUpdatedAt);
         if (validationRows == 0) {
             log.debug(
-                    "Skipping validation update for test case {} — concurrent edit detected (validation update guard miss)",
+                    "Skipping validation update for test case {} — concurrent edit detected (validation update guard"
+                            + " miss)",
                     tc.getId());
             return CaseOutcome.ofSkipped();
         }
@@ -356,7 +357,8 @@ public class RevalidationService {
                 validationUpdatedAt);
         if (validationRows == 0) {
             log.debug(
-                    "Skipping validation update for test case {} — concurrent edit detected (validation update guard miss)",
+                    "Skipping validation update for test case {} — concurrent edit detected (validation update guard"
+                            + " miss)",
                     tc.getId());
             return CaseOutcome.ofSkipped();
         }

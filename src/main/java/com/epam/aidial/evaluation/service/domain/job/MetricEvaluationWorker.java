@@ -66,15 +66,15 @@ public class MetricEvaluationWorker {
         setRowPosition(spanBuilder, result, context);
         return context.getTraceSession() == null
                 ? spanBuilder.startSpan()
-                : context.getTraceSession()
-                        .startMetricsSpan(spanBuilder, result.getTestCaseId(), result.getRunIndex());
+                : context.getTraceSession().startMetricsSpan(spanBuilder, result.getTestCaseId(), result.getRunIndex());
     }
 
     /**
      * Stamps the result row's request/turn position, so a row's metrics trace is distinguishable from the
      * other rows (turns, chained requests) of the same test-case repetition.
      */
-    private static void setRowPosition(SpanBuilder spanBuilder, TestCaseRunResult result, MetricEvaluationContext context) {
+    private static void setRowPosition(
+            SpanBuilder spanBuilder, TestCaseRunResult result, MetricEvaluationContext context) {
         spanBuilder
                 .setAttribute(TracingConstants.REQUEST_INDEX, String.valueOf(result.getRequestIndex()))
                 .setAttribute(TracingConstants.REQUEST_TOTAL, String.valueOf(result.getTotalRequests()))

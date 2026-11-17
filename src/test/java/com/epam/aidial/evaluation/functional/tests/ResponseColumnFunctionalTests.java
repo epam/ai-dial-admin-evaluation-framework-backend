@@ -270,8 +270,7 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
     // --- jsonata-request-templates WP3: write-time 400s for JSONata request bodies + reserved names ---
 
     @Test
-    @DisplayName(
-            "Should return 400 when requestTemplate.body.jsonataContent is a syntactically invalid JSONata " + "String")
+    @DisplayName("Should return 400 when requestTemplate.body.jsonataContent is a syntactically invalid JSONata String")
     void shouldReturn400ForInvalidJsonataContentBody() {
         // Given: unclosed bracket makes the JSONata source invalid
         TestSuiteRequestDto request = buildRequestWithJsonataBody("Suite Invalid JSONata Body", "{\"a\": [1, 2}");

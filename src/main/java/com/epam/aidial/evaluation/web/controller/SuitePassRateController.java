@@ -31,16 +31,16 @@ public class SuitePassRateController {
     @PostMapping(value = "/pass-rate", consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Get the mean pass rate of the latest runs and of the previous runs of a set of suites",
-            description = "For each suite, takes its latest two runs that have per-test-case scores, each at its "
-                    + "latest computation, and computes the run's pass rate: with a score threshold on the run, "
-                    + "the share of test cases whose score met it, where a successful test case without a score "
-                    + "(for example every metric skipped by its condition) counts as passed and a failed test case "
-                    + "does not; without a threshold, the share of test cases that executed successfully. Returns the mean "
-                    + "of the suites' latest-run rates (`passRate`) and of their previous-run rates "
-                    + "(`previousPassRate`), each suite counting once, with the number of suites behind each "
-                    + "(`suiteCount`, `previousSuiteCount`). A rate with no contributing suite is omitted. Suites "
-                    + "that do not exist or have no scored run are skipped without an error. The caller derives "
-                    + "the trend from the two numbers.")
+            description = "For each suite, takes its latest two runs that have per-test-case scores, each at its"
+                    + " latest computation, and computes the run's pass rate: with a score threshold on the run, the"
+                    + " share of test cases whose score met it, where a successful test case without a score (for"
+                    + " example every metric skipped by its condition) counts as passed and a failed test case does"
+                    + " not; without a threshold, the share of test cases that executed successfully. Returns the mean"
+                    + " of the suites' latest-run rates (`passRate`) and of their previous-run rates"
+                    + " (`previousPassRate`), each suite counting once, with the number of suites behind each"
+                    + " (`suiteCount`, `previousSuiteCount`). A rate with no contributing suite is omitted. Suites"
+                    + " that do not exist or have no scored run are skipped without an error. The caller derives the"
+                    + " trend from the two numbers.")
     @ApiResponse(
             responseCode = "200",
             description = "Summary computed",

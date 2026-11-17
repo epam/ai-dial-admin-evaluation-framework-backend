@@ -61,8 +61,8 @@ public abstract class CoreRoutedTracingFunctionalTests extends EvaluationTracing
     }
 
     @Test
-    @DisplayName(
-            "public start through Core and internal execute keeps orchestration linkage, PRK, and case/metric hierarchy")
+    @DisplayName("public start through Core and internal execute keeps orchestration linkage, PRK, and case/metric"
+            + " hierarchy")
     void routedRunRetainsTraceAndCredential() {
         final var suite = createChatSuite("Routed tracing");
         createSingleTurnCase(suite.getDatasetId(), "case", Map.of("prompt", "hello"));
@@ -181,7 +181,8 @@ public abstract class CoreRoutedTracingFunctionalTests extends EvaluationTracing
 
     @Test
     @DisplayName(
-            "Core disconnect cancels the run, ends its execution trace and starts no metrics trace, without persisting unfinished execution")
+            "Core disconnect cancels the run, ends its execution trace and starts no metrics trace, without persisting"
+                    + " unfinished execution")
     void disconnectCancelsAndEndsExecutionTrace() throws Exception {
         final var suite = createChatSuite("Disconnect trace");
         createSingleTurnCase(suite.getDatasetId(), "case", Map.of("prompt", "hello"));
@@ -225,8 +226,7 @@ public abstract class CoreRoutedTracingFunctionalTests extends EvaluationTracing
                     .isEmpty();
             release.countDown();
             await().atMost(5, TimeUnit.SECONDS)
-                    .untilAsserted(() -> assertThat(
-                                    spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
+                    .untilAsserted(() -> assertThat(spansFor(run.getId(), TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE))
                             .hasSize(1));
         } finally {
             release.countDown();

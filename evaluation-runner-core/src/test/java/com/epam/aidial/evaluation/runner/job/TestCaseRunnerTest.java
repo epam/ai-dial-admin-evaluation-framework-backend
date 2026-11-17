@@ -440,8 +440,8 @@ class TestCaseRunnerTest {
     }
 
     @Test
-    @DisplayName(
-            "worker wrapper drops the result and skips the synthetic row when the worker call throws after interrupting itself")
+    @DisplayName("worker wrapper drops the result and skips the synthetic row when the worker call throws after"
+            + " interrupting itself")
     void shouldPreserveInterruptFlagAtWrapper_whenWorkerCallThrowsAfterInterrupt() {
         TestCaseRunInput input = buildInput();
         EvaluationContext context = buildContext(1, 1);

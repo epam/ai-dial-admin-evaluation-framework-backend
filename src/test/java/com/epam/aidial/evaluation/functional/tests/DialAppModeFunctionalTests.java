@@ -47,7 +47,8 @@ public abstract class DialAppModeFunctionalTests extends BaseFunctionalTest {
 
     @Test
     @DisplayName(
-            "boots application context with dial-app-proxy.enabled=true and config.rest.security.api-key.enabled=true (functional test confirms beans wire up)")
+            "boots application context with dial-app-proxy.enabled=true and config.rest.security.api-key.enabled=true"
+                    + " (functional test confirms beans wire up)")
     void bootsSuccessfullyWithBothFlagsEnabled() {
         // This test verifies the application context boots successfully when both flags are enabled.
         // If the beans don't wire up correctly, Spring would fail to start the application.

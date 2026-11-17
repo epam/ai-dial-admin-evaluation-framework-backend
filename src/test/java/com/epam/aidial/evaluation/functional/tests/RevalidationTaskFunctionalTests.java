@@ -88,8 +88,8 @@ public abstract class RevalidationTaskFunctionalTests extends BaseFunctionalTest
     }
 
     @Test
-    @DisplayName(
-            "revalidation task ends COMPLETED even when a referencing suite has problematic config (Phase 2 resilience)")
+    @DisplayName("revalidation task ends COMPLETED even when a referencing suite has problematic config (Phase 2"
+            + " resilience)")
     void taskCompletesEvenWithProblematicSuite() {
         // Dataset with a schema, plus a suite referencing it
         Dataset dataset = metaTestDataHelper.createDataset(

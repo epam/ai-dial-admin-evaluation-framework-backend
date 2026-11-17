@@ -29,7 +29,8 @@ public abstract class SuitePassRateRepositoryFunctionalTests extends BaseFunctio
     private RunDeletionRepository runDeletionRepository;
 
     @Test
-    @DisplayName("countByRunAndComputation tallies passed, not passed, unscored and failed rows of the given computation")
+    @DisplayName(
+            "countByRunAndComputation tallies passed, not passed, unscored and failed rows of the given computation")
     void countsSplitIntoFourBuckets() {
         UUID runId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();

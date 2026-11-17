@@ -201,7 +201,7 @@ class ZipImportServiceTest {
     void importZip_uploadFails_rollsBackEarlierUploadAndNeverCallsCsvImportService() {
         Path staged = stageZip(Map.of(
                 "test-cases.csv",
-                        ("testCaseName,prompt,document\n" + "TC1,hi,files/1/a.txt\n" + "TC2,hi,files/2/b.txt")
+                        ("testCaseName,prompt,document\nTC1,hi,files/1/a.txt\nTC2,hi,files/2/b.txt")
                                 .getBytes(StandardCharsets.UTF_8),
                 "files/1/a.txt", "content-a".getBytes(StandardCharsets.UTF_8),
                 "files/2/b.txt", "content-b".getBytes(StandardCharsets.UTF_8)));

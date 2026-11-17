@@ -85,7 +85,8 @@ class TemplateContentResolverTest {
     @Test
     @DisplayName("resolveObject preserves the resolved value's type for a full-value placeholder")
     void resolveObjectPreservesTypeForFullValuePlaceholder() {
-        when(templateVariableResolver.resolveVariable(eq("temperature"), isNull(), any(), anyMap(), any(), anyBoolean()))
+        when(templateVariableResolver.resolveVariable(
+                        eq("temperature"), isNull(), any(), anyMap(), any(), anyBoolean()))
                 .thenReturn(0.7);
 
         Object result = resolver.resolveObject("${{temperature}}", Map.of(), Map.of(), warnings, null);
@@ -394,7 +395,8 @@ class TemplateContentResolverTest {
     @DisplayName("resolveObject canonicalises a skill nested as custom_content.skills[{url}] in a message")
     void resolveObjectCanonicalisesSkillNestedInMessageCustomContent() {
         InputBindingDto binding = binding("skill", "skill");
-        when(templateVariableResolver.resolveVariable(eq("skill"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
+        when(templateVariableResolver.resolveVariable(
+                        eq("skill"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn("skills/public/vc-test/");
         Map<String, Object> body = Map.of(
                 "messages",

@@ -105,8 +105,7 @@ class TestSuiteMetricDefinitionServiceTest {
         final TestSuite suite = TestSuite.builder().id(suiteId).build();
         final Set<String> remaining = Set.of("Other");
         when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(suite));
-        when(repository.findByIdAndTestSuiteId(id, suiteId))
-                .thenReturn(Optional.of(new TestSuiteMetricDefinition()));
+        when(repository.findByIdAndTestSuiteId(id, suiteId)).thenReturn(Optional.of(new TestSuiteMetricDefinition()));
         when(repository.findNamesByTestSuiteId(suiteId)).thenReturn(remaining);
 
         service.delete(suiteId, id);

@@ -123,8 +123,8 @@ class SuiteDefinitionResolverTest {
     }
 
     @Test
-    @DisplayName(
-            "fromRequest builds the chain from DTO fields (request #0 as-is, additional requests normalized) via httpChain")
+    @DisplayName("fromRequest builds the chain from DTO fields (request #0 as-is, additional requests normalized) via"
+            + " httpChain")
     void requestHttpChain() {
         final TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                 .deploymentRef(DEPLOYMENT)

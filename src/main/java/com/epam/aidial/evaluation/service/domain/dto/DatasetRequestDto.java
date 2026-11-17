@@ -44,7 +44,8 @@ public class DatasetRequestDto {
      */
     @Schema(
             description =
-                    "Catalogue visibility — PUBLIC datasets appear in the list endpoint; PRIVATE datasets are scoped to a single suite",
+                    "Catalogue visibility — PUBLIC datasets appear in the list endpoint; PRIVATE datasets are scoped"
+                            + " to a single suite",
             example = "PUBLIC")
     private DatasetVisibility visibility;
 

@@ -151,7 +151,8 @@ public class TestSuiteController {
                 (PRIVATE_DATASET_REBIND_FORBIDDEN). \
                 Override fields are applied to the clone; null fields inherit from the source. Suite-level \
                 validation runs synchronously during the clone; no async revalidation is spawned, so the \
-                response's revalidationTask is always null. Returns 201.""",
+                response's revalidationTask is always null. Returns 201.\
+                """,
             requestBody =
                     @RequestBody(
                             description = "Clone request with required name and optional overrides",
@@ -192,7 +193,8 @@ public class TestSuiteController {
                 Test cases are copied with fresh IDs. An optional `name` field sets the clone name; if \
                 omitted, the name is derived as "<source> (clone)". Returns 409 when the suite has no \
                 dataset bound, or when the bound dataset is already PRIVATE. Returns 200 with the \
-                updated TestSuiteResponseDto.""",
+                updated TestSuiteResponseDto.\
+                """,
             requestBody =
                     @RequestBody(
                             description = "Optional clone name; omit to derive automatically",
@@ -234,11 +236,11 @@ public class TestSuiteController {
     @PutMapping("/{id}")
     @Operation(
             summary = "Update a test suite",
-            description =
-                    "Updates an existing test suite. Requires If-Match header with current version for optimistic locking. "
-                            + "Schema lives on the dataset (see /api/v1/datasets/{id}); suite updates run synchronous validation only. "
-                            + "Rebinding to a different dataset or unbinding (`datasetId=null`) is forbidden when the current "
-                            + "dataset is PRIVATE — delete the suite or change the dataset's visibility first.",
+            description = "Updates an existing test suite. Requires If-Match header with current version for optimistic"
+                    + " locking. Schema lives on the dataset (see /api/v1/datasets/{id}); suite updates run"
+                    + " synchronous validation only. Rebinding to a different dataset or unbinding"
+                    + " (`datasetId=null`) is forbidden when the current dataset is PRIVATE — delete the suite"
+                    + " or change the dataset's visibility first.",
             requestBody =
                     @RequestBody(
                             description = "Updated test suite",

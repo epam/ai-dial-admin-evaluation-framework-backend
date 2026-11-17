@@ -968,7 +968,8 @@ class CsvImportServiceSchemaTest {
     }
 
     @Test
-    @DisplayName("APPEND into a schema declaring the column STRING: skill references do not retype it (no schema update)")
+    @DisplayName(
+            "APPEND into a schema declaring the column STRING: skill references do not retype it (no schema update)")
     void appendDeclaredStringColumnIsNotRetyped() throws Exception {
         datasetWithSchema("[{\"name\":\"note\",\"type\":\"STRING\",\"required\":false}]");
 

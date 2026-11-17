@@ -22,29 +22,29 @@ class MetricDefinitionValidationServiceTest {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String VALID_OUTPUT_SCHEMA = """
-            {"properties": {"score": {"type": "number"}}}
-            """;
+        {"properties": {"score": {"type": "number"}}}
+        """;
 
     private MetricDefinitionValidationService service;
 
     private static final String SCHEMA_WITH_REQUIRED = """
-            {
-              "properties": {
-                "reference": {"type": "string"},
-                "actual": {"type": "string"},
-                "threshold": {"type": "number"}
-              },
-              "required": ["reference", "actual"]
-            }
-            """;
+        {
+          "properties": {
+            "reference": {"type": "string"},
+            "actual": {"type": "string"},
+            "threshold": {"type": "number"}
+          },
+          "required": ["reference", "actual"]
+        }
+        """;
 
     private static final String TEST_CASE_SCHEMA = """
-            [{"name": "expected_output"}, {"name": "input"}]
-            """;
+        [{"name": "expected_output"}, {"name": "input"}]
+        """;
 
     private static final String RESPONSE_COLUMNS = """
-            [{"name": "model_answer"}, {"name": "score"}]
-            """;
+        [{"name": "model_answer"}, {"name": "score"}]
+        """;
 
     /**
      * Simulates {@link ResponseColumnUnionResolver}'s output for a 2-request chain: request #0's
@@ -53,8 +53,8 @@ class MetricDefinitionValidationServiceTest {
      * this fixture exercises the "caller passes the suite-wide union" contract end to end.
      */
     private static final String CHAIN_UNION_RESPONSE_COLUMNS = """
-            [{"name": "model_answer"}, {"name": "score"}, {"name": "follow_up_answer"}]
-            """;
+        [{"name": "model_answer"}, {"name": "score"}, {"name": "follow_up_answer"}]
+        """;
 
     @BeforeEach
     void setUp() {

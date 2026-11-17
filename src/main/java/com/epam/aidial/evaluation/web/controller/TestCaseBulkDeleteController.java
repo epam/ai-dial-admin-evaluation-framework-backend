@@ -37,9 +37,10 @@ public class TestCaseBulkDeleteController {
     @Operation(
             summary = "Bulk delete test cases by explicit UUID list",
             description =
-                    "Deletes all test cases whose IDs are in the request body and belong to the specified dataset. "
-                            + "Uses partial-success semantics: IDs found in the dataset are deleted; absent IDs are reported "
-                            + "in `notFound` without aborting the operation. Both response lists preserve input ordering.",
+                    "Deletes all test cases whose IDs are in the request body and belong to the specified dataset."
+                            + " Uses partial-success semantics: IDs found in the dataset are deleted; absent IDs are"
+                            + " reported in `notFound` without aborting the operation. Both response lists preserve"
+                            + " input ordering.",
             requestBody =
                     @RequestBody(
                             description = "List of test case UUIDs to delete",

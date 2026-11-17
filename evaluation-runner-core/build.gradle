@@ -6,6 +6,7 @@ plugins {
     id 'io.freefair.lombok' version '9.8.2'
     id 'org.springframework.boot' version '4.1.2' apply false
     id 'com.diffplug.spotless' version '8.10.4'
+    id 'dev.openjavaformat.java-format' version '21.0.2'
 }
 
 group = 'com.epam.aidial'

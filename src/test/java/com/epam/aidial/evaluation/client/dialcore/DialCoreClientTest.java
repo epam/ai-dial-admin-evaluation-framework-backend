@@ -48,9 +48,9 @@ class DialCoreClientTest {
     @DisplayName("getModels returns parsed list")
     void getModelsReturnsParsedList() {
         String json = """
-                {"data":[{"object":"model","id":"m1","display_name":"Model 1","display_version":"v1","owner":"org",\
-                "created_at":1000,"updated_at":2000}]}
-                """;
+            {"data":[{"object":"model","id":"m1","display_name":"Model 1","display_version":"v1","owner":"org",\
+            "created_at":1000,"updated_at":2000}]}
+            """;
         RequestMatcher listModels =
                 request -> assertThat(request.getURI().getPath()).isEqualTo("/openai/models");
         server.expect(listModels).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -68,9 +68,9 @@ class DialCoreClientTest {
     @DisplayName("getApplications returns parsed list")
     void getApplicationsReturnsParsedList() {
         String json = """
-                {"data":[{"object":"application","id":"a1","display_name":"App 1","owner":"org",\
-                "created_at":1000,"updated_at":2000}]}
-                """;
+            {"data":[{"object":"application","id":"a1","display_name":"App 1","owner":"org",\
+            "created_at":1000,"updated_at":2000}]}
+            """;
         RequestMatcher listApps =
                 request -> assertThat(request.getURI().getPath()).isEqualTo("/openai/applications");
         server.expect(listApps).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -87,9 +87,9 @@ class DialCoreClientTest {
     @DisplayName("getModel returns single model")
     void getModelReturnsSingleModel() {
         String json = """
-                {"object":"model","id":"gpt-5","display_name":"GPT-5","display_version":"2025","owner":"org",\
-                "created_at":1000,"updated_at":2000}
-                """;
+            {"object":"model","id":"gpt-5","display_name":"GPT-5","display_version":"2025","owner":"org",\
+            "created_at":1000,"updated_at":2000}
+            """;
         RequestMatcher getModel =
                 request -> assertThat(request.getURI().getPath()).isEqualTo("/openai/models/gpt-5");
         server.expect(getModel).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -106,9 +106,9 @@ class DialCoreClientTest {
     @DisplayName("getApplication returns single application")
     void getApplicationReturnsSingleApplication() {
         String json = """
-                {"object":"application","id":"EntityExtractor","display_name":"Entity Extractor","owner":"org",\
-                "created_at":1000,"updated_at":2000}
-                """;
+            {"object":"application","id":"EntityExtractor","display_name":"Entity Extractor","owner":"org",\
+            "created_at":1000,"updated_at":2000}
+            """;
         RequestMatcher getApp =
                 request -> assertThat(request.getURI().getPath()).isEqualTo("/openai/applications/EntityExtractor");
         server.expect(getApp).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -124,9 +124,9 @@ class DialCoreClientTest {
     @DisplayName("getDeploymentById resolves a model deployment via the unified endpoint")
     void getDeploymentByIdResolvesModel() {
         String json = """
-                {"object":"model","id":"gpt-5","display_name":"GPT-5","display_version":"2025","owner":"org",\
-                "created_at":1000,"updated_at":2000,"interfaces":["chat","mcp"]}
-                """;
+            {"object":"model","id":"gpt-5","display_name":"GPT-5","display_version":"2025","owner":"org",\
+            "created_at":1000,"updated_at":2000,"interfaces":["chat","mcp"]}
+            """;
         RequestMatcher getDeployment =
                 request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/deployments/gpt-5");
         server.expect(getDeployment).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -143,9 +143,9 @@ class DialCoreClientTest {
     @DisplayName("getDeploymentById resolves an application deployment via the unified endpoint")
     void getDeploymentByIdResolvesApplication() {
         String json = """
-                {"object":"application","id":"EntityExtractor","display_name":"Entity Extractor","owner":"org",\
-                "created_at":1000,"updated_at":2000}
-                """;
+            {"object":"application","id":"EntityExtractor","display_name":"Entity Extractor","owner":"org",\
+            "created_at":1000,"updated_at":2000}
+            """;
         RequestMatcher getDeployment =
                 request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/deployments/EntityExtractor");
         server.expect(getDeployment).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -161,9 +161,9 @@ class DialCoreClientTest {
     @DisplayName("getDeploymentById resolves a toolset deployment via the unified endpoint")
     void getDeploymentByIdResolvesToolset() {
         String json = """
-                {"object":"toolset","id":"my-toolset","display_name":"My Toolset","owner":"org",\
-                "created_at":1000,"updated_at":2000}
-                """;
+            {"object":"toolset","id":"my-toolset","display_name":"My Toolset","owner":"org",\
+            "created_at":1000,"updated_at":2000}
+            """;
         RequestMatcher getDeployment =
                 request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/deployments/my-toolset");
         server.expect(getDeployment).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));

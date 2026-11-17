@@ -21,25 +21,25 @@ import tools.jackson.databind.ObjectMapper;
 class JsonataSpikeTest {
 
     private static final String SAMPLE_RESPONSE = """
+        {
+          "choices": [
             {
-              "choices": [
-                {
-                  "message": {
-                    "content": "Paris is the capital of France.",
-                    "role": "assistant"
-                  },
-                  "finish_reason": "stop",
-                  "index": 0
-                }
-              ],
-              "usage": {
-                "total_tokens": 25,
-                "prompt_tokens": 10,
-                "completion_tokens": 15
+              "message": {
+                "content": "Paris is the capital of France.",
+                "role": "assistant"
               },
-              "model": "gpt-4"
+              "finish_reason": "stop",
+              "index": 0
             }
-            """;
+          ],
+          "usage": {
+            "total_tokens": 25,
+            "prompt_tokens": 10,
+            "completion_tokens": 15
+          },
+          "model": "gpt-4"
+        }
+        """;
 
     private Map<String, Object> data;
 
@@ -140,8 +140,8 @@ class JsonataSpikeTest {
     void evaluate_jacksonParsedData_compatible() throws Exception {
         // Validates the full pipeline: JSON string → ObjectMapper → JSONata evaluate
         String json = """
-                {"score": 0.95, "labels": ["a", "b"], "nested": {"x": true}}
-                """;
+            {"score": 0.95, "labels": ["a", "b"], "nested": {"x": true}}
+            """;
         Map<String, Object> parsed = new ObjectMapper().readValue(json, new TypeReference<>() {});
 
         assertThat(jsonata("score").evaluate(parsed)).isEqualTo(0.95);

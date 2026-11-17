@@ -223,7 +223,8 @@ public class TestSuiteRequestValidator {
     public void validateTestCaseOverallScore(TestSuiteRequestDto dto) {
         if (dto.getTestCaseOverallScore() instanceof CustomFunction) {
             throw new ValidationException(
-                    "testCaseOverallScore must be mean or weighted_mean; custom_function is only valid for overallScore");
+                    "testCaseOverallScore must be mean or weighted_mean; custom_function is only valid for"
+                            + " overallScore");
         }
     }
 

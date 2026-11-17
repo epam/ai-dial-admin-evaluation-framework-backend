@@ -80,9 +80,8 @@ public class SuitePassRateService {
         }
 
         final Map<UUID, RunPassCounts> countsByRun = analyticsTransactionTemplate.execute(status -> readCounts(runIds));
-        final Map<UUID, Double> thresholds = countsByRun.isEmpty()
-                ? Map.of()
-                : testSuiteRunService.getThresholdsByRunIds(countsByRun.keySet());
+        final Map<UUID, Double> thresholds =
+                countsByRun.isEmpty() ? Map.of() : testSuiteRunService.getThresholdsByRunIds(countsByRun.keySet());
 
         return buildSummary(completedRunsBySuite, countsByRun, thresholds);
     }

@@ -96,12 +96,12 @@ public class DatasetFileController {
                                 @ExampleObject(
                                         name = "full",
                                         description = "Dataset with two uploaded files.",
-                                        value = "["
-                                                + "{\"path\":\"@ef/datasets/22222222-2222-2222-2222-222222222222/data.csv\","
-                                                + "\"filename\":\"data.csv\",\"contentType\":\"text/csv\",\"sizeBytes\":128},"
-                                                + "{\"path\":\"@ef/datasets/22222222-2222-2222-2222-222222222222/report.pdf\","
-                                                + "\"filename\":\"report.pdf\","
-                                                + "\"contentType\":\"application/pdf\",\"sizeBytes\":2048576}]")
+                                        value =
+                                                "[{\"path\":\"@ef/datasets/22222222-2222-2222-2222-222222222222/data.csv\","
+                                                        + "\"filename\":\"data.csv\",\"contentType\":\"text/csv\",\"sizeBytes\":128},"
+                                                        + "{\"path\":\"@ef/datasets/22222222-2222-2222-2222-222222222222/report.pdf\","
+                                                        + "\"filename\":\"report.pdf\","
+                                                        + "\"contentType\":\"application/pdf\",\"sizeBytes\":2048576}]")
                             }))
     @ApiResponse(responseCode = "404", description = "Dataset not found")
     public List<FileMetadataDto> list(@Parameter(description = "Dataset ID") @PathVariable UUID datasetId) {

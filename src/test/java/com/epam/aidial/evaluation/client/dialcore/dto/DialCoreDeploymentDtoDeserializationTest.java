@@ -20,53 +20,53 @@ class DialCoreDeploymentDtoDeserializationTest {
     @DisplayName("GET /v1/deployments array dispatches on the object discriminator to the matching subtype")
     void deploymentsArrayDispatchesToMatchingSubtype() {
         String json = """
-                [
-                  {
-                    "object": "model",
-                    "id": "m1",
-                    "display_name": "Model 1",
-                    "created_at": 1000,
-                    "description_keywords": ["fast", "cheap"],
-                    "icon_url": "https://icons.example/model.png",
-                    "max_retry_attempts": 3,
-                    "input_attachment_types": ["image/png"],
-                    "interfaces": ["chat", "mcp"]
-                  },
-                  {
-                    "object": "application",
-                    "id": "a1",
-                    "display_name": "App 1",
-                    "created_at": 2000,
-                    "description_keywords": ["nlp"],
-                    "icon_url": "https://icons.example/app.png",
-                    "max_retry_attempts": 2,
-                    "input_attachment_types": ["text/plain"],
-                    "interfaces": ["chat"]
-                  },
-                  {
-                    "object": "toolset",
-                    "id": "t1",
-                    "display_name": "Toolset 1",
-                    "created_at": 3000,
-                    "description_keywords": ["search"],
-                    "icon_url": "https://icons.example/toolset.png",
-                    "max_retry_attempts": 1,
-                    "input_attachment_types": [],
-                    "interfaces": ["mcp"]
-                  },
-                  {
-                    "object": "something-new",
-                    "id": "u1",
-                    "display_name": "Unknown 1",
-                    "created_at": 4000,
-                    "description_keywords": ["mystery"],
-                    "icon_url": "https://icons.example/unknown.png",
-                    "max_retry_attempts": 0,
-                    "input_attachment_types": ["application/pdf"],
-                    "interfaces": ["chat"]
-                  }
-                ]
-                """;
+            [
+              {
+                "object": "model",
+                "id": "m1",
+                "display_name": "Model 1",
+                "created_at": 1000,
+                "description_keywords": ["fast", "cheap"],
+                "icon_url": "https://icons.example/model.png",
+                "max_retry_attempts": 3,
+                "input_attachment_types": ["image/png"],
+                "interfaces": ["chat", "mcp"]
+              },
+              {
+                "object": "application",
+                "id": "a1",
+                "display_name": "App 1",
+                "created_at": 2000,
+                "description_keywords": ["nlp"],
+                "icon_url": "https://icons.example/app.png",
+                "max_retry_attempts": 2,
+                "input_attachment_types": ["text/plain"],
+                "interfaces": ["chat"]
+              },
+              {
+                "object": "toolset",
+                "id": "t1",
+                "display_name": "Toolset 1",
+                "created_at": 3000,
+                "description_keywords": ["search"],
+                "icon_url": "https://icons.example/toolset.png",
+                "max_retry_attempts": 1,
+                "input_attachment_types": [],
+                "interfaces": ["mcp"]
+              },
+              {
+                "object": "something-new",
+                "id": "u1",
+                "display_name": "Unknown 1",
+                "created_at": 4000,
+                "description_keywords": ["mystery"],
+                "icon_url": "https://icons.example/unknown.png",
+                "max_retry_attempts": 0,
+                "input_attachment_types": ["application/pdf"],
+                "interfaces": ["chat"]
+              }
+            ]
+            """;
 
         List<DialCoreDeploymentDto> deployments = objectMapper.readValue(json, DEPLOYMENT_LIST_TYPE);
 
@@ -96,42 +96,42 @@ class DialCoreDeploymentDtoDeserializationTest {
     @DisplayName("subtype-specific fields bind for model, application, and toolset entries")
     void subtypeSpecificFieldsBind() {
         String json = """
-                [
-                  {
-                    "object": "model",
-                    "id": "m1",
-                    "lifecycle_status": "GA",
-                    "capabilities": {
-                      "completion": true,
-                      "chat_completion": true,
-                      "embeddings": false
-                    },
-                    "limits": {
-                      "max_total_tokens": 8192,
-                      "max_completion_tokens": 4096
-                    },
-                    "pricing": {
-                      "unit": "token",
-                      "prompt": {"rate": "0.01"},
-                      "completion": {"rate":"0.02"}
-                    }
-                  },
-                  {
-                    "object": "application",
-                    "id": "a1",
-                    "application_properties": {
-                      "temperature": 0.5
-                    },
-                    "application_type_schema_id": "https://schema.example/app-type"
-                  },
-                  {
-                    "object": "toolset",
-                    "id": "t1",
-                    "transport": "HTTP",
-                    "allowed_tools": ["search", "calculate"]
-                  }
-                ]
-                """;
+            [
+              {
+                "object": "model",
+                "id": "m1",
+                "lifecycle_status": "GA",
+                "capabilities": {
+                  "completion": true,
+                  "chat_completion": true,
+                  "embeddings": false
+                },
+                "limits": {
+                  "max_total_tokens": 8192,
+                  "max_completion_tokens": 4096
+                },
+                "pricing": {
+                  "unit": "token",
+                  "prompt": {"rate": "0.01"},
+                  "completion": {"rate":"0.02"}
+                }
+              },
+              {
+                "object": "application",
+                "id": "a1",
+                "application_properties": {
+                  "temperature": 0.5
+                },
+                "application_type_schema_id": "https://schema.example/app-type"
+              },
+              {
+                "object": "toolset",
+                "id": "t1",
+                "transport": "HTTP",
+                "allowed_tools": ["search", "calculate"]
+              }
+            ]
+            """;
 
         List<DialCoreDeploymentDto> deployments = objectMapper.readValue(json, DEPLOYMENT_LIST_TYPE);
 
@@ -159,14 +159,14 @@ class DialCoreDeploymentDtoDeserializationTest {
     @DisplayName("single-object payload deserializes directly to the concrete subtype named by the caller")
     void singleObjectPayloadDeserializesToConcreteSubtype() {
         String json = """
-                {
-                  "object": "model",
-                  "id": "gpt-5",
-                  "display_name": "GPT-5",
-                  "display_version": "2025-08-07",
-                  "owner": "organization-owner"
-                }
-                """;
+            {
+              "object": "model",
+              "id": "gpt-5",
+              "display_name": "GPT-5",
+              "display_version": "2025-08-07",
+              "owner": "organization-owner"
+            }
+            """;
 
         DialCoreModelDto model = objectMapper.readValue(json, DialCoreModelDto.class);
 

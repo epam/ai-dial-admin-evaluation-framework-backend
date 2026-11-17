@@ -202,8 +202,7 @@ class TestSuiteServiceTest {
                         .valid(true)
                         .warnings(List.of())
                         .build());
-        when(suiteValidationService.withScoreReferences(any(), any(), any()))
-                .thenAnswer(inv -> inv.getArgument(0));
+        when(suiteValidationService.withScoreReferences(any(), any(), any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.create(dto, null);
 

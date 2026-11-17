@@ -24,8 +24,8 @@ class CsvImportPropertiesTest {
     static class TestConfiguration {}
 
     @Test
-    @DisplayName(
-            "binds the real application.yml zip defaults: max-entries 1000, max-total-uncompressed-size 1GB, max-manifest-size 1MB")
+    @DisplayName("binds the real application.yml zip defaults: max-entries 1000, max-total-uncompressed-size 1GB,"
+            + " max-manifest-size 1MB")
     void applicationYmlDefaults_bindZipMaxEntriesAndMaxTotalUncompressedSize() throws Exception {
         final List<PropertySource<?>> applicationYml =
                 new YamlPropertySourceLoader().load("application", new ClassPathResource("application.yml"));

@@ -1295,8 +1295,7 @@ class TryItOutServiceTest {
         }
 
         @Test
-        @DisplayName(
-                "preserves an explicit JSON null for a failed column extraction in the serialized " + "response body")
+        @DisplayName("preserves an explicit JSON null for a failed column extraction in the serialized response body")
         void shouldPreserveExplicitNullForFailedExtractionInSerializedResponse() {
             setUpSingleRequestPlanWithColumns();
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -2138,8 +2137,7 @@ class TryItOutServiceTest {
         }
 
         @Test
-        @DisplayName(
-                "threads a streaming request's assembled-document extraction into the next chain request's " + "frame")
+        @DisplayName("threads a streaming request's assembled-document extraction into the next chain request's frame")
         void shouldThreadStreamingExtractionIntoNextRequestsFrame() {
             setUpDeploymentSuite();
             RequestExecutionSpec spec0 =

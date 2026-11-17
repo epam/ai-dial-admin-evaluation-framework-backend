@@ -82,7 +82,8 @@ class RequestBodyDtoSerializationTest {
         @DisplayName("A String value in content fails deserialization (content is Map-typed, not String)")
         void stringValueInContentFailsDeserialization() {
             String json = """
-                    {"contentType":"application/json","content":"{\\"model\\": \\"gpt-4\\"}"}""";
+                {"contentType":"application/json","content":"{\\"model\\": \\"gpt-4\\"}"}\
+                """;
 
             assertThatThrownBy(() -> objectMapper.readValue(json, RequestBodyDto.class))
                     .isInstanceOf(JacksonException.class);
@@ -169,7 +170,8 @@ class RequestBodyDtoSerializationTest {
         @DisplayName("unknown contentType fails with InvalidTypeIdException")
         void unknownContentTypeFailsForRequestBody() {
             String json = """
-                    {"contentType":"text/plain","content":"raw text"}""";
+                {"contentType":"text/plain","content":"raw text"}\
+                """;
 
             assertThatThrownBy(() -> objectMapper.readValue(json, RequestBodyDto.class))
                     .isInstanceOf(InvalidTypeIdException.class)
@@ -249,7 +251,8 @@ class RequestBodyDtoSerializationTest {
         @DisplayName("unknown contentType fails with InvalidTypeIdException")
         void unknownContentTypeFailsForRequestBodySchema() {
             String json = """
-                    {"contentType":"text/plain","schema":{}}""";
+                {"contentType":"text/plain","schema":{}}\
+                """;
 
             assertThatThrownBy(() -> objectMapper.readValue(json, RequestBodySchemaDto.class))
                     .isInstanceOf(InvalidTypeIdException.class)
@@ -329,7 +332,8 @@ class RequestBodyDtoSerializationTest {
         @DisplayName("unknown contentType fails with InvalidTypeIdException")
         void unknownContentTypeFailsForResolvedBody() {
             String json = """
-                    {"contentType":"text/plain","content":"raw"}""";
+                {"contentType":"text/plain","content":"raw"}\
+                """;
 
             assertThatThrownBy(() -> objectMapper.readValue(json, ResolvedBodyDto.class))
                     .isInstanceOf(InvalidTypeIdException.class)

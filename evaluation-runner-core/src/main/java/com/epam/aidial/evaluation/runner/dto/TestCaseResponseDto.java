@@ -36,8 +36,8 @@ public class TestCaseResponseDto {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @Schema(
-            description =
-                    "Structured validation warnings (fieldName, path, message, code). Omitted when includeWarnings=false.")
+            description = "Structured validation warnings (fieldName, path, message, code). Omitted when"
+                    + " includeWarnings=false.")
     private List<ValidationWarningDto> validationWarnings;
 
     @Schema(example = "1704067200000")

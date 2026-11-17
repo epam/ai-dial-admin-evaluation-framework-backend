@@ -42,7 +42,6 @@ public final class EvalScoreFixtures {
     /** A test case's row for one run and computation, with a fresh test case id. */
     public static TestCaseEvalScore row(UUID runId, UUID computationId, ExecutionStatus status, Boolean passed) {
         final boolean scored = status == ExecutionStatus.SUCCESS && passed != null;
-        return scoreRow(
-                runId, UUID.randomUUID(), "case", computationId, scored ? 0.5 : null, 1_000L, status, passed);
+        return scoreRow(runId, UUID.randomUUID(), "case", computationId, scored ? 0.5 : null, 1_000L, status, passed);
     }
 }

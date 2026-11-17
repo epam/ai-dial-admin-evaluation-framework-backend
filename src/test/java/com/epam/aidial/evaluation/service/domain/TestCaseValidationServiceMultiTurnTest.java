@@ -221,7 +221,8 @@ class TestCaseValidationServiceMultiTurnTest {
 
     @Test
     @DisplayName(
-            "a required shared field misplaced into a turn yields a single INVALID_SCOPE warning, no required-missing twin")
+            "a required shared field misplaced into a turn yields a single INVALID_SCOPE warning, no required-missing"
+                    + " twin")
     void sharedRequiredFieldMisplacedIntoTurn() {
         // "system" is shared+required but is placed in the turn instead of data; data omits it entirely.
         ValidationResult r = run(Map.of(), List.of(Map.of("prompt", "q0", "system", "s")));
@@ -237,7 +238,8 @@ class TestCaseValidationServiceMultiTurnTest {
 
     @Test
     @DisplayName(
-            "a required per-turn field misplaced into data yields a single INVALID_SCOPE warning, no required-missing twin")
+            "a required per-turn field misplaced into data yields a single INVALID_SCOPE warning, no required-missing"
+                    + " twin")
     void perTurnRequiredFieldMisplacedIntoData() {
         // "prompt" is per-turn+required but is placed in data instead of the turn; the turn omits it.
         ValidationResult r = run(Map.of("system", "s", "prompt", "p1"), List.of(Map.of()));

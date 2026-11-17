@@ -50,20 +50,21 @@ public class AdasCostQueryBuilder {
     private static final String OTHER_RUN_ID = "other";
 
     private static final String AVG_COST_PER_TEST_CASE_SQL_TEMPLATE = """
-            WITH tagged AS (
-              SELECT total_price, array_join(split_string("usage_request_baggage.baggage", ',')) AS testcase_tag
-              FROM dial_usage_log
-              WHERE contains("usage_request_baggage.baggage", '%s')
-                AND contains("usage_request_baggage.baggage", '%s')
-            ),
-            per_testcase AS (
-              SELECT testcase_tag, sum(total_price) AS case_cost
-              FROM tagged
-              WHERE starts_with(testcase_tag, '%s')
-              GROUP BY testcase_tag
-            )
-            SELECT avg(case_cost) AS avg_cost, count(*) AS count
-            FROM per_testcase""";
+        WITH tagged AS (
+          SELECT total_price, array_join(split_string("usage_request_baggage.baggage", ',')) AS testcase_tag
+          FROM dial_usage_log
+          WHERE contains("usage_request_baggage.baggage", '%s')
+            AND contains("usage_request_baggage.baggage", '%s')
+        ),
+        per_testcase AS (
+          SELECT testcase_tag, sum(total_price) AS case_cost
+          FROM tagged
+          WHERE starts_with(testcase_tag, '%s')
+          GROUP BY testcase_tag
+        )
+        SELECT avg(case_cost) AS avg_cost, count(*) AS count
+        FROM per_testcase\
+        """;
 
     /**
      * Builds the raw SQL query for {@link com.epam.aidial.evaluation.client.dialadas.DialAdasClient#executeSql}

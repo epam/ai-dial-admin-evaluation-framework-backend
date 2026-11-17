@@ -663,8 +663,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         createRunAndAwaitTerminal(suite.getId(), 1, "B Run");
 
         ResponseEntity<PageResponseDto<TestSuiteRunResponseDto>> response = restTemplate.exchange(
-                apiUrl("/test-suite-runs?page=0&size=100&sort=testRunName,asc" + "&filter=testSuiteId:eq:"
-                        + suite.getId()),
+                apiUrl("/test-suite-runs?page=0&size=100&sort=testRunName,asc&filter=testSuiteId:eq:" + suite.getId()),
                 HttpMethod.GET,
                 null,
                 new ParameterizedTypeReference<>() {});
@@ -966,8 +965,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName(
-            "Should set startedAt to completedAt for a PENDING run and keep startedAt of a RUNNING run on reconciliation")
+    @DisplayName("Should set startedAt to completedAt for a PENDING run and keep startedAt of a RUNNING run on"
+            + " reconciliation")
     void shouldSetStartDateForNeverStartedRunOnReconciliation() {
         TestSuiteResponseDto suite = createTestSuite("Suite For Recon Start Dates");
         UUID pendingId = metaTestDataHelper
@@ -1033,8 +1032,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
         // Create TSMD with input binding referencing extracted column
         String inputBindings = """
-                [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
-                """;
+            [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
+            """;
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 suite.getId(), declarationId, versionId, "Accuracy", "[]", inputBindings.trim());
 
@@ -1162,13 +1161,13 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
         // Create TSMD with bindings: testcase-column (tags, config) + constant + response column
         String inputBindings = """
-                [
-                  {"property": "actual", "source": {"$type": "Response", "columnName": "answer"}},
-                  {"property": "tags_input", "source": {"$type": "TestCase", "columnName": "tags"}},
-                  {"property": "config_input", "source": {"$type": "TestCase", "columnName": "config"}},
-                  {"property": "threshold", "source": {"$type": "Constant", "value": 0.8}}
-                ]
-                """;
+            [
+              {"property": "actual", "source": {"$type": "Response", "columnName": "answer"}},
+              {"property": "tags_input", "source": {"$type": "TestCase", "columnName": "tags"}},
+              {"property": "config_input", "source": {"$type": "TestCase", "columnName": "config"}},
+              {"property": "threshold", "source": {"$type": "Constant", "value": 0.8}}
+            ]
+            """;
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 suite.getId(), declarationId, versionId, "Accuracy", "[]", inputBindings.trim());
 
@@ -1299,8 +1298,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         // TSMD binds the dataset's probabilityHint column into the metric input; the mock echoes it
         // back as the metric's "probability" output, simulating a classifier scoring each test case.
         String inputBindings = """
-                [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
-                """;
+            [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
+            """;
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 suite.getId(),
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),
@@ -1423,8 +1422,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                 "{\"properties\":{\"probability\":{\"type\":\"number\"}}}");
 
         String inputBindings = """
-                [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
-                """;
+            [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
+            """;
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 suite.getId(),
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),
@@ -1650,8 +1649,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                 "{\"properties\":{\"probability\":{\"type\":\"number\"}}}");
 
         String inputBindings = """
-                [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
-                """;
+            [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
+            """;
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 suite.getId(),
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),
@@ -1790,7 +1789,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                         "value"))));
     }
 
-        private TestSuiteResponseDto createTestSuiteWithMetricAndResponseLabel(
+    private TestSuiteResponseDto createTestSuiteWithMetricAndResponseLabel(
             String name, OverallScoreDefinition overallScore, OverallScoreDefinition testCaseOverallScore) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name)
@@ -1861,8 +1860,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                 "{}",
                 "{\"properties\":{\"probability\":{\"type\":\"number\"}}}");
         String inputBindings = """
-                [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
-                """;
+            [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
+            """;
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 suite.getId(),
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),

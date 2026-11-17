@@ -59,18 +59,18 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
         metaTestDataHelper.createTestSuite("sq-exec-" + UUID.randomUUID());
 
         String json = """
-                {
-                  "entity": "test_suites",
-                  "mode": "row",
-                  "filter": { "op": "eq", "args": [
-                      { "type": "field", "name": "name" },
-                      { "type": "value", "value_type": "string", "value": "%s" } ] },
-                  "select": [
-                      { "expr": { "type": "field", "name": "id" } },
-                      { "expr": { "type": "field", "name": "name" } } ],
-                  "page": { "type": "offset", "offset": 0, "limit": 10, "include_total": true }
-                }
-                """.formatted(name);
+            {
+              "entity": "test_suites",
+              "mode": "row",
+              "filter": { "op": "eq", "args": [
+                  { "type": "field", "name": "name" },
+                  { "type": "value", "value_type": "string", "value": "%s" } ] },
+              "select": [
+                  { "expr": { "type": "field", "name": "id" } },
+                  { "expr": { "type": "field", "name": "name" } } ],
+              "page": { "type": "offset", "offset": 0, "limit": 10, "include_total": true }
+            }
+            """.formatted(name);
 
         ResponseEntity<StructuredQueryResultDto> response = post(json);
 
@@ -97,20 +97,20 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
                 suiteId, runId, computationId, "case-c", ExecutionStatus.FAILED.name(), 300L, 3_000L);
 
         String json = """
-                {
-                  "entity": "eval_summaries",
-                  "mode": "aggregate",
-                  "filter": { "op": "eq", "args": [
-                      { "type": "field", "name": "test_suite_run_id" },
-                      { "type": "value", "value_type": "uuid", "value": "%s" } ] },
-                  "group_by": ["execution_status"],
-                  "select": [
-                      { "expr": { "type": "field", "name": "execution_status" } },
-                      { "expr": { "type": "fn", "name": "count", "args": [] }, "as": "total" } ],
-                  "sort": [ { "field": "execution_status", "dir": "asc" } ],
-                  "page": { "type": "offset", "offset": 0, "limit": 10 }
-                }
-                """.formatted(runId);
+            {
+              "entity": "eval_summaries",
+              "mode": "aggregate",
+              "filter": { "op": "eq", "args": [
+                  { "type": "field", "name": "test_suite_run_id" },
+                  { "type": "value", "value_type": "uuid", "value": "%s" } ] },
+              "group_by": ["execution_status"],
+              "select": [
+                  { "expr": { "type": "field", "name": "execution_status" } },
+                  { "expr": { "type": "fn", "name": "count", "args": [] }, "as": "total" } ],
+              "sort": [ { "field": "execution_status", "dir": "asc" } ],
+              "page": { "type": "offset", "offset": 0, "limit": 10 }
+            }
+            """.formatted(runId);
 
         ResponseEntity<StructuredQueryResultDto> response = post(json);
 
@@ -134,18 +134,18 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
                 suiteId, runId, UUID.randomUUID(), "case-a", ExecutionStatus.SUCCESS.name(), 100L, 1_000L);
 
         String json = """
-                {
-                  "entity": "eval_summaries",
-                  "mode": "row",
-                  "filter": { "op": "eq", "args": [
-                      { "type": "field", "name": "test_suite_run_id" },
-                      { "type": "value", "value_type": "uuid", "value": "%s" } ] },
-                  "select": [
-                      { "expr": { "type": "field", "name": "test_case_data" } },
-                      { "expr": { "type": "field", "name": "metric_values" } } ],
-                  "page": { "type": "offset", "offset": 0, "limit": 10 }
-                }
-                """.formatted(runId);
+            {
+              "entity": "eval_summaries",
+              "mode": "row",
+              "filter": { "op": "eq", "args": [
+                  { "type": "field", "name": "test_suite_run_id" },
+                  { "type": "value", "value_type": "uuid", "value": "%s" } ] },
+              "select": [
+                  { "expr": { "type": "field", "name": "test_case_data" } },
+                  { "expr": { "type": "field", "name": "metric_values" } } ],
+              "page": { "type": "offset", "offset": 0, "limit": 10 }
+            }
+            """.formatted(runId);
 
         ResponseEntity<StructuredQueryResultDto> response = post(json);
 
@@ -176,18 +176,18 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
                 "{\"Exact Match1\":{\"exact_match\":1}}");
 
         String json = """
-                {
-                  "entity": "eval_summaries",
-                  "mode": "row",
-                  "filter": { "op": "eq", "args": [
-                      { "type": "field", "name": "test_suite_run_id" },
-                      { "type": "value", "value_type": "uuid", "value": "%s" } ] },
-                  "select": [
-                      { "expr": { "type": "field", "name": "data::question" } },
-                      { "expr": { "type": "field", "name": "metric::Exact Match1::exact_match" } } ],
-                  "page": { "type": "offset", "offset": 0, "limit": 10 }
-                }
-                """.formatted(runId);
+            {
+              "entity": "eval_summaries",
+              "mode": "row",
+              "filter": { "op": "eq", "args": [
+                  { "type": "field", "name": "test_suite_run_id" },
+                  { "type": "value", "value_type": "uuid", "value": "%s" } ] },
+              "select": [
+                  { "expr": { "type": "field", "name": "data::question" } },
+                  { "expr": { "type": "field", "name": "metric::Exact Match1::exact_match" } } ],
+              "page": { "type": "offset", "offset": 0, "limit": 10 }
+            }
+            """.formatted(runId);
 
         ResponseEntity<StructuredQueryResultDto> response = post(json);
 
@@ -242,24 +242,24 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
         // GROUP BY must reference the output column, not re-inline the expression (which would emit
         // fresh JSONB-key bind parameters and trip "must appear in the GROUP BY clause").
         String json = """
-                {
-                  "entity": "eval_summaries",
-                  "mode": "aggregate",
-                  "filter": { "op": "eq", "args": [
-                      { "type": "field", "name": "test_suite_run_id" },
-                      { "type": "value", "value_type": "uuid", "value": "%s" } ] },
-                  "group_by": ["bucket"],
-                  "select": [
-                      { "expr": { "type": "fn", "name": "width_bucket", "args": [
-                          { "type": "field", "name": "metric::Accuracy::score" },
-                          { "type": "value", "value_type": "decimal", "value": "0" },
-                          { "type": "value", "value_type": "decimal", "value": "1" },
-                          { "type": "value", "value_type": "integer", "value": "5" } ] }, "as": "bucket" },
-                      { "expr": { "type": "fn", "name": "count", "args": [] }, "as": "cnt" } ],
-                  "sort": [ { "field": "bucket", "dir": "asc" } ],
-                  "page": { "type": "offset", "offset": 0, "limit": 25 }
-                }
-                """.formatted(runId);
+            {
+              "entity": "eval_summaries",
+              "mode": "aggregate",
+              "filter": { "op": "eq", "args": [
+                  { "type": "field", "name": "test_suite_run_id" },
+                  { "type": "value", "value_type": "uuid", "value": "%s" } ] },
+              "group_by": ["bucket"],
+              "select": [
+                  { "expr": { "type": "fn", "name": "width_bucket", "args": [
+                      { "type": "field", "name": "metric::Accuracy::score" },
+                      { "type": "value", "value_type": "decimal", "value": "0" },
+                      { "type": "value", "value_type": "decimal", "value": "1" },
+                      { "type": "value", "value_type": "integer", "value": "5" } ] }, "as": "bucket" },
+                  { "expr": { "type": "fn", "name": "count", "args": [] }, "as": "cnt" } ],
+              "sort": [ { "field": "bucket", "dir": "asc" } ],
+              "page": { "type": "offset", "offset": 0, "limit": 25 }
+            }
+            """.formatted(runId);
 
         ResponseEntity<StructuredQueryResultDto> response = post(json);
 
@@ -285,19 +285,19 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
                 suiteId, runId, UUID.randomUUID(), "case-a", ExecutionStatus.SUCCESS.name(), 100L, 1_000L);
 
         String json = """
-                {
-                  "entity": "eval_summaries",
-                  "mode": "aggregate",
-                  "filter": { "op": "eq", "args": [
-                      { "type": "field", "name": "test_suite_run_id" },
-                      { "type": "value", "value_type": "uuid", "value": "%s" } ] },
-                  "group_by": ["test_suite_run_id"],
-                  "select": [
-                      { "expr": { "type": "fn", "name": "avg", "args": [
-                          { "type": "field", "name": "metricInfo::Regex Match1" } ] }, "as": "avg" } ],
-                  "page": { "type": "offset", "offset": 0, "limit": 25, "include_total": true }
-                }
-                """.formatted(runId);
+            {
+              "entity": "eval_summaries",
+              "mode": "aggregate",
+              "filter": { "op": "eq", "args": [
+                  { "type": "field", "name": "test_suite_run_id" },
+                  { "type": "value", "value_type": "uuid", "value": "%s" } ] },
+              "group_by": ["test_suite_run_id"],
+              "select": [
+                  { "expr": { "type": "fn", "name": "avg", "args": [
+                      { "type": "field", "name": "metricInfo::Regex Match1" } ] }, "as": "avg" } ],
+              "page": { "type": "offset", "offset": 0, "limit": 25, "include_total": true }
+            }
+            """.formatted(runId);
 
         ResponseEntity<String> response = restTemplate.postForEntity(executeUrl(), jsonEntity(json), String.class);
 
@@ -317,34 +317,34 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
         seedAllScores(suiteId, UUID.randomUUID(), UUID.randomUUID(), 500L);
 
         String json = """
-                {
-                  "entity": "metric_score_results",
-                  "mode": "row",
-                  "filter": { "op": "in", "args": [
-                      { "type": "field", "name": "test_suite_run_id" },
-                      { "type": "subquery", "query": {
-                          "entity": "metric_score_results",
-                          "mode": "aggregate",
-                          "filter": { "op": "eq", "args": [
-                              { "type": "field", "name": "test_suite_id" },
-                              { "type": "value", "value_type": "uuid", "value": "%s" } ] },
-                          "select": [
-                              { "expr": { "type": "field", "name": "test_suite_run_id" }, "as": "test_suite_run_id" },
-                              { "expr": { "type": "fn", "name": "max", "args": [
-                                  { "type": "field", "name": "computed_at_ms" } ] }, "as": "recency" } ],
-                          "group_by": ["test_suite_run_id"],
-                          "sort": [ { "field": "recency", "dir": "desc" } ],
-                          "page": { "type": "offset", "offset": 0, "limit": 2 }
-                      } } ] },
-                  "select": [
-                      { "expr": { "type": "field", "name": "test_suite_run_id" } },
-                      { "expr": { "type": "field", "name": "metric_score_name" } },
-                      { "expr": { "type": "field", "name": "metric_name" } },
-                      { "expr": { "type": "field", "name": "value" } } ],
-                  "sort": [ { "field": "computed_at_ms", "dir": "desc" } ],
-                  "page": { "type": "offset", "offset": 0, "limit": 100 }
-                }
-                """.formatted(suiteId);
+            {
+              "entity": "metric_score_results",
+              "mode": "row",
+              "filter": { "op": "in", "args": [
+                  { "type": "field", "name": "test_suite_run_id" },
+                  { "type": "subquery", "query": {
+                      "entity": "metric_score_results",
+                      "mode": "aggregate",
+                      "filter": { "op": "eq", "args": [
+                          { "type": "field", "name": "test_suite_id" },
+                          { "type": "value", "value_type": "uuid", "value": "%s" } ] },
+                      "select": [
+                          { "expr": { "type": "field", "name": "test_suite_run_id" }, "as": "test_suite_run_id" },
+                          { "expr": { "type": "fn", "name": "max", "args": [
+                              { "type": "field", "name": "computed_at_ms" } ] }, "as": "recency" } ],
+                      "group_by": ["test_suite_run_id"],
+                      "sort": [ { "field": "recency", "dir": "desc" } ],
+                      "page": { "type": "offset", "offset": 0, "limit": 2 }
+                  } } ] },
+              "select": [
+                  { "expr": { "type": "field", "name": "test_suite_run_id" } },
+                  { "expr": { "type": "field", "name": "metric_score_name" } },
+                  { "expr": { "type": "field", "name": "metric_name" } },
+                  { "expr": { "type": "field", "name": "value" } } ],
+              "sort": [ { "field": "computed_at_ms", "dir": "desc" } ],
+              "page": { "type": "offset", "offset": 0, "limit": 100 }
+            }
+            """.formatted(suiteId);
 
         ResponseEntity<StructuredQueryResultDto> response = post(json);
 
@@ -391,12 +391,12 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
     @DisplayName("rejects a query for an entity that is not queryable with HTTP 400")
     void rejectsUnsupportedEntity() {
         String json = """
-                {
-                  "entity": "datasets",
-                  "mode": "row",
-                  "page": { "type": "offset", "offset": 0, "limit": 10 }
-                }
-                """;
+            {
+              "entity": "datasets",
+              "mode": "row",
+              "page": { "type": "offset", "offset": 0, "limit": 10 }
+            }
+            """;
 
         ResponseEntity<String> response = restTemplate.postForEntity(executeUrl(), jsonEntity(json), String.class);
 
@@ -413,18 +413,18 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
         metaTestDataHelper.createTestSuite("sq-depref-exec-other-" + UUID.randomUUID());
 
         String json = """
-                {
-                  "entity": "test_suites",
-                  "mode": "row",
-                  "filter": { "op": "eq", "args": [
-                      { "type": "field", "name": "deployment_ref::name" },
-                      { "type": "value", "value_type": "string", "value": "Exec App" } ] },
-                  "select": [
-                      { "expr": { "type": "field", "name": "id" } },
-                      { "expr": { "type": "field", "name": "deployment_ref::name" } } ],
-                  "page": { "type": "offset", "offset": 0, "limit": 10, "include_total": true }
-                }
-                """;
+            {
+              "entity": "test_suites",
+              "mode": "row",
+              "filter": { "op": "eq", "args": [
+                  { "type": "field", "name": "deployment_ref::name" },
+                  { "type": "value", "value_type": "string", "value": "Exec App" } ] },
+              "select": [
+                  { "expr": { "type": "field", "name": "id" } },
+                  { "expr": { "type": "field", "name": "deployment_ref::name" } } ],
+              "page": { "type": "offset", "offset": 0, "limit": 10, "include_total": true }
+            }
+            """;
 
         ResponseEntity<StructuredQueryResultDto> response = post(json);
 

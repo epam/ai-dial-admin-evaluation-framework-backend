@@ -108,8 +108,8 @@ public class TestSuiteMetricDefinitionController {
     @GetMapping(value = "/aggregated", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "List aggregated metric definitions",
-            description =
-                    "Lists all metric definitions for a test suite enriched with metric declaration and version details")
+            description = "Lists all metric definitions for a test suite enriched with metric declaration and version"
+                    + " details")
     @ApiResponse(
             responseCode = "200",
             description = "Aggregated metric definitions retrieved",

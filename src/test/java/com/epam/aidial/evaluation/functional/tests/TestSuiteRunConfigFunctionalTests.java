@@ -51,7 +51,10 @@ public abstract class TestSuiteRunConfigFunctionalTests extends BaseFunctionalTe
                 .path("examples");
 
         assertThat(examples.propertyNames()).contains("minimal");
-        assertThat(examples.path("minimal").path("value").path("maxConcurrencyLevel").asInt())
+        assertThat(examples.path("minimal")
+                        .path("value")
+                        .path("maxConcurrencyLevel")
+                        .asInt())
                 .isEqualTo(5);
     }
 }

@@ -97,8 +97,8 @@ public abstract class LegacyDisabledTestCaseIdsFunctionalTests extends BaseFunct
     }
 
     @Test
-    @DisplayName(
-            "run creation succeeds when testCaseFilter matches only stale-listed cases — no 409 from disabledTestCaseIds")
+    @DisplayName("run creation succeeds when testCaseFilter matches only stale-listed cases — no 409 from"
+            + " disabledTestCaseIds")
     void filterMatchingOnlyStaleDisabledCasesStillCreatesRun() {
         TestSuiteResponseDto suite = createSuiteBoundToDataset("Legacy Disabled Filter Suite");
         TestCaseResponseDto target = createTestCase(suite.getId(), "Target", "target-value");

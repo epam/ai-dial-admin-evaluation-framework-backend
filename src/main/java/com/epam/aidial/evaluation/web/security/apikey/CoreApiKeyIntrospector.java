@@ -83,13 +83,15 @@ public class CoreApiKeyIntrospector {
                 throw new IllegalStateException(
                         "DIAL Core " + USER_INFO_PATH + " responded with " + e.getStatusCode() + " at "
                                 + properties.getCoreUrl()
-                                + ". Disable the startup probe via config.rest.security.api-key.startup-probe=false to skip this check.",
+                                + ". Disable the startup probe via config.rest.security.api-key.startup-probe=false to"
+                                + " skip this check.",
                         e);
             }
         } catch (ResourceAccessException e) {
             throw new IllegalStateException(
                     "DIAL Core " + USER_INFO_PATH + " is unreachable at " + properties.getCoreUrl()
-                            + ". Disable the startup probe via config.rest.security.api-key.startup-probe=false to skip this check.",
+                            + ". Disable the startup probe via config.rest.security.api-key.startup-probe=false to"
+                            + " skip this check.",
                     e);
         }
     }

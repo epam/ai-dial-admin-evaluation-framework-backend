@@ -68,11 +68,12 @@ class TestSuiteMetricDefinitionControllerTest {
     void create_bodyWithoutEnabled_dtoDefaultsEnabledToTrue() throws Exception {
         UUID testSuiteId = UUID.randomUUID();
         String body = """
-                {
-                  "name": "Accuracy Check",
-                  "metricDeclarationId": "550e8400-e29b-41d4-a716-446655440000",
-                  "metricDeclarationVersionId": "660e8400-e29b-41d4-a716-446655440001"
-                }""";
+            {
+              "name": "Accuracy Check",
+              "metricDeclarationId": "550e8400-e29b-41d4-a716-446655440000",
+              "metricDeclarationVersionId": "660e8400-e29b-41d4-a716-446655440001"
+            }\
+            """;
         // Guard the test premise: the request JSON must NOT carry an 'enabled' field.
         assertThat(body).doesNotContain("enabled");
 

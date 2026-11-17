@@ -15,8 +15,8 @@ import lombok.experimental.SuperBuilder;
 @AllArgsConstructor
 @Schema(
         description = "DIAL application deployment info",
-        example =
-                "{\"$type\":\"dial-application\",\"deploymentId\":\"EntityExtractor\",\"displayName\":\"Entity Extractor\"}")
+        example = "{\"$type\":\"dial-application\",\"deploymentId\":\"EntityExtractor\",\"displayName\":\"Entity"
+                + " Extractor\"}")
 public class DialApplicationInfoDto extends DeploymentInfoDto {
 
     @Schema(description = "Application type schema ID")

@@ -458,7 +458,7 @@ public class DefaultExceptionHandler {
             HttpServletRequest req, AsyncRequestNotUsableException ex) {
         logUncaught(ex);
         log.info(
-                "[{}] Request: {} raised AsyncRequestNotUsableException. " + "Streaming has been closed by the client",
+                "[{}] Request: {} raised AsyncRequestNotUsableException. Streaming has been closed by the client",
                 req.getMethod(),
                 req.getServletPath());
         return ResponseEntity.ok("Streaming has been closed by the client.");

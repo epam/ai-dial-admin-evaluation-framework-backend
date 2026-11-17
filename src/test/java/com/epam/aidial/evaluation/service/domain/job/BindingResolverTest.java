@@ -180,11 +180,11 @@ class BindingResolverTest {
     @DisplayName("Should parse bindings JSON string")
     void shouldParseBindingsJsonString() {
         String json = """
-                [
-                    {"property": "ref", "source": {"$type": "TestCase", "columnName": "col1"}},
-                    {"property": "val", "source": {"$type": "Constant", "value": 42}}
-                ]
-                """;
+            [
+                {"property": "ref", "source": {"$type": "TestCase", "columnName": "col1"}},
+                {"property": "val", "source": {"$type": "Constant", "value": 42}}
+            ]
+            """;
 
         List<MetricParameterBindingDto> bindings = resolver.parseBindings(json);
 
@@ -206,8 +206,8 @@ class BindingResolverTest {
     @DisplayName("Should parse JSON map string")
     void shouldParseJsonMapString() {
         String json = """
-                {"col1": "value1", "col2": 42}
-                """;
+            {"col1": "value1", "col2": 42}
+            """;
 
         Map<String, Object> result = resolver.parseJsonMap(json);
 

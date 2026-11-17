@@ -56,8 +56,8 @@ class TestSuitesSchemaProviderTest {
     }
 
     @Test
-    @DisplayName(
-            "exposes mcp_deployment_ref::id, ::name, ::type, ::transport as STRING fields sourced from mcp_deployment_ref")
+    @DisplayName("exposes mcp_deployment_ref::id, ::name, ::type, ::transport as STRING fields sourced from"
+            + " mcp_deployment_ref")
     void shouldExposeMcpDeploymentRefSubFields() {
         assertThat(provider.baseSchema())
                 .contains(

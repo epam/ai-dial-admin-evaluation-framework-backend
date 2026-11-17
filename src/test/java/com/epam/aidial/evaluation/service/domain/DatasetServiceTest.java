@@ -134,7 +134,8 @@ class DatasetServiceTest {
 
     @Test
     @DisplayName(
-            "create rethrows DataIntegrityViolation with SQLState 23505 as UniqueConstraintViolationException carrying the duplicated name")
+            "create rethrows DataIntegrityViolation with SQLState 23505 as UniqueConstraintViolationException carrying"
+                    + " the duplicated name")
     void createTranslatesUniqueViolationToTypedException() {
         DatasetRequestDto request = DatasetRequestDto.builder()
                 .name("dup")
@@ -583,7 +584,8 @@ class DatasetServiceTest {
 
     @Test
     @DisplayName(
-            "delete with referencing suites throws InvalidOperationException listing suite names (HTTP 409) for PUBLIC datasets")
+            "delete with referencing suites throws InvalidOperationException listing suite names (HTTP 409) for PUBLIC"
+                    + " datasets")
     void deleteRejectsWhenReferencingSuitesExist() {
         UUID id = UUID.randomUUID();
         wireTxTemplate();
@@ -649,7 +651,8 @@ class DatasetServiceTest {
 
     @Test
     @DisplayName(
-            "delete translates post-check FK race (DataIntegrityViolation) into InvalidOperationException with current dependent suites (PUBLIC)")
+            "delete translates post-check FK race (DataIntegrityViolation) into InvalidOperationException with current"
+                    + " dependent suites (PUBLIC)")
     void deleteHandlesRaceConditionAsInvalidOperation() {
         UUID id = UUID.randomUUID();
         wireTxTemplate();
@@ -725,7 +728,8 @@ class DatasetServiceTest {
 
     @Test
     @DisplayName(
-            "create PUBLIC with bindToSuiteId is rejected before any persistence (PUBLIC_DATASET_FORBIDS_SUITE_BINDING / HTTP 400)")
+            "create PUBLIC with bindToSuiteId is rejected before any persistence (PUBLIC_DATASET_FORBIDS_SUITE_BINDING"
+                    + " / HTTP 400)")
     void createPublicWithBindingRejected() {
         DatasetRequestDto request = DatasetRequestDto.builder()
                 .name("Public Dataset")
@@ -743,8 +747,8 @@ class DatasetServiceTest {
     }
 
     @Test
-    @DisplayName(
-            "create PRIVATE without bindToSuiteId is rejected before any persistence (PRIVATE_DATASET_REQUIRES_SUITE_BINDING / HTTP 400)")
+    @DisplayName("create PRIVATE without bindToSuiteId is rejected before any persistence"
+            + " (PRIVATE_DATASET_REQUIRES_SUITE_BINDING / HTTP 400)")
     void createPrivateWithoutBindingRejected() {
         DatasetRequestDto request = DatasetRequestDto.builder()
                 .name("Private Dataset")
@@ -760,8 +764,8 @@ class DatasetServiceTest {
     }
 
     @Test
-    @DisplayName(
-            "create PRIVATE with valid bindToSuiteId atomically inserts dataset and delegates suite binding to TestSuiteService")
+    @DisplayName("create PRIVATE with valid bindToSuiteId atomically inserts dataset and delegates suite binding to"
+            + " TestSuiteService")
     void createPrivateAtomicallyBindsTargetSuite() {
         UUID suiteId = UUID.randomUUID();
         DatasetRequestDto request = DatasetRequestDto.builder()
@@ -816,7 +820,8 @@ class DatasetServiceTest {
 
     @Test
     @DisplayName(
-            "transitionVisibility PUBLIC→PRIVATE with 0 bindings throws PRIVATE_TRANSITION_INVALID_BINDING_COUNT (HTTP 409)")
+            "transitionVisibility PUBLIC→PRIVATE with 0 bindings throws PRIVATE_TRANSITION_INVALID_BINDING_COUNT (HTTP"
+                    + " 409)")
     void transitionPublicToPrivateZeroBindingsRejected() {
         UUID id = UUID.randomUUID();
         Dataset existing = Dataset.builder()
@@ -947,8 +952,8 @@ class DatasetServiceTest {
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName(
-            "clone without name/description derives the name, copies the source description, and inherits source visibility")
+    @DisplayName("clone without name/description derives the name, copies the source description, and inherits source"
+            + " visibility")
     void cloneDerivesNameAndInheritsVisibility() {
         UUID id = UUID.randomUUID();
         wireTxTemplate();

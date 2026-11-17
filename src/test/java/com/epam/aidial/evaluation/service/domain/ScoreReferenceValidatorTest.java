@@ -17,11 +17,10 @@ import tools.jackson.databind.ObjectMapper;
 
 class ScoreReferenceValidatorTest {
 
-    private static final String ROC_AUC_TEMPLATE =
-            """
-            {"type":"custom_function","expression":{"entity":"eval_summaries","mode":"aggregate",
-            "select":[{"expr":{"type":"fn","name":"roc_auc","args":[%s,%s]},"as":"overall"}]}}
-            """;
+    private static final String ROC_AUC_TEMPLATE = """
+        {"type":"custom_function","expression":{"entity":"eval_summaries","mode":"aggregate",
+        "select":[{"expr":{"type":"fn","name":"roc_auc","args":[%s,%s]},"as":"overall"}]}}
+        """;
 
     private ScoreReferenceValidator validator;
 
@@ -78,8 +77,7 @@ class ScoreReferenceValidatorTest {
 
         assertThat(warnings)
                 .extracting(ValidationWarningDto::getPath)
-                .containsExactly(
-                        "$.overallScore.weights[0].metricName", "$.overallScore.weights[2].metricName");
+                .containsExactly("$.overallScore.weights[0].metricName", "$.overallScore.weights[2].metricName");
     }
 
     @Test
@@ -93,8 +91,7 @@ class ScoreReferenceValidatorTest {
         assertThat(warnings.get(0).getPath()).isEqualTo("$.overallScore.expression.select[0].expr.args[1].name");
         assertThat(warnings.get(0).getCode()).isEqualTo(ValidationWarningCode.UNRESOLVED_REFERENCE);
         assertThat(run(json, null, "Classifier")).isEmpty();
-        assertThat(run(
-                        ROC_AUC_TEMPLATE.formatted(field("data::label"), field("metricInfo::Nope::x")), null))
+        assertThat(run(ROC_AUC_TEMPLATE.formatted(field("data::label"), field("metricInfo::Nope::x")), null))
                 .isEmpty();
     }
 
@@ -103,7 +100,9 @@ class ScoreReferenceValidatorTest {
     void metricWithoutOutput() {
         final String json = ROC_AUC_TEMPLATE.formatted(field("data::label"), field("metric::Classifier"));
 
-        assertThat(run(json, null)).extracting(ValidationWarningDto::getFieldName).containsExactly("Classifier");
+        assertThat(run(json, null))
+                .extracting(ValidationWarningDto::getFieldName)
+                .containsExactly("Classifier");
         assertThat(run(json, null, "Classifier")).isEmpty();
     }
 
@@ -113,22 +112,22 @@ class ScoreReferenceValidatorTest {
         final String json = ROC_AUC_TEMPLATE.formatted(field("metric::A::b::out"), field("data::label"));
 
         assertThat(run(json, null, "A::b")).isEmpty();
-        assertThat(run(json, null, "A")).extracting(ValidationWarningDto::getFieldName).containsExactly("A::b");
+        assertThat(run(json, null, "A"))
+                .extracting(ValidationWarningDto::getFieldName)
+                .containsExactly("A::b");
     }
 
     @Test
     @DisplayName("other function, two selects and non-convertible expression give one UNSUPPORTED_SCORE_FUNCTION")
     void unsupportedShapes() {
-        final String avg =
-                """
-                {"type":"custom_function","expression":{"entity":"eval_summaries","mode":"aggregate",
-                "select":[{"expr":{"type":"fn","name":"avg","args":[{"type":"field","name":"metric::R::s"}]},"as":"o"}]}}
-                """;
-        final String two =
-                """
-                {"type":"custom_function","expression":{"entity":"eval_summaries","mode":"aggregate",
-                "select":[{"expr":{"type":"field","name":"a"}},{"expr":{"type":"field","name":"b"}}]}}
-                """;
+        final String avg = """
+            {"type":"custom_function","expression":{"entity":"eval_summaries","mode":"aggregate",
+            "select":[{"expr":{"type":"fn","name":"avg","args":[{"type":"field","name":"metric::R::s"}]},"as":"o"}]}}
+            """;
+        final String two = """
+            {"type":"custom_function","expression":{"entity":"eval_summaries","mode":"aggregate",
+            "select":[{"expr":{"type":"field","name":"a"}},{"expr":{"type":"field","name":"b"}}]}}
+            """;
         final String garbage = "{\"type\":\"custom_function\",\"expression\":{\"select\":\"nope\"}}";
 
         for (String json : List.of(avg, two, garbage)) {
@@ -140,7 +139,8 @@ class ScoreReferenceValidatorTest {
     }
 
     @Test
-    @DisplayName("unreadable overallScore column yields UNSUPPORTED_SCORE_FUNCTION; unreadable testCaseOverallScore is ignored")
+    @DisplayName("unreadable overallScore column yields UNSUPPORTED_SCORE_FUNCTION; unreadable testCaseOverallScore is"
+            + " ignored")
     void unreadableColumns() {
         final List<ValidationWarningDto> warnings = run("{not json", "{not json");
 

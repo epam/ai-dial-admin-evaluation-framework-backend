@@ -21,15 +21,15 @@ class SkillUsageExpressionsTest {
             "choices[0].message.custom_content.stages[$contains(name, \"Reading Skill\")][0].name";
 
     private static final String WITH_SKILL = """
-            {"choices":[{"message":{"role":"assistant","content":"A blue bird",
-              "custom_content":{"stages":[
-                {"name":"Reading Skill: vc-test [0.00s]","status":"completed"},
-                {"name":"Usage Statistics","status":"completed"}]}}}]}
-            """;
+        {"choices":[{"message":{"role":"assistant","content":"A blue bird",
+          "custom_content":{"stages":[
+            {"name":"Reading Skill: vc-test [0.00s]","status":"completed"},
+            {"name":"Usage Statistics","status":"completed"}]}}}]}
+        """;
     private static final String WITHOUT_SKILL = """
-            {"choices":[{"message":{"role":"assistant","content":"A blue bird on a black background.",
-              "custom_content":{"state":{"responses_output":[]}}}}]}
-            """;
+        {"choices":[{"message":{"role":"assistant","content":"A blue bird on a black background.",
+          "custom_content":{"state":{"responses_output":[]}}}}]}
+        """;
 
     private DashjoinJsonataEvaluationService service;
 

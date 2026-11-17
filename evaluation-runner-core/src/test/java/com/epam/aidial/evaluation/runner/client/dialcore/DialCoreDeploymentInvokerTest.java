@@ -45,8 +45,8 @@ class DialCoreDeploymentInvokerTest {
     @DisplayName("successful JSON response is parsed")
     void successfulJsonResponseIsParsed() {
         String json = """
-                {"id":"chatcmpl-1","choices":[{"message":{"content":"Hello!"}}]}
-                """;
+            {"id":"chatcmpl-1","choices":[{"message":{"content":"Hello!"}}]}
+            """;
         server.expect(request ->
                         assertThat(request.getURI().getPath()).isEqualTo("/openai/deployments/gpt-4/chat/completions"))
                 .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
@@ -84,8 +84,8 @@ class DialCoreDeploymentInvokerTest {
     @DisplayName("HTTP 4xx from Core returns status+body as-is")
     void http4xxReturnsAsIs() {
         String errorJson = """
-                {"error":"Bad Request","message":"Invalid model"}
-                """;
+            {"error":"Bad Request","message":"Invalid model"}
+            """;
         server.expect(request -> assertThat(request.getURI().getPath()).isEqualTo("/path"))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST)
                         .contentType(MediaType.APPLICATION_JSON)

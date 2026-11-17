@@ -1409,12 +1409,12 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("Should return 400 when parameter has invalid in enum value")
     void shouldReturn400WhenParameterInvalidInEnum() {
-        String invalidBody =
-                "{\"name\":\"Invalid Param In\",\"description\":\"Desc\",\"deploymentRef\":{\"id\":\"d1\",\"name\":\"D1\"},"
-                        + "\"endpointRef\":{\"method\":\"POST\",\"relativeUrlPattern\":\"/v1/chat\",\"parameters\":"
-                        + "[{\"name\":\"q\",\"in\":\"cookie\",\"required\":true,\"schema\":{\"type\":\"string\"}}],"
-                        + "\"requestBodySchema\":{\"type\":\"object\",\"properties\":{}},\"responseBodySchema\":null},"
-                        + "\"testCaseSchema\":[]}";
+        String invalidBody = "{\"name\":\"Invalid Param"
+                + " In\",\"description\":\"Desc\",\"deploymentRef\":{\"id\":\"d1\",\"name\":\"D1\"},"
+                + "\"endpointRef\":{\"method\":\"POST\",\"relativeUrlPattern\":\"/v1/chat\",\"parameters\":"
+                + "[{\"name\":\"q\",\"in\":\"cookie\",\"required\":true,\"schema\":{\"type\":\"string\"}}],"
+                + "\"requestBodySchema\":{\"type\":\"object\",\"properties\":{}},\"responseBodySchema\":null},"
+                + "\"testCaseSchema\":[]}";
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -1566,8 +1566,8 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
     @DisplayName("Should flag an unsupported overallScore custom function as UNSUPPORTED_SCORE_FUNCTION on create")
     void shouldWarnOnUnsupportedCustomFunctionOnCreate() {
         TestSuiteRequestDto request = buildTestSuiteRequest("Unsupported Function Create", "Description");
-        request.setOverallScore(
-                new CustomFunction(customFunctionExpression("avg", "metric::Relevancy::score", "metric::Other::score")));
+        request.setOverallScore(new CustomFunction(
+                customFunctionExpression("avg", "metric::Relevancy::score", "metric::Other::score")));
 
         ResponseEntity<TestSuiteResponseDto> response =
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
@@ -1579,7 +1579,8 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
                 .containsExactly(ValidationWarningCode.UNSUPPORTED_SCORE_FUNCTION);
     }
 
-    private ResponseEntity<TestSuiteResponseDto> putSuiteResponse(TestSuiteResponseDto current, TestSuiteRequestDto request) {
+    private ResponseEntity<TestSuiteResponseDto> putSuiteResponse(
+            TestSuiteResponseDto current, TestSuiteRequestDto request) {
         HttpHeaders headers = new HttpHeaders();
         headers.setIfMatch("\"" + current.getVersion() + "\"");
         return restTemplate.exchange(

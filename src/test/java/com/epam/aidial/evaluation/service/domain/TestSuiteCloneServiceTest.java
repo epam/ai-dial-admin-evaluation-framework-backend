@@ -417,8 +417,7 @@ class TestSuiteCloneServiceTest {
                         .valid(true)
                         .warnings(List.of())
                         .build());
-        when(suiteValidationService.withScoreReferences(any(), any(), any()))
-                .thenAnswer(inv -> inv.getArgument(0));
+        when(suiteValidationService.withScoreReferences(any(), any(), any())).thenAnswer(inv -> inv.getArgument(0));
         when(warningsSerializer.serializeWarnings(anyList())).thenReturn("[]");
         when(tsmdRepository.findBatchByTestSuiteId(any(), anyInt(), anyInt())).thenReturn(List.of());
         when(testSuiteMapper.toDto(newEntity))
@@ -459,8 +458,7 @@ class TestSuiteCloneServiceTest {
                         .valid(true)
                         .warnings(List.of())
                         .build());
-        when(suiteValidationService.withScoreReferences(any(), any(), any()))
-                .thenAnswer(inv -> inv.getArgument(0));
+        when(suiteValidationService.withScoreReferences(any(), any(), any())).thenAnswer(inv -> inv.getArgument(0));
         when(warningsSerializer.serializeWarnings(anyList())).thenReturn("[]");
         when(tsmdService.findNamesByTestSuiteId(sourceId)).thenReturn(sourceNames);
         when(tsmdRepository.findBatchByTestSuiteId(any(), anyInt(), anyInt())).thenReturn(List.of());
@@ -751,8 +749,7 @@ class TestSuiteCloneServiceTest {
                         .valid(true)
                         .warnings(List.of())
                         .build());
-        when(suiteValidationService.withScoreReferences(any(), any(), any()))
-                .thenAnswer(inv -> inv.getArgument(0));
+        when(suiteValidationService.withScoreReferences(any(), any(), any())).thenAnswer(inv -> inv.getArgument(0));
         when(warningsSerializer.serializeWarnings(anyList())).thenReturn("[]");
     }
 

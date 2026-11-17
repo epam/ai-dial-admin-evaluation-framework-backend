@@ -155,8 +155,8 @@ public class DatasetController {
                             schema = @Schema(implementation = DatasetResponseDto.class)))
     @ApiResponse(
             responseCode = "400",
-            description =
-                    "Invalid request body — includes PRIVATE_DATASET_REQUIRES_SUITE_BINDING / PUBLIC_DATASET_FORBIDS_SUITE_BINDING")
+            description = "Invalid request body — includes PRIVATE_DATASET_REQUIRES_SUITE_BINDING /"
+                    + " PUBLIC_DATASET_FORBIDS_SUITE_BINDING")
     @ApiResponse(
             responseCode = "409",
             description = "Dataset with the given name already exists, or target suite already bound to another "
@@ -193,8 +193,8 @@ public class DatasetController {
                                                 @ExampleObject(name = "Derived name", value = "{}"),
                                                 @ExampleObject(
                                                         name = "Custom name and description",
-                                                        value =
-                                                                "{\"name\": \"My Dataset (clone)\", \"description\": \"Clone for experimentation\"}")
+                                                        value = "{\"name\": \"My Dataset (clone)\", \"description\":"
+                                                                + " \"Clone for experimentation\"}")
                                             })))
     @ApiResponse(
             responseCode = "201",
@@ -226,13 +226,12 @@ public class DatasetController {
     @PutMapping("/{id}")
     @Operation(
             summary = "Update a dataset",
-            description =
-                    "Updates an existing dataset. Requires If-Match header with current version for optimistic locking. "
-                            + "Each schema field has a server-assigned `id`: echo it back to keep the field identity, so a changed `name` "
-                            + "is a rename that moves stored test-case values; omit it to match by name. "
-                            + "If testCaseSchema changed, returns 202 Accepted with a revalidation task. "
-                            + "The `visibility` field is silently ignored — visibility is immutable via PUT; "
-                            + "use PATCH /api/v1/datasets/{id}/visibility instead.",
+            description = "Updates an existing dataset. Requires If-Match header with current version for optimistic"
+                    + " locking. Each schema field has a server-assigned `id`: echo it back to keep the field"
+                    + " identity, so a changed `name` is a rename that moves stored test-case values; omit it"
+                    + " to match by name. If testCaseSchema changed, returns 202 Accepted with a revalidation"
+                    + " task. The `visibility` field is silently ignored — visibility is immutable via PUT;"
+                    + " use PATCH /api/v1/datasets/{id}/visibility instead.",
             requestBody =
                     @RequestBody(
                             description = "Updated dataset",
@@ -318,12 +317,12 @@ public class DatasetController {
     @DeleteMapping("/{id}")
     @Operation(
             summary = "Delete a dataset",
-            description = "Deletes a dataset. Default behavior (force=false) depends on visibility: "
-                    + "PUBLIC datasets enforce FK RESTRICT — returns 409 if any test suite still references the dataset; "
-                    + "PRIVATE datasets cascade — atomically unbinds the bound suite (sets datasetId=null) and deletes "
-                    + "the dataset plus its test cases in one transaction. "
-                    + "When force=true, the dataset is deleted regardless of visibility: every referencing test suite "
-                    + "is unbound (datasetId=null) and the dataset plus its test cases are deleted in one transaction.")
+            description = "Deletes a dataset. Default behavior (force=false) depends on visibility: PUBLIC datasets"
+                    + " enforce FK RESTRICT — returns 409 if any test suite still references the dataset; PRIVATE"
+                    + " datasets cascade — atomically unbinds the bound suite (sets datasetId=null) and deletes the"
+                    + " dataset plus its test cases in one transaction. When force=true, the dataset is deleted"
+                    + " regardless of visibility: every referencing test suite is unbound (datasetId=null) and the"
+                    + " dataset plus its test cases are deleted in one transaction.")
     @ApiResponse(responseCode = "204", description = "Dataset deleted successfully")
     @ApiResponse(responseCode = "404", description = "Dataset not found")
     @ApiResponse(
@@ -333,8 +332,9 @@ public class DatasetController {
             @Parameter(description = "Dataset ID") @PathVariable UUID id,
             @Parameter(
                             description =
-                                    "When true, unbind all referencing test suites (datasetId=null) and delete the "
-                                            + "dataset regardless of visibility, instead of returning 409. Default: false.")
+                                    "When true, unbind all referencing test suites (datasetId=null) and delete the"
+                                            + " dataset regardless of visibility, instead of returning 409. Default:"
+                                            + " false.")
                     @RequestParam(defaultValue = "false")
                     boolean force) {
 
@@ -379,11 +379,10 @@ public class DatasetController {
     @PostMapping("/{id}/publish")
     @Operation(
             summary = "Publish a dataset",
-            description =
-                    "Promotes a dataset to PUBLIC visibility and optionally updates its name and description "
-                            + "in a single atomic operation. When the dataset is already PUBLIC and no metadata fields change, "
-                            + "the call is a no-op and returns the unchanged dataset. "
-                            + "Returns 409 UNIQUE_CONSTRAINT_VIOLATION if the provided name conflicts with an existing dataset.",
+            description = "Promotes a dataset to PUBLIC visibility and optionally updates its name and description in a"
+                    + " single atomic operation. When the dataset is already PUBLIC and no metadata fields"
+                    + " change, the call is a no-op and returns the unchanged dataset. Returns 409"
+                    + " UNIQUE_CONSTRAINT_VIOLATION if the provided name conflicts with an existing dataset.",
             requestBody =
                     @RequestBody(
                             description = "Optional name and description to set on publish",

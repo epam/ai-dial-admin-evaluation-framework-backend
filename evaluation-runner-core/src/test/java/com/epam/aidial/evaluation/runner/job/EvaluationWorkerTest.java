@@ -139,8 +139,7 @@ class EvaluationWorkerTest {
     }
 
     @Test
-    @DisplayName(
-            "HTTP request and turn result rows share one execution root trace linked to the run")
+    @DisplayName("HTTP request and turn result rows share one execution root trace linked to the run")
     void requestAndTurnRowsShareLinkedExecutionRoot() {
         final InMemorySpanExporter exporter = InMemorySpanExporter.create();
         try (OpenTelemetrySdk telemetry = OpenTelemetrySdk.builder()
@@ -199,7 +198,8 @@ class EvaluationWorkerTest {
                     .findFirst()
                     .orElseThrow();
             assertThat(execution.getParentSpanContext().isValid()).isFalse();
-            assertThat(execution.getTraceId()).isNotEqualTo(runSpan.getSpanContext().getTraceId());
+            assertThat(execution.getTraceId())
+                    .isNotEqualTo(runSpan.getSpanContext().getTraceId());
             assertThat(downstream.getParentSpanId()).isEqualTo(execution.getSpanId());
             assertThat(execution.getLinks())
                     .singleElement()

@@ -213,7 +213,9 @@ public abstract class SkillFieldFunctionalTests extends BaseFunctionalTest {
         final UUID datasetId = newDataset(List.of());
 
         final ResponseEntity<CsvImportResultDto> response = importCsv(
-                datasetId, "testCaseName,prompt,skillField\nTC1,hello," + SKILL_REF + "\nTC2,hi,not a skill", "OVERRIDE");
+                datasetId,
+                "testCaseName,prompt,skillField\nTC1,hello," + SKILL_REF + "\nTC2,hi,not a skill",
+                "OVERRIDE");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(typeOf(getDataset(datasetId), SKILL_FIELD)).isEqualTo(SchemaFieldType.STRING);
@@ -420,8 +422,7 @@ public abstract class SkillFieldFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName(
-            "Test-case try-out sends the canonical skill ref for a column-bound placeholder and downloads" + " nothing")
+    @DisplayName("Test-case try-out sends the canonical skill ref for a column-bound placeholder and downloads nothing")
     void testCaseTryItOutSendsCanonicalSkillRef() {
         final TestSuiteResponseDto suite = createSuite(
                 "Skill TryOut Suite " + UUID.randomUUID(),

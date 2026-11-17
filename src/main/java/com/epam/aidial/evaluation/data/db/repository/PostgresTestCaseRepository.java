@@ -398,19 +398,13 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         // RETURNING (xmax <> 0)::int requires plain SQL; jOOQ's onConflictDoUpdate does not
         // expose an expression-based RETURNING clause for custom expressions like xmax.
         Integer wasUpdate = dsl.resultQuery(
-                        "INSERT INTO test_cases ("
-                                + "id, dataset_id, test_case_name, data, multi_turn_data, is_valid, validation_warnings, "
-                                + "created_at_ms, updated_at_ms"
-                                + ") VALUES ("
-                                + "{0}, {1}, {2}, {3}::jsonb, {4}::jsonb, {5}, {6}::jsonb, {7}, {8}"
-                                + ") ON CONFLICT (dataset_id, LOWER(test_case_name)) DO UPDATE SET"
-                                + " test_case_name = EXCLUDED.test_case_name,"
-                                + " data = EXCLUDED.data,"
-                                + " multi_turn_data = EXCLUDED.multi_turn_data,"
-                                + " is_valid = EXCLUDED.is_valid,"
-                                + " validation_warnings = EXCLUDED.validation_warnings,"
-                                + " updated_at_ms = EXCLUDED.updated_at_ms"
-                                + " RETURNING (xmax <> 0)::int AS was_update",
+                        "INSERT INTO test_cases (id, dataset_id, test_case_name, data, multi_turn_data, is_valid,"
+                                + " validation_warnings, created_at_ms, updated_at_ms) VALUES ({0}, {1}, {2},"
+                                + " {3}::jsonb, {4}::jsonb, {5}, {6}::jsonb, {7}, {8}) ON CONFLICT (dataset_id,"
+                                + " LOWER(test_case_name)) DO UPDATE SET test_case_name = EXCLUDED.test_case_name,"
+                                + " data = EXCLUDED.data, multi_turn_data = EXCLUDED.multi_turn_data, is_valid ="
+                                + " EXCLUDED.is_valid, validation_warnings = EXCLUDED.validation_warnings,"
+                                + " updated_at_ms = EXCLUDED.updated_at_ms RETURNING (xmax <> 0)::int AS was_update",
                         DSL.val(testCase.getId().toString()),
                         DSL.val(testCase.getDatasetId().toString()),
                         DSL.val(testCase.getTestCaseName()),

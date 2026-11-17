@@ -135,8 +135,8 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
             String extra2Key,
             String extra2) {
         return """
-                {"snapshotVersion":"2","suiteType":"%s","%s":{"id":"%s","name":"%s","%s":"%s","%s":"%s"}}
-                """.formatted(suiteType, refKey, id, name, extra1Key, extra1, extra2Key, extra2);
+            {"snapshotVersion":"2","suiteType":"%s","%s":{"id":"%s","name":"%s","%s":"%s","%s":"%s"}}
+            """.formatted(suiteType, refKey, id, name, extra1Key, extra1, extra2Key, extra2);
     }
 
     private static String deploymentSnapshotJson(String id, String name, String version, String type) {
@@ -145,8 +145,8 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
 
     private static String routeSnapshotJson(String name) {
         return """
-                {"snapshotVersion":"2","suiteType":"ROUTE","routesRef":{"name":"%s"}}
-                """.formatted(name);
+            {"snapshotVersion":"2","suiteType":"ROUTE","routesRef":{"name":"%s"}}
+            """.formatted(name);
     }
 
     private static String mcpSnapshotJson(String id, String name, String type, String transport) {
@@ -793,7 +793,8 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
 
     @Test
     @DisplayName(
-            "a run whose latest computation has no overall row omits it rather than showing an earlier computation's value")
+            "a run whose latest computation has no overall row omits it rather than showing an earlier computation's"
+                    + " value")
     void overallScoreValueOmittedWhenLatestComputationHasNoOverallRow() {
         TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-overall-stale-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());

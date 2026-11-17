@@ -103,9 +103,8 @@ public class TestSuiteMetricDefinitionService {
             throw ex;
         }
         refreshScoreWarnings(suite);
-        return mapper.toDto(repository
-                .findByIdAndTestSuiteId(saved.getId(), testSuiteId)
-                .orElseThrow());
+        return mapper.toDto(
+                repository.findByIdAndTestSuiteId(saved.getId(), testSuiteId).orElseThrow());
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
@@ -201,8 +200,7 @@ public class TestSuiteMetricDefinitionService {
             throw ex;
         }
         refreshScoreWarnings(suite);
-        return mapper.toDto(
-                repository.findByIdAndTestSuiteId(id, testSuiteId).orElseThrow());
+        return mapper.toDto(repository.findByIdAndTestSuiteId(id, testSuiteId).orElseThrow());
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)

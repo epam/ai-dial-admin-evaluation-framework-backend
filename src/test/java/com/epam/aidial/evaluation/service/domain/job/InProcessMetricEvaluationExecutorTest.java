@@ -543,7 +543,8 @@ class InProcessMetricEvaluationExecutorTest {
 
     @Test
     @DisplayName(
-            "Each dispatched row's TSMD tasks run under its eval.testcase.metrics span, which ends after they settle and is ERROR when one fails")
+            "Each dispatched row's TSMD tasks run under its eval.testcase.metrics span, which ends after they settle"
+                    + " and is ERROR when one fails")
     void tsmdTasksRunUnderRowMetricsSpan() throws Exception {
         final InMemorySpanExporter exporter = InMemorySpanExporter.create();
         try (SdkTracerProvider tracerProvider = SdkTracerProvider.builder()
@@ -592,12 +593,10 @@ class InProcessMetricEvaluationExecutorTest {
             assertThat(currentByTsmd)
                     .containsOnlyKeys("Accuracy", "Broken")
                     .allSatisfy((name, current) -> assertThat(current).isEqualTo(metricsSpan.getSpanContext()));
-            assertThat(exporter.getFinishedSpanItems())
-                    .singleElement()
-                    .satisfies(span -> {
-                        assertThat(span.getName()).isEqualTo("metrics");
-                        assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
-                    });
+            assertThat(exporter.getFinishedSpanItems()).singleElement().satisfies(span -> {
+                assertThat(span.getName()).isEqualTo("metrics");
+                assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+            });
             verify(worker, times(1)).startMetricsSpan(any(), any());
         }
     }

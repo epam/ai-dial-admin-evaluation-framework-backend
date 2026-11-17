@@ -59,7 +59,8 @@ class EvalSummaryExportRowTest {
 
     @Test
     @DisplayName(
-            "Per-field error envelope routes to the field's metricInfo cell, metricError stays empty when other fields cover schema")
+            "Per-field error envelope routes to the field's metricInfo cell, metricError stays empty when other fields"
+                    + " cover schema")
     void perFieldErrorRoutesToFieldCell() {
         String json = "{\"Retrieval\":{"
                 + "\"recall\":{\"type\":\"error\",\"message\":\"facts missing\"},"

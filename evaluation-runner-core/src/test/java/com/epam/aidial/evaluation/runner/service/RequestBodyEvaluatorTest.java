@@ -144,7 +144,8 @@ class RequestBodyEvaluatorTest {
                 .build();
 
         private void stubDocValue() {
-            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(fileBinding), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("doc"), isNull(), eq(fileBinding), anyMap(), any(), anyBoolean()))
                     .thenReturn(SHORT_REF);
         }
 
@@ -251,7 +252,8 @@ class RequestBodyEvaluatorTest {
             Map<String, Object> newMessage = new LinkedHashMap<>();
             newMessage.put("role", "user");
             newMessage.put("content", "hi");
-            when(templateVariableResolver.resolveVariable(eq("newMessages"), isNull(), any(), anyMap(), any(), anyBoolean()))
+            when(templateVariableResolver.resolveVariable(
+                            eq("newMessages"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(List.of(newMessage));
             String source = "{\"messages\": $append($history, ${{newMessages}})}";
 
@@ -285,8 +287,8 @@ class RequestBodyEvaluatorTest {
         }
 
         @Test
-        @DisplayName(
-                "frame binding with an explicit Java null value binds a real JSONata null, distinguishable from unbound")
+        @DisplayName("frame binding with an explicit Java null value binds a real JSONata null, distinguishable from"
+                + " unbound")
         void frameBindingWithNullValueBindsExplicitNull() {
             String source = "{\"boundExists\": $exists($x), \"unboundExists\": $exists($y)}";
             Map<String, Object> frameBindings = new HashMap<>();

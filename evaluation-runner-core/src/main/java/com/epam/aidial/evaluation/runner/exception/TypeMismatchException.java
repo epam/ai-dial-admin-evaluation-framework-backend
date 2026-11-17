@@ -20,7 +20,7 @@ public class TypeMismatchException extends RuntimeException {
 
     private static String buildMessageWithValue(
             SchemaFieldType expected, String actualTypeLabel, Object actualValue, String suffix) {
-        return buildMessage(expected, actualTypeLabel) + " (\"" + truncate(actualValue) + "\")" + " — " + suffix;
+        return buildMessage(expected, actualTypeLabel) + " (\"" + truncate(actualValue) + "\") — " + suffix;
     }
 
     private static String truncate(Object value) {

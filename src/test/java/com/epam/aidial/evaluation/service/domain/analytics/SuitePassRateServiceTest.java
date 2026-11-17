@@ -141,7 +141,9 @@ class SuitePassRateServiceTest {
     }
 
     @Test
-    @DisplayName("a run with a threshold counts passed and unscored test cases: 1 passed, 1 below, 1 unscored, 1 failed is 0.5")
+    @DisplayName(
+            "a run with a threshold counts passed and unscored test cases: 1 passed, 1 below, 1 unscored, 1 failed is"
+                    + " 0.5")
     void thresholdRunCountsPassedAndUnscored() {
         UUID suite = UUID.randomUUID();
         UUID run = UUID.randomUUID();

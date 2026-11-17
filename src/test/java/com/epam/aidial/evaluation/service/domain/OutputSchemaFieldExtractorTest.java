@@ -22,8 +22,8 @@ class OutputSchemaFieldExtractorTest {
     @DisplayName("Valid schema with single field returns that field name")
     void validSingleField_returnsFieldName() {
         String schema = """
-                {"properties": {"exact_match": {"type": "number"}}}
-                """;
+            {"properties": {"exact_match": {"type": "number"}}}
+            """;
 
         List<String> result = extractor.extractFieldNames(schema);
 
@@ -34,8 +34,8 @@ class OutputSchemaFieldExtractorTest {
     @DisplayName("Valid schema with multiple fields returns all field names")
     void validMultipleFields_returnsAllFieldNames() {
         String schema = """
-                {"properties": {"recall": {}, "precision": {}, "f1": {}}}
-                """;
+            {"properties": {"recall": {}, "precision": {}, "f1": {}}}
+            """;
 
         List<String> result = extractor.extractFieldNames(schema);
 
@@ -70,8 +70,8 @@ class OutputSchemaFieldExtractorTest {
     @DisplayName("Schema without 'properties' key returns empty list")
     void schemaWithoutProperties_returnsEmptyList() {
         String schema = """
-                {"type": "object", "required": ["score"]}
-                """;
+            {"type": "object", "required": ["score"]}
+            """;
 
         List<String> result = extractor.extractFieldNames(schema);
 
@@ -82,8 +82,8 @@ class OutputSchemaFieldExtractorTest {
     @DisplayName("Schema where 'properties' is not an object returns empty list")
     void propertiesNotObject_returnsEmptyList() {
         String schema = """
-                {"properties": ["score", "recall"]}
-                """;
+            {"properties": ["score", "recall"]}
+            """;
 
         List<String> result = extractor.extractFieldNames(schema);
 

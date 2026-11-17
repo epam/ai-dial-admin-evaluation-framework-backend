@@ -70,8 +70,7 @@ class EvaluationTraceSessionTest {
 
     private static Map<String, SpanContext> linksByType(SpanData span) {
         return span.getLinks().stream()
-                .collect(Collectors.toMap(
-                        link -> link.getAttributes().get(LINK_TYPE), LinkData::getSpanContext));
+                .collect(Collectors.toMap(link -> link.getAttributes().get(LINK_TYPE), LinkData::getSpanContext));
     }
 
     @Test
@@ -111,8 +110,7 @@ class EvaluationTraceSessionTest {
                 .containsEntry(
                         TracingConstants.LINK_TYPE_EXECUTION,
                         finished("execution-1").getSpanContext());
-        assertThat(linksByType(finished("metrics-other")))
-                .containsOnlyKeys(TracingConstants.LINK_TYPE_RUN);
+        assertThat(linksByType(finished("metrics-other"))).containsOnlyKeys(TracingConstants.LINK_TYPE_RUN);
     }
 
     @Test
@@ -121,7 +119,9 @@ class EvaluationTraceSessionTest {
         try (EvaluationTraceSession session = session()) {
             final Span span = execution(session, "execution", caseId, 0);
             span.end();
-            assertThat(exporter.getFinishedSpanItems()).extracting(SpanData::getName).containsExactly("execution");
+            assertThat(exporter.getFinishedSpanItems())
+                    .extracting(SpanData::getName)
+                    .containsExactly("execution");
         }
         assertThat(exporter.getFinishedSpanItems()).hasSize(1);
     }

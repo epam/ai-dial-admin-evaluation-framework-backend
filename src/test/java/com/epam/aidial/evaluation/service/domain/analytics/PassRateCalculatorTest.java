@@ -19,7 +19,8 @@ class PassRateCalculatorTest {
     }
 
     @Test
-    @DisplayName("with a threshold passed=true and unscored SUCCESS count: 1 passed, 1 below, 1 unscored, 1 failed is 0.5")
+    @DisplayName(
+            "with a threshold passed=true and unscored SUCCESS count: 1 passed, 1 below, 1 unscored, 1 failed is 0.5")
     void thresholdCountsPassedTrueAndUnscored() {
         assertThat(calculator.rate(counts(1, 1, 1, 1), true)).isEqualTo(0.5);
     }

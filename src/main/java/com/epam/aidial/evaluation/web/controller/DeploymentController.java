@@ -60,8 +60,8 @@ public class DeploymentController {
     @ApiResponse(responseCode = "401", description = "Unauthorized (missing or invalid token to this service)")
     @ApiResponse(
             responseCode = "502",
-            description =
-                    "Upstream (DIAL Core) error; check errorCode for UPSTREAM_AUTH_ERROR, UPSTREAM_NOT_FOUND, or UPSTREAM_ERROR")
+            description = "Upstream (DIAL Core) error; check errorCode for UPSTREAM_AUTH_ERROR, UPSTREAM_NOT_FOUND, or"
+                    + " UPSTREAM_ERROR")
     public List<DeploymentInfoDto> getAllDeployments(
             @Parameter(description = "Filter by deployment type (e.g. dial-model, dial-application, dial-toolset)")
                     @RequestParam(required = false)
@@ -97,8 +97,8 @@ public class DeploymentController {
     @ApiResponse(responseCode = "403", description = "Forbidden (no access to this deployment in DIAL Core)")
     @ApiResponse(
             responseCode = "502",
-            description =
-                    "Upstream (DIAL Core) error; check errorCode for UPSTREAM_AUTH_ERROR, UPSTREAM_NOT_FOUND, or UPSTREAM_ERROR")
+            description = "Upstream (DIAL Core) error; check errorCode for UPSTREAM_AUTH_ERROR, UPSTREAM_NOT_FOUND, or"
+                    + " UPSTREAM_ERROR")
     public DeploymentInfoDto getDeployment(
             @Parameter(description = "Deployment type: dial-model, dial-application, or dial-toolset", required = true)
                     @PathVariable

@@ -286,7 +286,8 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
 
     @Test
     @DisplayName(
-            "Default export omits requestBody/responseBody; explicit columns including bodies populate them via the JOIN")
+            "Default export omits requestBody/responseBody; explicit columns including bodies populate them via the"
+                    + " JOIN")
     void exportBodiesViaExplicitColumns() {
         TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
         UUID computationId = UUID.randomUUID();
@@ -363,8 +364,8 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName(
-            "Preview returns JSON without Content-Disposition; manifest uses new column shape; data rows preserve typed cells")
+    @DisplayName("Preview returns JSON without Content-Disposition; manifest uses new column shape; data rows preserve"
+            + " typed cells")
     void previewReturnsTypedJsonShape() {
         TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
         UUID computationId = UUID.randomUUID();
@@ -464,7 +465,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         // Rich schema: one STRING and one FILE testCaseSchema field; one STRING and one FILE
         // responseColumn; two metrics with two output fields each.
         String testCaseSchemaJson =
-                "[{\"name\":\"prompt\",\"type\":\"STRING\"}," + "{\"name\":\"attachment\",\"type\":\"FILE\"}]";
+                "[{\"name\":\"prompt\",\"type\":\"STRING\"},{\"name\":\"attachment\",\"type\":\"FILE\"}]";
         String responseColumnsJson = "[{\"name\":\"answer\",\"expression\":\"$.a\",\"type\":\"STRING\"},"
                 + "{\"name\":\"audio\",\"expression\":\"$.audio\",\"type\":\"FILE\"}]";
         metaTestDataHelper.updateSuiteSchema(testSuiteId, testCaseSchemaJson, responseColumnsJson);
@@ -538,7 +539,8 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
 
     @Test
     @DisplayName(
-            "Per-field info routing: success-with-details, per-field error envelope, and wholesale error each land in the correct cells")
+            "Per-field info routing: success-with-details, per-field error envelope, and wholesale error each land in"
+                    + " the correct cells")
     void exportRoutesPerFieldDetailsAndWholesaleErrors() {
         TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
         UUID computationId = UUID.randomUUID();

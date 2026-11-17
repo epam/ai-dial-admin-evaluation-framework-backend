@@ -176,7 +176,8 @@ class RevalidationServiceTest {
 
     @Test
     @DisplayName(
-            "happy path: Phase 1 processes all test cases, Phase 2 runs per suite, task transitions PENDING → RUNNING → COMPLETED")
+            "happy path: Phase 1 processes all test cases, Phase 2 runs per suite, task transitions PENDING → RUNNING"
+                    + " → COMPLETED")
     void happyPathCompletesTask() {
         RevalidationTask task = pendingTask(2);
         when(revalidationTaskRepository.findById(taskId)).thenReturn(Optional.of(task));

@@ -312,9 +312,9 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
     @Override
     public Set<String> findNamesByTestSuiteId(UUID testSuiteId) {
         return new HashSet<>(dsl.select(TEST_SUITE_METRIC_DEFINITIONS.NAME)
-            .from(TEST_SUITE_METRIC_DEFINITIONS)
-            .where(TEST_SUITE_METRIC_DEFINITIONS.TEST_SUITE_ID.eq(testSuiteId.toString()))
-            .fetch(TEST_SUITE_METRIC_DEFINITIONS.NAME));
+                .from(TEST_SUITE_METRIC_DEFINITIONS)
+                .where(TEST_SUITE_METRIC_DEFINITIONS.TEST_SUITE_ID.eq(testSuiteId.toString()))
+                .fetch(TEST_SUITE_METRIC_DEFINITIONS.NAME));
     }
 
     @Override

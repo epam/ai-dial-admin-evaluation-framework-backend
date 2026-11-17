@@ -1089,11 +1089,11 @@ public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
     void shouldPreviewCsvWithArrayColumns() {
         TestSuiteResponseDto suite = createTestSuiteWithArraySchema();
         String csv = """
-                testCaseName,tags,scores
-                Row1,[],[]
-                Row2,"[""hello"",""world""]","[1,2,3]"
-                Row3,"[""a"",""b"",""c""]","[0.8,0.9,1.0]"
-                """;
+            testCaseName,tags,scores
+            Row1,[],[]
+            Row2,"[""hello"",""world""]","[1,2,3]"
+            Row3,"[""a"",""b"",""c""]","[0.8,0.9,1.0]"
+            """;
 
         ResponseEntity<CsvImportPreviewDto> response = restTemplate.postForEntity(
                 apiUrl("/datasets/" + metaTestDataHelper.getDatasetId(suite.getId()) + "/test-cases/import/preview"),
@@ -1113,11 +1113,11 @@ public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
     void shouldImportCsvWithArrayColumns() {
         TestSuiteResponseDto suite = createTestSuiteWithArraySchema();
         String csv = """
-                testCaseName,tags,scores
-                Row1,[],[]
-                Row2,"[""hello"",""world""]","[1,2,3]"
-                Row3,"[""a"",""b"",""c""]","[0.8,0.9,1.0]"
-                """;
+            testCaseName,tags,scores
+            Row1,[],[]
+            Row2,"[""hello"",""world""]","[1,2,3]"
+            Row3,"[""a"",""b"",""c""]","[0.8,0.9,1.0]"
+            """;
 
         ResponseEntity<CsvImportResultDto> response = restTemplate.postForEntity(
                 apiUrl("/datasets/" + metaTestDataHelper.getDatasetId(suite.getId()) + "/test-cases/import"),

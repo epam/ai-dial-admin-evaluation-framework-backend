@@ -299,7 +299,7 @@ public abstract class ZipTestCaseImportFunctionalTests extends BaseFunctionalTes
                 List.of(
                         new ZipManifest.FileEntry("files/1/report.pdf", foreignRef),
                         new ZipManifest.FileEntry("files/2/report.pdf", ownRef)));
-        String csv = "testCaseName,prompt,document\n" + "Foreign,a,files/1/report.pdf\n" + "Mine,b,files/2/report.pdf";
+        String csv = "testCaseName,prompt,document\nForeign,a,files/1/report.pdf\nMine,b,files/2/report.pdf";
         byte[] zip = createZip(Map.of(
                 "test-cases.csv", csv.getBytes(StandardCharsets.UTF_8),
                 "manifest.json", objectMapper.writeValueAsBytes(manifest),
@@ -380,7 +380,7 @@ public abstract class ZipTestCaseImportFunctionalTests extends BaseFunctionalTes
             Map<String, byte[]> entries = new LinkedHashMap<>();
             entries.put(
                     "test-cases.csv",
-                    ("testCaseName,prompt,document\n" + "Small,a,files/1/small.bin\n" + "Big,b,files/2/big.bin")
+                    ("testCaseName,prompt,document\nSmall,a,files/1/small.bin\nBig,b,files/2/big.bin")
                             .getBytes(StandardCharsets.UTF_8));
             entries.put("files/1/small.bin", "hello".getBytes(StandardCharsets.UTF_8));
             entries.put("files/2/big.bin", realBigContent);

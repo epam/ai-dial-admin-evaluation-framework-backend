@@ -504,8 +504,7 @@ public class TryItOutService {
             HttpTarget target, EndpointContractDto endpointRef, String requestTemplateJson) {
         switch (target) {
             case DeploymentTarget d
-            when d.ref() == null ->
-                throw new ValidationException("Deployment reference is " + "required for try-it-out");
+            when d.ref() == null -> throw new ValidationException("Deployment reference is required for try-it-out");
 
             case RouteTarget r
             when r.ref() == null -> throw new ValidationException("Route reference is required for try-it-out");

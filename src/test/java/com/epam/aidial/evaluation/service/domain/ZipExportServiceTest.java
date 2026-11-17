@@ -338,8 +338,8 @@ class ZipExportServiceTest {
     }
 
     @Test
-    @DisplayName(
-            "a transport-level download failure (not a DialCoreClientException) is mapped to a 502 naming the test case and reference, and deletes the temp ZIP file")
+    @DisplayName("a transport-level download failure (not a DialCoreClientException) is mapped to a 502 naming the test"
+            + " case and reference, and deletes the temp ZIP file")
     void buildZip_transportFailureDuringDownload_mapsTo502AndDeletesTempFile() throws IOException {
         List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
                 .name("document")

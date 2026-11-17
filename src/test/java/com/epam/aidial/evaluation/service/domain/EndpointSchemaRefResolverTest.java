@@ -70,11 +70,15 @@ class EndpointSchemaRefResolverTest {
 
     private static Stream<Arguments> cyclicEndpoints() {
         final Map<String, Object> direct = Map.of(
-                "$defs", Map.of("Node", Map.of("type", "object", "properties", Map.of("next", Map.of("$ref", "#/$defs/Node")))),
-                "$ref", "#/$defs/Node");
+                "$defs",
+                Map.of("Node", Map.of("type", "object", "properties", Map.of("next", Map.of("$ref", "#/$defs/Node")))),
+                "$ref",
+                "#/$defs/Node");
         final Map<String, Object> indirect = Map.of(
-                "$defs", Map.of("A", Map.of("$ref", "#/$defs/B"), "B", Map.of("$ref", "#/$defs/A")),
-                "$ref", "#/$defs/A");
+                "$defs",
+                Map.of("A", Map.of("$ref", "#/$defs/B"), "B", Map.of("$ref", "#/$defs/A")),
+                "$ref",
+                "#/$defs/A");
         return Stream.of("request-body", "urlencoded-body", "response-body", "parameter")
                 .flatMap(location -> Stream.of(
                         Arguments.of("direct", location, endpoint(location, direct)),
@@ -85,7 +89,8 @@ class EndpointSchemaRefResolverTest {
         final Map<String, Object> schema = Map.of(
                 "type", "object",
                 "$defs", Map.of("Value", Map.of("type", "string")),
-                "properties", Map.of("first", Map.of("$ref", "#/$defs/Value"), "second", Map.of("$ref", "#/$defs/Value")));
+                "properties",
+                        Map.of("first", Map.of("$ref", "#/$defs/Value"), "second", Map.of("$ref", "#/$defs/Value")));
         return Stream.of("request-body", "urlencoded-body", "response-body", "parameter")
                 .map(location -> Arguments.of(location, endpoint(location, schema)));
     }
@@ -97,15 +102,21 @@ class EndpointSchemaRefResolverTest {
                 .operationId("items")
                 .build();
         switch (location) {
-            case "request-body" -> endpoint.setRequestBodySchema(JsonRequestBodySchemaDto.builder().schema(schema).build());
-            case "urlencoded-body" -> endpoint.setRequestBodySchema(UrlEncodedFormRequestBodySchemaDto.builder().schema(schema).build());
+            case "request-body" ->
+                endpoint.setRequestBodySchema(
+                        JsonRequestBodySchemaDto.builder().schema(schema).build());
+            case "urlencoded-body" ->
+                endpoint.setRequestBodySchema(UrlEncodedFormRequestBodySchemaDto.builder()
+                        .schema(schema)
+                        .build());
             case "response-body" -> endpoint.setResponseBodySchema(schema);
-            case "parameter" -> endpoint.setParameters(List.of(ParameterDefinitionDto.builder()
-                    .name("query")
-                    .in(ParameterLocation.QUERY)
-                    .required(true)
-                    .schema(schema)
-                    .build()));
+            case "parameter" ->
+                endpoint.setParameters(List.of(ParameterDefinitionDto.builder()
+                        .name("query")
+                        .in(ParameterLocation.QUERY)
+                        .required(true)
+                        .schema(schema)
+                        .build()));
             default -> throw new IllegalArgumentException(location);
         }
         return endpoint;
@@ -114,7 +125,8 @@ class EndpointSchemaRefResolverTest {
     private static Map<String, Object> resolvedSchema(String location, EndpointContractDto endpoint) {
         return switch (location) {
             case "request-body" -> ((JsonRequestBodySchemaDto) endpoint.getRequestBodySchema()).getSchema();
-            case "urlencoded-body" -> ((UrlEncodedFormRequestBodySchemaDto) endpoint.getRequestBodySchema()).getSchema();
+            case "urlencoded-body" ->
+                ((UrlEncodedFormRequestBodySchemaDto) endpoint.getRequestBodySchema()).getSchema();
             case "response-body" -> endpoint.getResponseBodySchema();
             case "parameter" -> endpoint.getParameters().getFirst().getSchema();
             default -> throw new IllegalArgumentException(location);

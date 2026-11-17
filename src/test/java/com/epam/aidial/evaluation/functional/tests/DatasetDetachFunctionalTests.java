@@ -41,7 +41,8 @@ public abstract class DatasetDetachFunctionalTests extends BaseFunctionalTest {
 
     @Test
     @DisplayName(
-            "POST /test-suites/{id}/detach-dataset with no name → 200; new PRIVATE dataset with derived name, original PUBLIC dataset unchanged, test cases copied")
+            "POST /test-suites/{id}/detach-dataset with no name → 200; new PRIVATE dataset with derived name, original"
+                    + " PUBLIC dataset unchanged, test cases copied")
     void shouldDetachFromPublicDatasetWithDerivedName() {
         Dataset publicDs =
                 metaTestDataHelper.createDataset("Detach-Source-" + UUID.randomUUID(), "[]", DatasetVisibility.PUBLIC);
@@ -146,8 +147,8 @@ public abstract class DatasetDetachFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName(
-            "POST /test-suites/{id}/detach-dataset preserves multi-turn test cases (2-turn and 3-turn) with their content and schema")
+    @DisplayName("POST /test-suites/{id}/detach-dataset preserves multi-turn test cases (2-turn and 3-turn) with their"
+            + " content and schema")
     void shouldPreserveMultiTurnTestCasesOnDetach() {
         String schemaJson = "[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true,\"perTurn\":true}]";
         Dataset publicDs = metaTestDataHelper.createDataset(

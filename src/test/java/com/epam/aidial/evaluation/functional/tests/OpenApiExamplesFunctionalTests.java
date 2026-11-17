@@ -75,8 +75,7 @@ public abstract class OpenApiExamplesFunctionalTests extends BaseFunctionalTest 
     }
 
     private static void collectResponseExamples(JsonNode operation, String prefix, Set<String> names) {
-        for (Map.Entry<String, JsonNode> response :
-                operation.path("responses").properties()) {
+        for (Map.Entry<String, JsonNode> response : operation.path("responses").properties()) {
             final JsonNode examples =
                     response.getValue().path("content").path(JSON).path("examples");
             examples.propertyNames()

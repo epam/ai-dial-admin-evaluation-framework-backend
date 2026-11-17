@@ -128,14 +128,14 @@ public class TestSuiteRequestDto {
     @Valid
     @Schema(
             description =
-                    "Optional per-suite definition of the run-level `overall` metric score. Discriminated by `type`: "
-                            + "`mean` (no parameters, resolved against whatever metric fields the run currently has), "
-                            + "`weighted_mean` (an explicit `{metricName, outputField, weight}` list — weights need not "
-                            + "already sum to 1), or `custom_function` (a raw Structured Query DSL expression, the "
-                            + "free-form escape hatch, referencing metric columns by their flattened name "
-                            + "`metric::<metricName>::<outputField>`). When omitted, `overall` falls back to the "
-                            + "built-in default (single-metric only). `weighted_mean`/`custom_function` are not "
-                            + "validated as referencing real metrics at write time.",
+                    "Optional per-suite definition of the run-level `overall` metric score. Discriminated by `type`:"
+                            + " `mean` (no parameters, resolved against whatever metric fields the run currently has),"
+                            + " `weighted_mean` (an explicit `{metricName, outputField, weight}` list — weights need"
+                            + " not already sum to 1), or `custom_function` (a raw Structured Query DSL expression,"
+                            + " the free-form escape hatch, referencing metric columns by their flattened name"
+                            + " `metric::<metricName>::<outputField>`). When omitted, `overall` falls back to the"
+                            + " built-in default (single-metric only). `weighted_mean`/`custom_function` are not"
+                            + " validated as referencing real metrics at write time.",
             example = "{\"type\":\"mean\"}")
     private OverallScoreDefinition overallScore;
 
@@ -173,11 +173,11 @@ public class TestSuiteRequestDto {
 
     @Schema(
             description =
-                    "Optional per-suite test-case filter, as a Structured Query DSL filter subtree "
-                            + "(the `filter` of a `test_cases` query). Selects which of the bound dataset's test cases run: "
-                            + "combined (AND) with `is_valid` at run-creation count and snapshot. "
-                            + "References base columns and flattened `data::<field>` fields. Validated at write time against "
-                            + "the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). Null = no filter.",
+                    "Optional per-suite test-case filter, as a Structured Query DSL filter subtree (the `filter` of a"
+                            + " `test_cases` query). Selects which of the bound dataset's test cases run: combined"
+                            + " (AND) with `is_valid` at run-creation count and snapshot. References base columns and"
+                            + " flattened `data::<field>` fields. Validated at write time against the bound dataset's"
+                            + " test-case schema (unknown field/type/malformed → HTTP 400). Null = no filter.",
             example =
                     "{\"op\":\"or\",\"args\":[{\"op\":\"in\",\"args\":[{\"type\":\"field\",\"name\":\"data::category\"},"
                             + "{\"type\":\"array\",\"items\":[{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"A\"},"

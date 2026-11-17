@@ -287,6 +287,34 @@ The placeholder syntax SHALL be recognised in: `urlTemplate` string, `queryParam
 - **WHEN** `${{model}}` appears at multiple paths within `body` (e.g. in two nested objects)
 - **THEN** system SHALL track the variable once with source BODY; all occurrences are resolved with the same value
 
+### Requirement: Empty resource values use placeholder defaults
+
+For full-value FILE and SKILL placeholders in structural and JSONata request bodies, an empty string (`""`) selected from bound data or a constant SHALL be treated as absent before default selection and resource conversion. The resource type SHALL be determined by the existing explicit-hint-or-bound-schema rule. An empty constant SHALL fall back to the template default, not to bound data. Without a default, resolution SHALL return `null` and add the existing `REQUIRED` warning. Ordinary empty strings, explicit non-resource hints, whitespace-only strings, and embedded/stringify-only placeholders SHALL retain their existing behavior. This rule SHALL NOT relax resource-reference validators or modify stored test-case data.
+
+Status: **Implemented**
+
+#### Scenario: Empty optional file uses the default before JSONata filtering
+- **WHEN** `${{file3|file:public/no-file}}` is bound to an empty string in a JSONata request body
+- **THEN** substitution SHALL produce `files/public/no-file`
+- **AND** JSONata filtering SHALL be able to exclude the sentinel without a request-resolution error
+
+#### Scenario: Empty schema-bound skill uses its default
+- **WHEN** `${{skill:skills/public/default-skill/}}` is bound to a SKILL column containing an empty string
+- **THEN** resolution SHALL produce the canonical reference `skills/public/default-skill`
+
+#### Scenario: Empty required resource has no default
+- **WHEN** a full-value FILE or SKILL placeholder resolves from an empty string and has no default
+- **THEN** resolution SHALL return `null` with a `REQUIRED` warning instead of converting the empty reference
+
+#### Scenario: Explicit string hint overrides a resource column
+- **WHEN** `${{doc|string:fallback}}` is bound to a FILE column containing an empty string
+- **THEN** resolution SHALL preserve the empty string rather than selecting `fallback`
+
+#### Implementation notes
+- Type detection: [ResourceRefPlaceholderResolver](../../../evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/service/ResourceRefPlaceholderResolver.java). Binding lookup and absence/default handling: [TemplateVariableResolver](../../../evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/service/TemplateVariableResolver.java).
+- Request-body callers: [TemplateContentResolver](../../../evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/service/TemplateContentResolver.java) and [JsonataSourcePreprocessor](../../../evaluation-runner-core/src/main/java/com/epam/aidial/evaluation/runner/service/JsonataSourcePreprocessor.java).
+- Regression coverage, including MCP parity and attachment filtering: [ResourcePlaceholderRegressionTest](../../../evaluation-runner-core/src/test/java/com/epam/aidial/evaluation/runner/service/ResourcePlaceholderRegressionTest.java).
+
 ### Requirement: Input bindings on TestSuite
 The service SHALL store `inputBindings` (a list of `InputBindingDto`, never null, defaults to empty list when omitted in requests) on a TestSuite. Each binding explicitly maps a template variable to a `testCaseSchema` data field or a constant value. Bindings are the sole mapping mechanism — there is no implicit auto-mapping by variable name.
 
@@ -406,7 +434,7 @@ Status: **Implemented**
 - **THEN** system SHALL produce no validation warning (the actual file reference value is unknown at save time — it comes from test case data at runtime; only `constantValue` bindings for `|file` variables are validated as file refs)
 
 ### Requirement: Default value strategy
-For template variables with `${{var:default}}` syntax, the default value is the raw string after the colon in the placeholder. Defaults SHALL be interpreted with **typed defaults**: where schema type is known (e.g. from endpoint or testCaseSchema), the default string SHALL be interpreted as that type (e.g. number `0.7`, boolean `true`). When a binding exists and the data field has a value, the data value overrides the default. When a binding exists with `constantValue`, the constant always overrides the default.
+For template variables with `${{var:default}}` syntax, the default value is the raw string after the colon in the placeholder. Defaults SHALL be interpreted with **typed defaults**: where schema type is known (e.g. from endpoint or testCaseSchema), the default string SHALL be interpreted as that type (e.g. number `0.7`, boolean `true`). When a binding exists and the data field has a value, the data value overrides the default. When a binding exists with a non-null `constantValue`, the constant overrides the default. For full-value FILE and SKILL placeholders, a selected empty string from either source is absent and SHALL use the template default instead, as defined in **Empty resource values use placeholder defaults**; an empty constant SHALL NOT fall through to bound data.
 
 #### Scenario: Default from template syntax (typed)
 - **WHEN** template has `"temperature": "${{temp:0.7}}"` and no binding exists for `temp`

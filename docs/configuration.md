@@ -472,7 +472,7 @@ When `dial-app-proxy.enabled=true`, EF must be registered as a DIAL Application 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `test-suite-run.execution.default-concurrency-level` | `TEST_SUITE_RUN_EXECUTION_DEFAULT_CONCURRENCY_LEVEL` | `1` | No | - | Default number of parallel test case executions per run. |
-| `test-suite-run.execution.max-concurrency-level` | `TEST_SUITE_RUN_EXECUTION_MAX_CONCURRENCY_LEVEL` | `50` | No | - | Upper bound on concurrency per run. |
+| `test-suite-run.execution.max-concurrency-level` | `TEST_SUITE_RUN_EXECUTION_MAX_CONCURRENCY_LEVEL` | `5` | No | - | Upper bound on concurrency per run (runs requesting a higher `execution.concurrencyLevel` are rejected with HTTP 400). Exposed to clients via `GET /api/v1/test-suite-runs/config`. |
 | `test-suite-run.execution.default-request-timeout-ms` | `TEST_SUITE_RUN_EXEC_DEFAULT_TIMEOUT` | `600000` | No | - | Default per-request timeout in milliseconds. |
 | `test-suite-run.execution.max-request-timeout-ms` | `TEST_SUITE_RUN_EXEC_MAX_TIMEOUT` | `1200000` | No | - | Upper bound on per-request timeout. |
 | `test-suite-run.execution.default-rate-limit-rps` | `TEST_SUITE_RUN_EXECUTION_DEFAULT_RATE_LIMIT_RPS` | - | No | - | Default run-wide pacing of test-case-run submissions (runs per second) when a run request has no `executionSettings`. Unset (default) or non-positive means no rate limit. Not set in `application.yml`. |

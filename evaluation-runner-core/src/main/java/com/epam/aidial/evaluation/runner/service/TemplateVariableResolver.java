@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.runner.service;
 
+import static org.apache.commons.lang3.StringUtils.EMPTY;
+
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
@@ -24,15 +26,7 @@ import org.springframework.stereotype.Component;
 public class TemplateVariableResolver {
 
     /**
-     * Resolves a single template variable value.
-     *
-     * @param varName      the template variable name
-     * @param defaultValue the template default (from {@code ${{var:default}}}), nullable
-     * @param binding      the input binding for this variable, nullable
-     * @param data         test case data map — nullable; when null (suite-level),
-     *                     data-field bindings resolve to null (fall through to default)
-     * @param warnings     accumulator for resolution warnings
-     * @return the resolved value, or null if unresolvable
+     * Resolves a variable without treating empty strings as absent.
      */
     public Object resolveVariable(
             String varName,
@@ -40,42 +34,63 @@ public class TemplateVariableResolver {
             InputBindingDto binding,
             Map<String, Object> data,
             List<ValidationWarningDto> warnings) {
-        Map<String, Object> safeData = data != null ? data : Map.of();
+        return resolveVariable(varName, defaultValue, binding, data, warnings, false);
+    }
 
-        if (binding != null) {
-            // constantValue wins
-            if (binding.getConstantValue() != null) {
-                return binding.getConstantValue();
-            }
-            // dataField
-            if (binding.getDataField() != null && !binding.getDataField().isBlank()) {
-                Object value = safeData.get(binding.getDataField());
-                if (value != null) {
-                    return value;
-                }
-                // data field is null, fall through to default
-                if (defaultValue != null) {
-                    return defaultValue;
-                }
-                warnings.add(warning(
-                        binding.getDataField(),
-                        "$.data." + binding.getDataField(),
-                        "Bound field '" + binding.getDataField() + "' has no value for variable '" + varName + "'",
-                        ValidationWarningCode.REQUIRED));
-                return null;
-            }
+    /**
+     * Resolves a variable, optionally treating an empty resource value as absent before default selection.
+     * An empty constant still takes priority over bound data: it falls back to the template default, not
+     * to the data field. Callers enable this only for full-value FILE and SKILL placeholders.
+     *
+     * @param emptyAsAbsent whether an empty string has the same semantics as a missing value
+     */
+    public Object resolveVariable(
+            String varName,
+            String defaultValue,
+            InputBindingDto binding,
+            Map<String, Object> data,
+            List<ValidationWarningDto> warnings,
+            boolean emptyAsAbsent) {
+        final Object value = resolveBoundValue(binding, data);
+        if (value == null || (emptyAsAbsent && EMPTY.equals(value))) {
+            return resolveAbsentValue(varName, defaultValue, binding, warnings);
         }
+        return value;
+    }
 
-        // No binding
+    private Object resolveBoundValue(InputBindingDto binding, Map<String, Object> data) {
+        if (binding == null) {
+            return null;
+        }
+        final Object constantValue = binding.getConstantValue();
+        if (constantValue != null) {
+            return constantValue;
+        }
+        final String dataField = binding.getDataField();
+        if (data == null || dataField == null || dataField.isBlank()) {
+            return null;
+        }
+        return data.get(dataField);
+    }
+
+    private Object resolveAbsentValue(
+            String varName, String defaultValue, InputBindingDto binding, List<ValidationWarningDto> warnings) {
         if (defaultValue != null) {
             return defaultValue;
         }
-
-        warnings.add(warning(
-                varName,
-                "$.inputBindings",
-                "Required template variable '" + varName + "' has no binding and no default",
-                ValidationWarningCode.REQUIRED));
+        if (binding != null && binding.getDataField() != null && !binding.getDataField().isBlank()) {
+            warnings.add(warning(
+                    binding.getDataField(),
+                    "$.data." + binding.getDataField(),
+                    "Bound field '" + binding.getDataField() + "' has no value for variable '" + varName + "'",
+                    ValidationWarningCode.REQUIRED));
+        } else {
+            warnings.add(warning(
+                    varName,
+                    "$.inputBindings",
+                    "Required template variable '" + varName + "' has no binding and no default",
+                    ValidationWarningCode.REQUIRED));
+        }
         return null;
     }
 

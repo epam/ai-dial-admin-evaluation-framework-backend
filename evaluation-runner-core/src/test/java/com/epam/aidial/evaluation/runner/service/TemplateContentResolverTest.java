@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.runner.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -62,7 +63,7 @@ class TemplateContentResolverTest {
     @Test
     @DisplayName("resolveString substitutes an embedded placeholder by stringifying the resolved value")
     void resolveStringSubstitutesEmbeddedPlaceholder() {
-        when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), any(), anyBoolean()))
                 .thenReturn("Alice");
 
         String result = resolver.resolveString("Hello ${{name}}!", Map.of(), Map.of(), warnings);
@@ -73,7 +74,7 @@ class TemplateContentResolverTest {
     @Test
     @DisplayName("resolveString substitutes an unresolved placeholder with an empty string")
     void resolveStringSubstitutesUnresolvedAsEmpty() {
-        when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("missing"), isNull(), any(), anyMap(), any(), anyBoolean()))
                 .thenReturn(null);
 
         String result = resolver.resolveString("Value: [${{missing}}]", Map.of(), Map.of(), warnings);
@@ -84,7 +85,7 @@ class TemplateContentResolverTest {
     @Test
     @DisplayName("resolveObject preserves the resolved value's type for a full-value placeholder")
     void resolveObjectPreservesTypeForFullValuePlaceholder() {
-        when(templateVariableResolver.resolveVariable(eq("temperature"), isNull(), any(), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("temperature"), isNull(), any(), anyMap(), any(), anyBoolean()))
                 .thenReturn(0.7);
 
         Object result = resolver.resolveObject("${{temperature}}", Map.of(), Map.of(), warnings, null);
@@ -97,7 +98,7 @@ class TemplateContentResolverTest {
     void resolveObjectResolvesFileHintToDialRef() {
         String shortRef = "@ef/suites/abc/file.bin";
         String dialRef = "files/real-bucket/suites/abc/file.bin";
-        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), anyMap(), any(), anyBoolean()))
                 .thenReturn(shortRef);
         when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
@@ -129,7 +130,7 @@ class TemplateContentResolverTest {
         String shortRef = "@ef/datasets/abc/doc.pdf";
         String dialRef = "files/real-bucket/datasets/abc/doc.pdf";
         InputBindingDto binding = binding("doc", "attachment");
-        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn(shortRef);
         when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
@@ -144,7 +145,7 @@ class TemplateContentResolverTest {
         String shortRef = "@ef/datasets/abc/doc.pdf";
         String dialRef = "files/real-bucket/datasets/abc/doc.pdf";
         InputBindingDto binding = binding("doc", "attachment");
-        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn(shortRef);
         when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
@@ -166,7 +167,7 @@ class TemplateContentResolverTest {
     @DisplayName("resolveObject leaves a hintless placeholder bound to a STRING column unchanged")
     void resolveObjectLeavesHintlessStringColumnUnchanged() {
         InputBindingDto binding = binding("t", "title");
-        when(templateVariableResolver.resolveVariable(eq("t"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("t"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn("@ef/datasets/abc/doc.pdf");
 
         Object result = resolver.resolveObject("${{t}}", Map.of("t", binding), Map.of(), warnings, SCHEMA);
@@ -179,7 +180,7 @@ class TemplateContentResolverTest {
     @DisplayName("resolveObject does not convert a FILE-bound placeholder embedded in surrounding text")
     void resolveObjectDoesNotConvertEmbeddedFilePlaceholder() {
         InputBindingDto binding = binding("doc", "attachment");
-        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn("@ef/datasets/abc/doc.pdf");
 
         Object result = resolver.resolveObject("see ${{doc}}", Map.of("doc", binding), Map.of(), warnings, SCHEMA);
@@ -192,7 +193,7 @@ class TemplateContentResolverTest {
     @DisplayName("resolveObject keeps the raw value for |string on a FILE column (explicit hint wins)")
     void resolveObjectExplicitStringHintWinsOverFileColumn() {
         InputBindingDto binding = binding("doc", "attachment");
-        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn("@ef/datasets/abc/doc.pdf");
 
         Object result = resolver.resolveObject("${{doc|string}}", Map.of("doc", binding), Map.of(), warnings, SCHEMA);
@@ -205,7 +206,7 @@ class TemplateContentResolverTest {
     @DisplayName("resolveObject with a null schema converts only an explicit |file hint")
     void resolveObjectNullSchemaIgnoresFileColumn() {
         InputBindingDto binding = binding("doc", "attachment");
-        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn("@ef/datasets/abc/doc.pdf");
 
         Object result = resolver.resolveObject("${{doc}}", Map.of("doc", binding), Map.of(), warnings, null);
@@ -217,7 +218,7 @@ class TemplateContentResolverTest {
     @Test
     @DisplayName("resolveObject recurses into nested Maps and Lists")
     void resolveObjectRecursesIntoNestedStructures() {
-        when(templateVariableResolver.resolveVariable(eq("inner"), isNull(), any(), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("inner"), isNull(), any(), anyMap(), any(), anyBoolean()))
                 .thenReturn("resolved");
 
         @SuppressWarnings("unchecked")
@@ -254,7 +255,7 @@ class TemplateContentResolverTest {
                 .templateVariable("q")
                 .dataField("qCol")
                 .build();
-        when(templateVariableResolver.resolveVariable(eq("q"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("q"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn("bound value");
 
         String result = resolver.resolveString("${{q}}", Map.of("q", binding), Map.of("qCol", "bound value"), warnings);
@@ -292,7 +293,7 @@ class TemplateContentResolverTest {
             .build());
 
     private void stubSkillValue(String variable, Object value) {
-        when(templateVariableResolver.resolveVariable(eq(variable), isNull(), any(), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq(variable), isNull(), any(), anyMap(), any(), anyBoolean()))
                 .thenReturn(value);
     }
 
@@ -321,7 +322,7 @@ class TemplateContentResolverTest {
     @DisplayName("resolveObject canonicalises a hintless placeholder bound to a SKILL column")
     void resolveObjectCanonicalisesHintlessSkillColumn() {
         InputBindingDto binding = binding("s", "skill");
-        when(templateVariableResolver.resolveVariable(eq("s"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("s"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn(" skills/b/x ");
 
         Object result = resolver.resolveObject("${{s}}", Map.of("s", binding), Map.of(), warnings, SKILL_SCHEMA);
@@ -334,7 +335,7 @@ class TemplateContentResolverTest {
     @DisplayName("resolveObject keeps the raw value for |string on a SKILL column (explicit hint wins)")
     void resolveObjectExplicitStringHintWinsOverSkillColumn() {
         InputBindingDto binding = binding("s", "skill");
-        when(templateVariableResolver.resolveVariable(eq("s"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("s"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn(" skills/b/x ");
 
         Object result = resolver.resolveObject("${{s|string}}", Map.of("s", binding), Map.of(), warnings, SKILL_SCHEMA);
@@ -350,7 +351,7 @@ class TemplateContentResolverTest {
                 .name("text")
                 .type(SchemaFieldType.STRING)
                 .build());
-        when(templateVariableResolver.resolveVariable(eq("s"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("s"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn(" skills/b/x ");
 
         Object result = resolver.resolveObject("${{s|skill}}", Map.of("s", binding), Map.of(), warnings, stringSchema);
@@ -393,7 +394,7 @@ class TemplateContentResolverTest {
     @DisplayName("resolveObject canonicalises a skill nested as custom_content.skills[{url}] in a message")
     void resolveObjectCanonicalisesSkillNestedInMessageCustomContent() {
         InputBindingDto binding = binding("skill", "skill");
-        when(templateVariableResolver.resolveVariable(eq("skill"), isNull(), eq(binding), anyMap(), any()))
+        when(templateVariableResolver.resolveVariable(eq("skill"), isNull(), eq(binding), anyMap(), any(), anyBoolean()))
                 .thenReturn("skills/public/vc-test/");
         Map<String, Object> body = Map.of(
                 "messages",

@@ -134,6 +134,9 @@ public class McpRequestResolver {
 
             final InputBindingDto binding = bindingByVar.get(varName);
             Object resolved = resolveVariable(varName, bindingByVar, data);
+            if ("".equals(resolved) && resourceRefPlaceholderResolver.isResourceReference(typeHint, binding, testCaseSchema)) {
+                resolved = null;
+            }
             if (resolved != null) {
                 return resourceRefPlaceholderResolver.resolve(resolved, typeHint, binding, testCaseSchema);
             }

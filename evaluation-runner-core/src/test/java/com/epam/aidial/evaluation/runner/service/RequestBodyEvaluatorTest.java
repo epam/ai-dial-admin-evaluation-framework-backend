@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.runner.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -101,7 +102,7 @@ class RequestBodyEvaluatorTest {
         @Test
         @DisplayName("a placeholder inside a Map body resolves before evaluation, same as the legacy structural path")
         void placeholderInMapBodyResolves() {
-            when(templateVariableResolver.resolveVariable(eq("prompt"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("prompt"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("Hello world");
             Map<String, Object> content = Map.of("prompt", "${{prompt}}");
 
@@ -143,7 +144,7 @@ class RequestBodyEvaluatorTest {
                 .build();
 
         private void stubDocValue() {
-            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(fileBinding), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), eq(fileBinding), anyMap(), any(), anyBoolean()))
                     .thenReturn(SHORT_REF);
         }
 
@@ -250,7 +251,7 @@ class RequestBodyEvaluatorTest {
             Map<String, Object> newMessage = new LinkedHashMap<>();
             newMessage.put("role", "user");
             newMessage.put("content", "hi");
-            when(templateVariableResolver.resolveVariable(eq("newMessages"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("newMessages"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn(List.of(newMessage));
             String source = "{\"messages\": $append($history, ${{newMessages}})}";
 
@@ -262,7 +263,7 @@ class RequestBodyEvaluatorTest {
         @Test
         @DisplayName("embedded placeholder values with quotes/backslashes/newlines evaluate to the literal string")
         void embeddedAdversarialValuesEvaluateCorrectly() {
-            when(templateVariableResolver.resolveVariable(eq("text"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("text"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("she said \"hi\" \\ then\nleft");
             String source = "{\"content\": \"prefix: ${{text}}\"}";
 
@@ -274,7 +275,7 @@ class RequestBodyEvaluatorTest {
         @Test
         @DisplayName("an embedded value that itself looks like a placeholder is not re-substituted")
         void embeddedValueLookingLikePlaceholderIsNotReSubstituted() {
-            when(templateVariableResolver.resolveVariable(eq("evil"), isNull(), any(), anyMap(), any()))
+            when(templateVariableResolver.resolveVariable(eq("evil"), isNull(), any(), anyMap(), any(), anyBoolean()))
                     .thenReturn("${{other}}");
             String source = "{\"content\": \"value: ${{evil}}\"}";
 

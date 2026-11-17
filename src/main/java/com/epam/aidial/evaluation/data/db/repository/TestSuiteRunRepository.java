@@ -4,7 +4,9 @@ import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -72,4 +74,24 @@ public interface TestSuiteRunRepository {
      * @return list of run UUIDs owned by this suite (may be empty)
      */
     List<UUID> findIdsByTestSuiteId(UUID testSuiteId);
+
+    /**
+     * Reads each run's {@code overallScoreThreshold} from its suite snapshot in one statement, projecting
+     * only the run id and that single snapshot key (no other columns).
+     *
+     * <p>A run with no snapshot, or whose snapshot has no threshold, is <strong>absent</strong> from the map
+     * — never present with a {@code null} value. An empty or {@code null} {@code runIds} returns an empty
+     * map without touching the database.
+     */
+    Map<UUID, Double> findThresholdsByRunIds(Collection<UUID> runIds);
+
+    /**
+     * Each suite's newest {@code perSuite} {@code COMPLETED} runs, newest first, in one statement. Runs are
+     * ordered per suite by {@code created_at_ms} descending, breaking a tie on the larger run id.
+     * PENDING, RUNNING, CANCELLING, FAILED and CANCELLED runs are never returned.
+     *
+     * <p>A suite with no completed run is absent from the map. An empty or {@code null} {@code suiteIds}
+     * returns an empty map without touching the database.
+     */
+    Map<UUID, List<UUID>> findLatestCompletedRunIds(Collection<UUID> suiteIds, int perSuite);
 }

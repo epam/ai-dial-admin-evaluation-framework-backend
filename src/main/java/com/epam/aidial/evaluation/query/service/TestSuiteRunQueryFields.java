@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.query.service;
 
+import com.epam.aidial.evaluation.constants.TestSuiteRunConstants;
 import java.util.List;
 import java.util.Set;
 
@@ -74,7 +75,7 @@ public final class TestSuiteRunQueryFields {
     public static final String TOTAL_COST_FIELD = "total_cost";
 
     public static final String SCORE_THRESHOLD_FIELD = "overall_score_threshold";
-    public static final String SCORE_THRESHOLD_SNAPSHOT_KEY = "overallScoreThreshold";
+    public static final String SCORE_THRESHOLD_SNAPSHOT_KEY = TestSuiteRunConstants.SNAPSHOT_OVERALL_SCORE_THRESHOLD_KEY;
 
     public static final RefDescriptor DEPLOYMENT_REF =
             new RefDescriptor("deployment_ref", "deploymentRef", List.of("id", "name", "version", "type"));

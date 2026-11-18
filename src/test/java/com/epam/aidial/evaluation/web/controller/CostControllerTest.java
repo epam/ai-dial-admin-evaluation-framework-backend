@@ -20,6 +20,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.web.handler.DefaultExceptionHandler;
 import com.epam.aidial.evaluation.web.path.WildcardPathResolver;
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -142,6 +143,25 @@ class CostControllerTest {
                 .andExpect(content().json("{\"totalTestCaseCost\":0.0007125,\"totalMetricEvalCost\":0.000231}"));
 
         verify(costService).getDeploymentCosts(eq("applications/public/my-app"), eq(1000L), eq(2000L));
+    }
+
+    @Test
+    @DisplayName("passes the deployment ID to CostService still percent-encoded")
+    void passesDeploymentIdPercentEncoded() throws Exception {
+        when(costService.getDeploymentCosts("applications/public/QA/Code%20Apps%20ALS/app__1.0.0", 1000L, 2000L))
+                .thenReturn(DeploymentCostsResponseDto.builder()
+                        .totalTestCaseCost(0.067)
+                        .totalMetricEvalCost(null)
+                        .build());
+
+        mockMvc.perform(get(URI.create("/api/v1/costs/deployment/applications/public/QA/Code%20Apps%20ALS/app__1.0.0"))
+                        .param("from", "1000")
+                        .param("to", "2000"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{\"totalTestCaseCost\":0.067}"));
+
+        verify(costService)
+                .getDeploymentCosts(eq("applications/public/QA/Code%20Apps%20ALS/app__1.0.0"), eq(1000L), eq(2000L));
     }
 
     @Test

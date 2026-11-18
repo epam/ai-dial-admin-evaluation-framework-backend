@@ -51,7 +51,9 @@ of test-case execution calls and the total price of metric-evaluation calls for 
 ### Requirement: dial-adas usage-log correlation by deployment, time range, and phase
 The system SHALL query dial-adas's `dial_usage_log` entity via its query DSL
 (`POST {dial-adas-base-url}/v1/queries/execute`), filtering rows on a direct equality match of the
-`deployment` field against the requested `deploymentId`, a direct `ge`/`le` range match of the
+`deployment` field against the requested `deploymentId` **as taken from the request path, still
+percent-encoded** (e.g. a space as `%20`, the form in which the usage log stores deployment ids), a
+direct `ge`/`le` range match of the
 `request_time` field (typed `"timestamp"`, values passed as epoch-millisecond strings) against the
 requested `[from, to]`, and a match on the relevant execution phase as `eval.phase=execution` or
 `eval.phase=metric-evaluation` within `usage_request_baggage.baggage` — the same
@@ -71,6 +73,13 @@ baggage-phase technique used by the existing run-scoped cost query. Status: Impl
   so the response can be read directly) rather than fetching individual usage-log rows and summing them
   in application code
 
+#### Scenario: Deployment id contains characters stored percent-encoded
+- **WHEN** a client requests
+  `GET /api/v1/costs/deployment/applications/public/QA/Code%20Apps%20ALS/app__1.0.0` and usage-log rows
+  store the deployment as `applications/public/QA/Code%20Apps%20ALS/app__1.0.0`
+- **THEN** the `deployment` filter is an `eq` against `applications/public/QA/Code%20Apps%20ALS/app__1.0.0`
+  (the path tail as sent, not decoded), the rows match, and the response contains the non-null summed totals
+
 ## Implementation notes
 Introduces `CostController` (`web.controller`) exposing `GET /api/v1/costs/deployment/**` (resolved via
 the shared `WildcardPathResolver`, same pattern as `DeploymentController`'s by-ID lookups, so
@@ -82,4 +91,6 @@ adding `buildDeploymentAggregateQuery` beside the existing `buildRunAggregateQue
 the amendment relocating `getRunCosts` from `TestSuiteRunService` into `CostService`. The route was
 restructured post-archive (pre-merge) from a flat `GET /api/v1/costs?deploymentId=&from=&to=` to
 `GET /api/v1/costs/deployment/**` so the `/api/v1/costs` resource can grow additional cost sub-resources
-without query-param collisions.
+without query-param collisions. The controller resolves the id with `WildcardPathResolver.resolveTailEncoded`
+(the undecoded tail), so ids containing percent-encoded characters (e.g. folders with spaces) match the
+encoded `deployment` values in the usage log; `AdasCostQueryBuilder` is unchanged (issue #307).

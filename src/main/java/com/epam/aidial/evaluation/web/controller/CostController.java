@@ -51,15 +51,14 @@ public class CostController {
                     + "epoch milliseconds) and returns the total price of test-case execution calls and "
                     + "metric-evaluation (judge model) calls. Everything after the 'deployment' segment is the "
                     + "deployment ID, so IDs containing slashes are supported as-is "
-                    + "(e.g. /api/v1/costs/deployment/applications/public/my-app__0.0.1). Percent-encoded "
-                    + "characters in the ID are decoded once (e.g. %20 becomes a space). To query a specific "
+                    + "(e.g. /api/v1/costs/deployment/applications/public/my-app__0.0.1). The ID is "
+                    + "matched as sent, still percent-encoded (e.g. a space as %20), because the usage log "
+                    + "stores deployment IDs in that form. To query a specific "
                     + "window (e.g. this month, previous month) compute its epoch-millisecond bounds "
                     + "client-side and pass them as from/to. A phase with no matching usage-log rows returns "
                     + "null for that total.")
     @ApiResponse(responseCode = "200", description = "Costs computed")
-    @ApiResponse(
-            responseCode = "400",
-            description = "Empty deployment ID, malformed percent-encoding in the ID, or from > to")
+    @ApiResponse(responseCode = "400", description = "Empty deployment ID or from > to")
     @ApiResponse(responseCode = "502", description = "dial-adas unreachable or returned an error")
     @ApiResponse(responseCode = "504", description = "dial-adas request timed out")
     public DeploymentCostsResponseDto getDeploymentCosts(
@@ -68,7 +67,7 @@ public class CostController {
                     Long from,
             @Parameter(description = "Range end, inclusive (epoch milliseconds)", required = true) @RequestParam
                     Long to) {
-        final String deploymentId = wildcardPathResolver.resolveTail(request);
+        final String deploymentId = wildcardPathResolver.resolveTailEncoded(request);
         validateId(deploymentId);
         return costService.getDeploymentCosts(deploymentId, from, to);
     }

@@ -112,6 +112,22 @@ class WildcardPathResolverTest {
     }
 
     @Test
+    @DisplayName("resolveTailEncoded returns the tail still percent-encoded")
+    void encodedTailKeepsPercentEncoding() {
+        MockHttpServletRequest request =
+                request("/api/v1/deployments/dial-application/applications/public/Code%20Apps%20ALS/app__1.0.0");
+
+        assertThat(resolver.resolveTailEncoded(request)).isEqualTo("applications/public/Code%20Apps%20ALS/app__1.0.0");
+    }
+
+    @Test
+    @DisplayName("resolveTailEncoded does not reject malformed percent-encoding")
+    void encodedTailIsNotValidated() {
+        assertThat(resolver.resolveTailEncoded(request("/api/v1/deployments/dial-model/broken%2")))
+                .isEqualTo("broken%2");
+    }
+
+    @Test
     @DisplayName("request without a matched mapping pattern fails fast")
     void missingPatternAttributeFailsFast() {
         MockHttpServletRequest request = new MockHttpServletRequest();

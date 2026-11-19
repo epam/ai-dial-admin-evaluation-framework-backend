@@ -48,6 +48,7 @@ import tools.jackson.databind.ObjectMapper;
 class TestCaseRunnerTest {
 
     private static final long FIXED_NOW_MS = 1_000_000L;
+    private static final long RUN_CREATED_AT_MS = 500_000L;
     private static final int ASYNC_TIMEOUT_MS = 5000;
     private static final UUID SUITE_ID = UUID.randomUUID();
     private static final UUID DATASET_ID = UUID.randomUUID();
@@ -291,12 +292,14 @@ class TestCaseRunnerTest {
     }
 
     @Test
-    @DisplayName("Worker exception synthesizes ERROR row with expected envelope and zeroed timing")
+    @DisplayName("Worker exception synthesizes ERROR row with expected envelope, zeroed timing, and the run's "
+            + "suite id and creation timestamp")
     void shouldSynthesizeErrorRow_whenWorkerThrows() throws Exception {
         TestCaseRunInput input1 = buildInput();
         TestCaseRunInput input2 = buildInput();
         TestCaseRunResult result2 = buildResult(input2);
-        EvaluationContext context = buildContext(1, 2);
+        EvaluationContext context =
+                buildContextBuilder(1, 2).createdAtMs(RUN_CREATED_AT_MS).build();
         TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenThrow(new RuntimeException("boom"));
@@ -321,7 +324,8 @@ class TestCaseRunnerTest {
         assertThat(synthetic.getExecCompletedAtMs()).isEqualTo(FIXED_NOW_MS);
         assertThat(synthetic.getExecDurationMs()).isEqualTo(0L);
         assertThat(synthetic.getRetryCount()).isEqualTo(0);
-        assertThat(synthetic.getCreatedAtMs()).isEqualTo(FIXED_NOW_MS);
+        assertThat(synthetic.getTestSuiteId()).isEqualTo(context.getSuiteId());
+        assertThat(synthetic.getCreatedAtMs()).isEqualTo(RUN_CREATED_AT_MS).isNotEqualTo(FIXED_NOW_MS);
 
         ObjectMapper om = new ObjectMapper();
         JsonNode envelope = om.readTree(synthetic.getResponseBody());

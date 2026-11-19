@@ -139,6 +139,7 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
 import com.epam.aidial.evaluation.runner.client.dialcore.dto.DialFileMetadataDto;
 import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.job.EvaluationWorker;
 import com.epam.aidial.evaluation.service.domain.MetricProviderSyncJob;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
@@ -168,6 +169,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.NestedTestConfiguration;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -213,6 +215,10 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @MockitoBean
     private DialFileClient dialFileClient;
+
+    /** Spy (real behaviour unless stubbed) so a test can make the worker itself throw for one test case. */
+    @MockitoSpyBean
+    private EvaluationWorker evaluationWorker;
 
     private final Map<String, byte[]> dialFileStore = new ConcurrentHashMap<>();
     private final Map<String, DialFileMetadataDto> dialMetadataStore = new ConcurrentHashMap<>();

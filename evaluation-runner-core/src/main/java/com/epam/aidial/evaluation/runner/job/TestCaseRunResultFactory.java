@@ -30,13 +30,26 @@ public class TestCaseRunResultFactory {
     private static final String FALLBACK_ENVELOPE =
             "{\"error\":{\"type\":\"Unknown\",\"message\":\"\",\"origin\":\"executor\"}}";
 
+    /** Nothing was extracted: the result write requires both values (NOT NULL columns). */
+    private static final String NO_EXTRACTED_COLUMNS = "{}";
+
+    private static final String NO_EXTRACTION_WARNINGS = "[]";
+
     private final ObjectMapper objectMapper;
 
-    public TestCaseRunResult errorResult(TestCaseRunInput input, int runIndex, Throwable cause, long nowMs) {
+    /**
+     * @param suiteId the run's suite id — the result write requires it, so a row without it fails its whole batch
+     * @param runCreatedAtMs the run's creation timestamp, carried by every result row of the run; run-scoped
+     *     reads select a run's rows by it, so a row stamped with any other value is never read back
+     * @param nowMs current time, used only for the execution start/completion timestamps
+     */
+    public TestCaseRunResult errorResult(
+            TestCaseRunInput input, int runIndex, Throwable cause, UUID suiteId, long runCreatedAtMs, long nowMs) {
         String envelope = buildEnvelope(cause);
         return TestCaseRunResult.builder()
                 .id(UUID.randomUUID())
                 .testSuiteRunId(input.getRunId())
+                .testSuiteId(suiteId)
                 .testCaseId(input.getTestCaseId())
                 .testCaseName(input.getTestCaseName())
                 .runIndex(runIndex)
@@ -47,9 +60,11 @@ public class TestCaseRunResultFactory {
                 .execStartedAtMs(nowMs)
                 .execCompletedAtMs(nowMs)
                 .execDurationMs(0L)
+                .extractedColumns(NO_EXTRACTED_COLUMNS)
+                .extractionWarnings(NO_EXTRACTION_WARNINGS)
                 .retryCount(0)
                 .logDetails(null)
-                .createdAtMs(nowMs)
+                .createdAtMs(runCreatedAtMs)
                 .build();
     }
 

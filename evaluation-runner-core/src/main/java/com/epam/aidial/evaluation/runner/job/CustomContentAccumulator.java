@@ -96,7 +96,7 @@ final class CustomContentAccumulator {
         }
         JsonNode existing = scalarsAndObjects.get(key);
         if (value.isObject() && existing instanceof ObjectNode existingObject) {
-            deepMergeInto(existingObject, value);
+            JsonObjectDeltaAccumulator.mergePreservingNewObjects(existingObject, value);
         } else {
             scalarsAndObjects.set(key, value.deepCopy());
         }
@@ -122,7 +122,7 @@ final class CustomContentAccumulator {
             if (existing == null) {
                 byIndex.put(index, elementCopy);
             } else {
-                deepMergeInto(existing, element);
+                JsonObjectDeltaAccumulator.mergePreservingNewObjects(existing, element);
             }
         }
     }
@@ -136,22 +136,5 @@ final class CustomContentAccumulator {
             array.add(element.deepCopy());
         }
         return array;
-    }
-
-    private void deepMergeInto(ObjectNode target, JsonNode source) {
-        for (Map.Entry<String, JsonNode> entry : source.properties()) {
-            String key = entry.getKey();
-            JsonNode value = entry.getValue();
-            if (value == null || value.isNull()) {
-                // last non-null wins — a null-valued partial field never erases an already-merged value
-                continue;
-            }
-            JsonNode existing = target.get(key);
-            if (value.isObject() && existing instanceof ObjectNode existingObject) {
-                deepMergeInto(existingObject, value);
-            } else {
-                target.set(key, value.deepCopy());
-            }
-        }
     }
 }

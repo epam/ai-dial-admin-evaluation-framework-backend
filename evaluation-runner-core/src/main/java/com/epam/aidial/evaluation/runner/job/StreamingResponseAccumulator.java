@@ -210,15 +210,21 @@ public class StreamingResponseAccumulator {
     }
 
     private void assembleOpenAiResponse(List<SseEvent> events, ExecutionStatus parseStatus) {
-        StringBuilder content = new StringBuilder();
-        final CustomContentAccumulator customContentAccumulator = new CustomContentAccumulator();
+        final var content = new StringBuilder();
+        final var customContentAccumulator = new CustomContentAccumulator();
+        final var customFieldsAccumulator = new CustomFieldsAccumulator();
         for (SseEvent event : events) {
             if (event.data() instanceof JsonNode node) {
-                String delta = extractOpenAiContent(node);
-                if (delta != null && !delta.isEmpty()) {
-                    content.append(delta);
+                final JsonNode delta = extractOpenAiDelta(node);
+                if (delta == null) {
+                    continue;
                 }
-                customContentAccumulator.accumulate(extractOpenAiCustomContent(node));
+                final String text = extractOpenAiContent(delta);
+                if (text != null && !text.isEmpty()) {
+                    content.append(text);
+                }
+                customContentAccumulator.accumulate(delta.get("custom_content"));
+                customFieldsAccumulator.accumulate(delta.get("custom_fields"));
             }
         }
 
@@ -235,6 +241,10 @@ public class StreamingResponseAccumulator {
                 final ObjectNode mergedCustomContent = customContentAccumulator.getMerged();
                 if (mergedCustomContent != null) {
                     message.set("custom_content", mergedCustomContent);
+                }
+                final ObjectNode mergedCustomFields = customFieldsAccumulator.getMerged();
+                if (mergedCustomFields != null) {
+                    message.set("custom_fields", mergedCustomFields);
                 }
 
                 ObjectNode choice = objectMapper.createObjectNode();
@@ -303,44 +313,20 @@ public class StreamingResponseAccumulator {
         }
     }
 
-    private String extractOpenAiContent(JsonNode node) {
-        JsonNode choices = node.get("choices");
+    private JsonNode extractOpenAiDelta(JsonNode node) {
+        final JsonNode choices = node.get("choices");
         if (choices == null || !choices.isArray() || choices.isEmpty()) {
             return null;
         }
-        JsonNode first = choices.get(0);
-        if (first == null) {
-            return null;
-        }
-        JsonNode delta = first.get("delta");
-        if (delta == null) {
-            return null;
-        }
-        JsonNode content = delta.get("content");
+        final JsonNode first = choices.get(0);
+        return first == null ? null : first.get("delta");
+    }
+
+    private String extractOpenAiContent(JsonNode delta) {
+        final JsonNode content = delta.get("content");
         if (content == null || content.isNull()) {
             return null;
         }
         return content.asString();
-    }
-
-    /**
-     * Reads DIAL's {@code custom_content} extension field off {@code choices[0].delta} (NOT
-     * {@code choices[0].message}, which is only present in non-streaming responses). Returns
-     * {@code null} when absent — most chunks carry no {@code custom_content} at all.
-     */
-    private JsonNode extractOpenAiCustomContent(JsonNode node) {
-        JsonNode choices = node.get("choices");
-        if (choices == null || !choices.isArray() || choices.isEmpty()) {
-            return null;
-        }
-        JsonNode first = choices.get(0);
-        if (first == null) {
-            return null;
-        }
-        JsonNode delta = first.get("delta");
-        if (delta == null) {
-            return null;
-        }
-        return delta.get("custom_content");
     }
 }

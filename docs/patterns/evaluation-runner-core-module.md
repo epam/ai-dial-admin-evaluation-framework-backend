@@ -22,6 +22,16 @@ Of the cross-boundary types, only `ValidationException` is still deliberately du
 
 Validation constants are **split, not duplicated**: `runner.dto.RunnerValidationConstants` is the sole home of the names the module needs (`IDENTIFIER_NAME_NO_COLON_*`, `NAME_NO_TWO_COLON_*`, `MAX_TEST_RUN_NAME_LENGTH`, `MAX_ADDITIONAL_REQUESTS`, `MAX_RESPONSE_COLUMNS`), while the EF backend's `constants.ValidationConstants` keeps the backend-only ones (`MAX_LIST_FILTER_PARAMS`/`MAX_LIST_SORT_PARAMS`, `MAX_FACT_FIELDS`, `MAX_DATASET_NAME_LENGTH`, `MAX_EXPORT_COLUMNS`, `MAX_DISABLED_TC_IDS`, the overall-score-threshold bounds) — the two sets are disjoint, so cite whichever class actually holds the constant you mean.
 
+## Streaming extension assembly
+
+`SseEventParser` preserves arbitrary JSON payload fields. In OpenAI chat-completions mode, `StreamingResponseAccumulator` reconstructs `choices[0].message` from the first choice's deltas, including independent `custom_content` and `custom_fields` extensions. These accumulators are package-private, per-response objects, not Spring beans.
+
+- `CustomFieldsAccumulator` delegates to `JsonObjectDeltaAccumulator`: objects merge recursively, scalars use the last non-null value, and arrays append in receipt order without deduplication. Null object properties are ignored recursively; explicitly supplied objects remain even if emptied by null filtering. Array elements are atomic copies, preserving their null properties and duplicates. Missing/null/non-object extension payloads contribute nothing; an extension with no accumulated fields is omitted.
+- `new CustomFieldsAccumulator(ArrayMergeMode.REPLACE)` replaces incoming arrays, including nested arrays and empty arrays clearing earlier elements. It does not replace entire objects. This is a **package-internal code option**, not a REST field, suite setting, or application property; normal response assembly uses append.
+- `CustomContentAccumulator` retains indexed attachments/stages merging and ordering, with replacement for other arrays. It shares recursive merging but preserves legacy null-containing initial/new-object copies; later null overwrites are ignored.
+
+Parsed events and returned accumulated results are isolated by defensive copies. On non-success parsing, provider-specific assembly still returns accumulated text as a JSON string without these extensions. Other streaming modes are unchanged.
+
 ## Enforcement
 
 The module's own `RunnerModuleConstraintsTest` (ArchUnit) enforces: no JDBC/jOOQ/Flyway dependency, no dependency back on the EF backend outside `runner.*`, `client` does not depend on `job`, every Spring component carries `@LogExecution`.

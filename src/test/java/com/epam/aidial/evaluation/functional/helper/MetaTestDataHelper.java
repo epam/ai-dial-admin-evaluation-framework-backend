@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.SuiteScoreWarningsRefresher;
 import java.io.IOException;
 import java.io.InputStream;
@@ -224,6 +225,42 @@ public class MetaTestDataHelper {
                 .valid(true)
                 .build();
         return testSuiteRepository.save(suite);
+    }
+
+    /** Creates a suite of the given type with raw JSON reference columns (any of them may be null). */
+    @Transactional("metaTransactionManager")
+    public TestSuite createTestSuiteOfType(
+            String name,
+            SuiteType suiteType,
+            String deploymentRefJson,
+            String routesRefJson,
+            String mcpDeploymentRefJson,
+            String toolRefJson) {
+        Dataset dataset = createDataset("DATASET_" + name);
+        TestSuite suite = TestSuite.builder()
+                .name(name)
+                .suiteType(suiteType)
+                .createdBy("test-user")
+                .datasetId(dataset.getId())
+                .deploymentRef(deploymentRefJson)
+                .routesRef(routesRefJson)
+                .mcpDeploymentRef(mcpDeploymentRefJson)
+                .toolRef(toolRefJson)
+                .responseColumns("[]")
+                .inputBindings("[]")
+                .additionalRequests("[]")
+                .validationWarnings("[]")
+                .valid(true)
+                .build();
+        return testSuiteRepository.save(suite);
+    }
+
+    /** Renames a suite directly, bypassing the update API. */
+    public void renameSuite(UUID suiteId, String newName) {
+        metaDsl.update(TEST_SUITES)
+                .set(TEST_SUITES.NAME, newName)
+                .where(TEST_SUITES.ID.eq(suiteId.toString()))
+                .execute();
     }
 
     @Transactional("metaTransactionManager")

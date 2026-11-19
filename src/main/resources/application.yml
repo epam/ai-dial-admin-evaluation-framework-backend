@@ -150,6 +150,13 @@ analytics:
       max-request-size-bytes: 10485760  # 10MB
   comparison:
     max-unmatched-rows: ${ANALYTICS_COMPARISON_MAX_UNMATCHED_ROWS:5000}
+  run-pass-counts:
+    reconciliation:
+      enabled: ${ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_ENABLED:true}
+      initial-delay-ms: ${ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_INITIAL_DELAY_MS:60000}
+      interval-ms: ${ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_INTERVAL_MS:3600000}
+      batch-size: ${ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_BATCH_SIZE:500}
+      min-computation-age-ms: ${ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_MIN_COMPUTATION_AGE_MS:600000}
 
 # Test suite run configuration
 test-suite-run:

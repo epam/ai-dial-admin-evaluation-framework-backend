@@ -6,6 +6,7 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics;
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.RunDeletions;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.RunPassCounts;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseMetricScoresAggregated;
@@ -27,6 +28,11 @@ public class Tables {
      * The table <code>analytics.run_deletions</code>.
      */
     public static final RunDeletions RUN_DELETIONS = RunDeletions.RUN_DELETIONS;
+
+    /**
+     * The table <code>analytics.run_pass_counts</code>.
+     */
+    public static final RunPassCounts RUN_PASS_COUNTS = RunPassCounts.RUN_PASS_COUNTS;
 
     /**
      * The table <code>analytics.test_case_eval_scores</code>.

@@ -19,19 +19,19 @@ The tombstone commits in its own analytics transaction; cross-database writes ca
 
 `data.db.analytics.repository.RunDeletionFilter.notDeleted(Field<String> runIdColumn)` is the single definition: `NOT EXISTS (SELECT 1 FROM run_deletions WHERE run_deletions.test_suite_run_id = <column>)`. It is applied at two seams, and writes are never filtered:
 
-- **Direct repository reads** — each read method of `PostgresTestCaseRunResultRepository`, `PostgresEvalSummaryRepository`, `PostgresTestCaseMetricScoreAggregatedRepository` and `PostgresMetricScoreResultRepository` ANDs it into its own `where`. In `PostgresEvalSummaryRepository` this includes the run-comparison queries and the *other* run's probe table.
+- **Direct repository reads** — each read method of `PostgresTestCaseRunResultRepository`, `PostgresEvalSummaryRepository`, `PostgresTestCaseMetricScoreAggregatedRepository`, `PostgresMetricScoreResultRepository` and `PostgresRunPassCountRepository` (the sixth filtered table, `run_pass_counts`: `findLatestRanked`, `findLatestPage`) ANDs it into its own `where`. In `PostgresEvalSummaryRepository` this includes the run-comparison queries and the *other* run's probe table.
 - **Query DSL** — `StructuredQueryEntityResolver.baseCondition()` (default empty). `StructuredQueryBuilder.build` and `countRows` AND it onto the select of the entity's `table()`; subqueries compile through `build`, so they are covered too. The four run-scoped resolvers (`eval_summaries`, `test_case_eval_scores`, `test_case_metric_scores`, `metric_score_results`) return `notDeleted(...)`. `test_case_eval_scores` references its derived `SCORES` table's `test_suite_run_id` column, so the predicate lands on the outer select.
 
 Entity names, column sets and generated jOOQ classes are unchanged.
 
-Deliberately **unfiltered**: `TestCaseScoreComputer` and the metric aggregators, which compute for the live run in progress, and the frozen analytics `run_metric_snapshots` table.
+Deliberately **unfiltered**: `TestCaseScoreComputer` and the metric aggregators, which compute for the live run in progress; the writer-side `run_pass_counts` reads (`PostgresRunPassCountRepository.countForComputation`, `findComputedAtMs`, `insertIfAbsent`, `findRecordedComputations`, and `PostgresEvalSummaryRepository.findLatestComputations`: counting the run being recorded, reading its computation's timestamp, finding the computation to reconcile and checking whether a row exists before writing it); and the frozen analytics `run_metric_snapshots` table.
 
 ## Guard against drift
 
 Whether a read is filtered is a code-level property, so two tests stand behind it:
 
 - `JooqSchemaDriftTest.everyAnalyticsTableWithRunIdIsTombstoneFiltered` fails when an analytics base table with a `test_suite_run_id` column is in neither `TOMBSTONE_FILTERED_TABLES` nor the frozen set.
-- `RunDeletionFunctionalTests` seeds all five tables for a deleted run and a live control run, then asserts through the production repository methods and every run-scoped Query DSL entity that only the deleted run disappears (single-run delete, suite delete, repeated tombstone write). It must not use the raw-table back-door helpers (`AnalyticsTestDataHelper.find*ByRunId`), which still see tombstoned rows.
+- `RunDeletionFunctionalTests` seeds all six tables for a deleted run and a live control run, then asserts through the production repository methods and every run-scoped Query DSL entity that only the deleted run disappears (single-run delete, suite delete, repeated tombstone write). It must not use the raw-table back-door helpers (`AnalyticsTestDataHelper.find*ByRunId`), which still see tombstoned rows.
 
 **Adding a run-scoped analytics table:** AND `notDeleted(...)` into every read path, override `baseCondition()` if it backs a Query DSL entity, extend `RunDeletionFunctionalTests`, then register it in `TOMBSTONE_FILTERED_TABLES`.
 

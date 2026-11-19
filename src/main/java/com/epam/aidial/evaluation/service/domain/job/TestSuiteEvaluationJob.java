@@ -33,6 +33,7 @@ import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
+import com.epam.aidial.evaluation.service.domain.analytics.RunPassCountService;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorCategory;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotDatasetMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingException;
@@ -89,6 +90,7 @@ public class TestSuiteEvaluationJob {
     private final MetricEvaluationProperties metricEvaluationProperties;
     private final MetricEvaluationExecutor metricEvaluationExecutor;
     private final MetricScoreComputationExecutor metricScoreComputation;
+    private final RunPassCountService runPassCountService;
     private final Clock clock;
 
     @Qualifier("metaTransactionManager")
@@ -243,6 +245,7 @@ public class TestSuiteEvaluationJob {
                 span.setAttribute(TracingConstants.EVAL_RUN_STATUS, RunStatus.COMPLETED.name());
                 statusChanged = true;
                 log.info("Run {} completed", runId);
+                recordPassCountsQuietly(run, metricContext.getComputationId());
             }
         } catch (AnalyticsWriteException e) {
             span.recordException(e);
@@ -305,6 +308,22 @@ public class TestSuiteEvaluationJob {
                 notifySse(runId);
             }
             registry.remove(runId);
+        }
+    }
+
+    /**
+     * Records the run's pass counts after it has been marked COMPLETED. Never fails the run: the catch is
+     * deliberately broad ({@link RuntimeException}) because anything escaping here would land in
+     * {@link #runPhases}'s outer {@code catch (Exception)}, which logs the run as failed, marks the trace FAILED and
+     * resets {@code statusChanged}, so the COMPLETED notification would never be sent. A {@code DataAccessException}
+     * catch alone misses {@code CannotCreateTransactionException} (connection acquisition), a
+     * {@code TransactionException}. The gap is repaired by {@code RunPassCountReconciliationJob} (design D4).
+     */
+    private void recordPassCountsQuietly(TestSuiteRun run, UUID computationId) {
+        try {
+            runPassCountService.record(run.getId(), run.getTestSuiteId(), computationId, run.getCreatedAt());
+        } catch (RuntimeException e) {
+            log.warn("Failed to record pass counts of completed run {}: {}", run.getId(), e.getMessage(), e);
         }
     }
 

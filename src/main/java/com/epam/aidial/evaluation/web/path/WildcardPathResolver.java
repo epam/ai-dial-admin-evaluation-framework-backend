@@ -35,14 +35,26 @@ public class WildcardPathResolver {
      * @throws IllegalStateException if the request was not matched by a handler mapping pattern
      */
     public String resolveTail(HttpServletRequest request) {
+        return decode(resolveTailEncoded(request));
+    }
+
+    /**
+     * Resolves the path tail matched by the mapping's trailing wildcard exactly as it appears on the wire,
+     * still percent-encoded. Use it when the value is compared against a store that keeps the encoded form
+     * (e.g. the dial-adas usage log), so no decode/re-encode round trip is needed.
+     *
+     * @param request current request, matched by a pattern ending with {@code /**}
+     * @return the raw, still percent-encoded tail, or an empty string when the request carries no tail
+     * @throws IllegalStateException if the request was not matched by a handler mapping pattern
+     */
+    public String resolveTailEncoded(HttpServletRequest request) {
         final String pattern = (String) request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         if (pattern == null) {
             throw new IllegalStateException(
                     "No best matching pattern attribute on request; WildcardPathResolver is usable "
                             + "only from a Spring MVC handler method");
         }
-        final String tail = PATH_MATCHER.extractPathWithinPattern(pattern, lookupPath(request));
-        return decode(tail);
+        return PATH_MATCHER.extractPathWithinPattern(pattern, lookupPath(request));
     }
 
     private static String lookupPath(HttpServletRequest request) {

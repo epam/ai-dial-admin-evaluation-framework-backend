@@ -7,3 +7,5 @@ Map the endpoint with a trailing `/**` and resolve the tail via `web.path.Wildca
 The resolver returns an empty string when there is no tail; the controller owns the emptiness check and its 400. Do not decode again downstream — `RestClient` applies the single wire encoding.
 
 Alternative for filter-like ids: pass them as a query param (see `GET /deployments/tools?deploymentId=`).
+
+When the value is compared against a store that keeps the percent-encoded form (e.g. the dial-adas usage log `deployment` field behind `GET /api/v1/costs/deployment/**`), use `resolveTailEncoded` instead: it returns the tail exactly as sent, so no decode/re-encode round trip is needed. It does not validate percent sequences.

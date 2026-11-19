@@ -11,8 +11,11 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -75,6 +78,7 @@ import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import io.opentelemetry.api.OpenTelemetry;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -99,6 +103,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.util.MultiValueMap;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -1126,8 +1131,7 @@ class TryItOutServiceTest {
         }
 
         @Test
-        @DisplayName("orders history request-major/turn-minor for a chain where only request #0 is multi-turn, "
-                + "carrying request #0's fully accumulated turn extraction into the additional request's frame")
+        @DisplayName("orders mixed streaming multi-turn and multi-request history and propagates assembled extractions")
         void shouldOrderHistoryRequestMajorTurnMinorForMixedMultiTurnMultiRequestChain() {
             setUpDeploymentSuite();
             RequestExecutionSpec spec0 =
@@ -1152,16 +1156,62 @@ class TryItOutServiceTest {
                     .thenReturn(buildResolvedRequest());
 
             when(urlBuilder.buildUrl(any(HttpTarget.class), any())).thenReturn("/path");
+            final InputStream firstStream = new ByteArrayInputStream(new byte[0]);
+            final InputStream secondStream = new ByteArrayInputStream(new byte[0]);
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
-                    .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
-                    .thenReturn(nonStreamingResult(200, Map.of("turn", 1)))
+                    .thenReturn(streamingResult(200, firstStream))
+                    .thenReturn(streamingResult(200, secondStream))
                     .thenReturn(nonStreamingResult(200, Map.of("req", 1)));
+            when(sseEventParser.parse(eq(firstStream), anyLong(), anyLong(), anyLong()))
+                    .thenReturn(new SseParseResult(List.of(openAiDelta("cfg-1")), ExecutionStatus.SUCCESS, null));
+            when(sseEventParser.parse(eq(secondStream), anyLong(), anyLong(), anyLong()))
+                    .thenReturn(new SseParseResult(List.of(openAiDelta("cfg-2")), ExecutionStatus.SUCCESS, null));
+            lenient().when(objectMapperMock.createObjectNode()).thenAnswer(inv -> realObjectMapper.createObjectNode());
+            lenient().when(objectMapperMock.createArrayNode()).thenAnswer(inv -> realObjectMapper.createArrayNode());
             when(responseColumnExtractor.extract(eq(columns0), anyString(), anyString()))
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", frameAfterTurnZero))
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", frameAfterTurnOne));
 
-            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
 
+            final ArgumentCaptor<String> documents = ArgumentCaptor.forClass(String.class);
+            verify(responseColumnExtractor, times(2)).extract(eq(columns0), documents.capture(), anyString());
+            assertThat(realObjectMapper
+                            .readTree(documents.getAllValues().get(0))
+                            .at("/choices/0/message/content")
+                            .asString())
+                    .isEqualTo("cfg-1");
+            assertThat(realObjectMapper
+                            .readTree(documents.getAllValues().get(1))
+                            .at("/choices/0/message/content")
+                            .asString())
+                    .isEqualTo("cfg-2");
+            assertThat(result.getHistory().get(0).getResponse().getBody())
+                    .isEqualTo(
+                            realObjectMapper.readTree(documents.getAllValues().get(0)));
+            assertThat(result.getHistory().get(1).getResponse().getBody())
+                    .isEqualTo(
+                            realObjectMapper.readTree(documents.getAllValues().get(1)));
+            assertThat(result.getHistory()
+                            .get(0)
+                            .getResponse()
+                            .getEvents()
+                            .getFirst()
+                            .getData())
+                    .isEqualTo(openAiDelta("cfg-1").data());
+            assertThat(result.getHistory()
+                            .get(1)
+                            .getResponse()
+                            .getEvents()
+                            .getFirst()
+                            .getData())
+                    .isEqualTo(openAiDelta("cfg-2").data());
+            assertThat(result.getHistory().get(2).getResponse().getBody()).isEqualTo(Map.of("req", 1));
+            assertThat(result.getHistory().get(2).getResponse().getEvents()).isNull();
+            assertThat(result.getResponse())
+                    .isEqualTo(result.getHistory().get(2).getResponse());
+            assertThat(result.getResolvedRequest())
+                    .isEqualTo(result.getHistory().get(2).getResolvedRequest());
             assertThat(result.getHistory()).hasSize(3);
             assertThat(result.getHistory().get(0).getRequestIndex()).isEqualTo(0);
             assertThat(result.getHistory().get(0).getTurnIndex()).isEqualTo(0);
@@ -2061,6 +2111,325 @@ class TryItOutServiceTest {
     }
 
     @Nested
+    @DisplayName("assembled SSE response semantics")
+    class SseResponseSemantics {
+
+        private final List<ResponseColumnDefinitionDto> columns =
+                List.of(ResponseColumnDefinitionDto.builder().name("answer").build());
+
+        private void setUpStream(InputStream stream, Clock parserClock) {
+            final TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
+                    .thenReturn(new ResolvedRequestService.ChainPlan(List.of(new ResolvedRequestService.RequestPlan(
+                            new RequestExecutionSpec(0, 1, null, null, null, List.of(), columns), List.of(Map.of())))));
+            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            when(urlBuilder.buildUrl(any(DeploymentTarget.class), eq("/chat/completions")))
+                    .thenReturn("/path");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(streamingResult(200, stream));
+            lenient().when(objectMapperMock.createObjectNode()).thenAnswer(inv -> realObjectMapper.createObjectNode());
+            lenient().when(objectMapperMock.createArrayNode()).thenAnswer(inv -> realObjectMapper.createArrayNode());
+            final SseEventParser parser = new SseEventParser(realObjectMapper, parserClock);
+            when(sseEventParser.parse(eq(stream), anyLong(), anyLong(), anyLong()))
+                    .thenAnswer(inv -> parser.parse(
+                            inv.getArgument(0), inv.getArgument(1), inv.getArgument(2), inv.getArgument(3)));
+        }
+
+        private InputStream stream(String data) {
+            return spy(new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)));
+        }
+
+        private JsonNode serializedResponse(TryItOutResponseDto result) {
+            final ObjectMapper mapper = new JsonMapperConfiguration().objectMapper();
+            return mapper.readTree(mapper.writeValueAsString(result)).get("response");
+        }
+
+        @Test
+        @DisplayName("chat chunks assemble extensions without changing the original events or rereading the stream")
+        void shouldAssembleChatExtensionsAndKeepOriginalEvents() throws IOException {
+            final String first = """
+                    {"choices":[{"delta":{"content":"Hel","custom_content":{"attachments":[{"index":0,"title":"file","nullable":null}]},\
+                    "custom_fields":{"items":[1],"nested":{"flag":true}}}}]}
+                    """.trim();
+            final String second = """
+                    {"choices":[{"delta":{"content":"lo","custom_content":{"attachments":[{"index":0,"url":"/file"}]},"custom_fields":{"items":[2],"nested":{"count":3}}}}]}
+                    """.trim();
+            final InputStream input = stream("data: " + first + "\n\ndata: " + second + "\n\ndata: [DONE]\n\n");
+            setUpStream(input, FIXED_CLOCK);
+            when(responseColumnExtractor.extract(eq(columns), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            final JsonNode expected = realObjectMapper.readTree("""
+                    {"choices":[{"message":{"role":"assistant","content":"Hello",
+                    "custom_content":{"attachments":[{"index":0,"title":"file","nullable":null,"url":"/file"}]},
+                    "custom_fields":{"items":[1,2],"nested":{"flag":true,"count":3}}},"finish_reason":"stop","index":0}]}
+                    """);
+            assertThat(result.getResponse().getBody()).isEqualTo(expected);
+            assertThat(result.getResponse().getEvents()).hasSize(2);
+            assertThat(result.getResponse().getEvents().get(0).getEvent()).isEqualTo("message");
+            assertThat(result.getResponse().getEvents().get(0).getData()).isEqualTo(realObjectMapper.readTree(first));
+            assertThat(result.getResponse().getEvents().get(1).getData()).isEqualTo(realObjectMapper.readTree(second));
+            assertThat(serializedResponse(result).get("body")).isEqualTo(expected);
+            final ArgumentCaptor<String> document = ArgumentCaptor.forClass(String.class);
+            verify(responseColumnExtractor).extract(eq(columns), document.capture(), anyString());
+            assertThat(realObjectMapper.readTree(document.getValue())).isEqualTo(expected);
+            verify(sseEventParser, times(1)).parse(input, 30_000, 3_600_000L, 10 * 1024 * 1024L);
+            verify(input, atLeastOnce()).close();
+        }
+
+        @Test
+        @DisplayName("Responses API exposes the terminal object and preserves explicit nulls and types")
+        void shouldAssembleResponsesApi() {
+            final String first = "{\"type\":\"response.created\",\"response\":{\"id\":\"r1\"}}";
+            final String last =
+                    "{\"type\":\"response.completed\",\"response\":{\"id\":\"r1\",\"output\":[1,true,null,\"text\"],\"usage\":null}}";
+            final InputStream input = stream("data: " + first + "\n\ndata: " + last + "\n\n");
+            setUpStream(input, FIXED_CLOCK);
+            when(responseColumnExtractor.extract(eq(columns), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            final JsonNode expected =
+                    realObjectMapper.readTree("{\"id\":\"r1\",\"output\":[1,true,null,\"text\"],\"usage\":null}");
+            assertThat(result.getResponse().getBody()).isEqualTo(expected);
+            assertThat(result.getResponse().getEvents()).hasSize(2);
+            assertThat(result.getResponse().getEvents().get(0).getData()).isEqualTo(realObjectMapper.readTree(first));
+            assertThat(result.getResponse().getEvents().get(1).getData()).isEqualTo(realObjectMapper.readTree(last));
+            assertThat(serializedResponse(result).get("body")).isEqualTo(expected);
+            assertThat(serializedResponse(result).get("events").get(1).get("data"))
+                    .isEqualTo(realObjectMapper.readTree(last));
+        }
+
+        @Test
+        @DisplayName("Anthropic message and text-block deltas assemble independently of events")
+        void shouldAssembleAnthropicMessage() {
+            final String start = "{\"message\":{\"id\":\"m1\",\"role\":\"assistant\",\"stop_reason\":null}}";
+            final String block = "{\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}";
+            final String delta = "{\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}";
+            final InputStream input = stream("event: message_start\ndata: " + start
+                    + "\n\nevent: content_block_start\ndata: " + block
+                    + "\n\nevent: content_block_delta\ndata: " + delta + "\n\n");
+            setUpStream(input, FIXED_CLOCK);
+            when(responseColumnExtractor.extract(eq(columns), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            final JsonNode expected = realObjectMapper.readTree("""
+                    {"id":"m1","role":"assistant","stop_reason":null,"content":[{"type":"text","text":"Hello"}]}
+                    """);
+            assertThat(result.getResponse().getBody()).isEqualTo(expected);
+            assertThat(serializedResponse(result).get("body")).isEqualTo(expected);
+            assertThat(result.getResponse().getEvents()).hasSize(3);
+            assertThat(result.getResponse().getEvents().get(0).getEvent()).isEqualTo("message_start");
+            assertThat(result.getResponse().getEvents().get(0).getData()).isEqualTo(realObjectMapper.readTree(start));
+            assertThat(result.getResponse().getEvents().get(1).getData()).isEqualTo(realObjectMapper.readTree(block));
+            assertThat(result.getResponse().getEvents().get(2).getData()).isEqualTo(realObjectMapper.readTree(delta));
+        }
+
+        @Test
+        @DisplayName("structured fallback preserves JSON values and raw event strings")
+        void shouldPreserveStructuredFallbackTypes() {
+            final InputStream input = stream("event: update\ndata: {\"items\":[1,true,null,\"x\"],\"missing\":null}\n\n"
+                    + "data: not-json\n\ndata: null\n\ndata: 42\n\ndata: false\n\ndata: [1,2]\n\n");
+            setUpStream(input, FIXED_CLOCK);
+            when(responseColumnExtractor.extract(eq(columns), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            final JsonNode expected = realObjectMapper.readTree("""
+                    {"events":[{"event":"update","data":{"items":[1,true,null,"x"],"missing":null}},
+                    {"event":"message","data":"not-json"},{"event":"message","data":null},
+                    {"event":"message","data":42},{"event":"message","data":false},{"event":"message","data":[1,2]}]}
+                    """);
+            assertThat(result.getResponse().getBody()).isEqualTo(expected);
+            final JsonNode response = serializedResponse(result);
+            assertThat(response.get("body")).isEqualTo(expected);
+            assertThat(response.get("events")).isEqualTo(expected.get("events"));
+        }
+
+        private static final String PARTIAL_CHUNK = "{\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}";
+        private static final String PARTIAL_STREAM = "data: " + PARTIAL_CHUNK + "\n\n";
+
+        private void assertPartialFailure(
+                TryItOutResponseDto result, InputStream input, ExecutionStatus status, String warning)
+                throws IOException {
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            assertThat(result.getResponse().getStreaming()).isTrue();
+            assertThat(result.getResponse().getStreamingStatus()).isEqualTo(status);
+            assertThat(result.getResponse().getTruncationWarning()).isEqualTo(warning);
+            assertThat(result.getResponse().getEvents()).hasSize(1);
+            assertThat(result.getResponse().getEvents().getFirst().getEvent()).isEqualTo("message");
+            assertThat(result.getResponse().getEvents().getFirst().getData())
+                    .isEqualTo(realObjectMapper.readTree(PARTIAL_CHUNK));
+            assertThat(serializedResponse(result).get("body")).isEqualTo(realObjectMapper.readTree("\"Hel\""));
+            assertThat(result.getExtractedColumns()).isNull();
+            assertThat(result.getExtractionWarnings()).isNull();
+            verifyNoInteractions(responseColumnExtractor);
+            verify(sseEventParser, times(1)).parse(eq(input), anyLong(), anyLong(), anyLong());
+            verify(input, atLeastOnce()).close();
+        }
+
+        @Test
+        @DisplayName("assembly serialization failure returns the original events envelope and reports an error")
+        void shouldReturnEventsOnAssemblySerializationFailure() throws IOException {
+            final InputStream input = stream(
+                    PARTIAL_STREAM + "event: meta\ndata: {\"value\":null}\n\n" + "data: null\n\ndata: plain text\n\n");
+            setUpStream(input, FIXED_CLOCK);
+            when(objectMapperMock.writeValueAsString(any())).thenThrow(mock(JacksonException.class));
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            final JsonNode expected = realObjectMapper.readTree("""
+                    {"events":[{"event":"message","data":{"choices":[{"delta":{"content":"Hel"}}]}},
+                    {"event":"meta","data":{"value":null}},{"event":"message","data":null},
+                    {"event":"message","data":"plain text"}]}
+                    """);
+            assertThat(result.getResponse().getBody()).isEqualTo(expected);
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            assertThat(result.getResponse().getStreaming()).isTrue();
+            assertThat(result.getResponse().getStreamingStatus()).isEqualTo(ExecutionStatus.ERROR);
+            assertThat(result.getResponse().getTruncationWarning()).isNull();
+            assertThat(result.getResponse().getEvents()).hasSize(4);
+            assertThat(serializedResponse(result).get("body")).isEqualTo(expected);
+            assertThat(serializedResponse(result).get("events")).isEqualTo(expected.get("events"));
+            verifyNoInteractions(responseColumnExtractor);
+            verify(sseEventParser, times(1)).parse(eq(input), anyLong(), anyLong(), anyLong());
+            verify(input, atLeastOnce()).close();
+        }
+
+        @Test
+        @DisplayName("assembly serialization failure with no events returns an empty events envelope")
+        void shouldReturnEmptyEventsOnAssemblySerializationFailure() throws IOException {
+            final InputStream input = stream("");
+            setUpStream(input, FIXED_CLOCK);
+            when(objectMapperMock.writeValueAsString(any())).thenThrow(mock(JacksonException.class));
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            final JsonNode expected = realObjectMapper.readTree("{\"events\":[]}");
+            assertThat(result.getResponse().getBody()).isEqualTo(expected);
+            assertThat(result.getResponse().getEvents()).isEmpty();
+            assertThat(result.getResponse().getStreamingStatus()).isEqualTo(ExecutionStatus.ERROR);
+            assertThat(serializedResponse(result).get("body")).isEqualTo(expected);
+            verifyNoInteractions(responseColumnExtractor);
+            verify(input, atLeastOnce()).close();
+        }
+
+        @Test
+        @DisplayName("serialized JSON null remains null rather than triggering the absent-document fallback")
+        void shouldPreserveSerializedJsonNull() {
+            final InputStream input = stream(PARTIAL_STREAM);
+            setUpStream(input, FIXED_CLOCK);
+            when(objectMapperMock.writeValueAsString(any())).thenReturn("null");
+            when(responseColumnExtractor.extract(eq(columns), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            assertThat((JsonNode) result.getResponse().getBody()).isEqualTo(realObjectMapper.readTree("null"));
+            assertThat(serializedResponse(result).get("body")).isEqualTo(realObjectMapper.readTree("null"));
+            assertThat(result.getResponse().getEvents()).hasSize(1);
+            assertThat(result.getResponse().getStreamingStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("an empty recognized partial string remains a string rather than triggering fallback")
+        void shouldPreserveEmptyPartialString() throws IOException {
+            final InputStream input = stream("data: {\"choices\":[{\"delta\":{}}]}\n\n: heartbeat\n");
+            final Clock parserClock = mock(Clock.class);
+            when(parserClock.millis()).thenReturn(0L, 1L, 2L, 30_003L);
+            setUpStream(input, parserClock);
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            assertThat(serializedResponse(result).get("body")).isEqualTo(realObjectMapper.readTree("\"\""));
+            assertThat(result.getResponse().getEvents()).hasSize(1);
+            assertThat(result.getResponse().getStreamingStatus()).isEqualTo(ExecutionStatus.TIMEOUT);
+            verifyNoInteractions(responseColumnExtractor);
+            verify(input, atLeastOnce()).close();
+        }
+
+        @Test
+        @DisplayName("a read error returns dispatched chat text and skips extraction")
+        void shouldReturnPartialTextOnReadError() throws IOException {
+            final InputStream bytes = new ByteArrayInputStream(PARTIAL_STREAM.getBytes(StandardCharsets.UTF_8));
+            final InputStream input = spy(new InputStream() {
+                @Override
+                public int read() throws IOException {
+                    final int value = bytes.read();
+                    if (value == -1) {
+                        throw new IOException("connection reset");
+                    }
+                    return value;
+                }
+
+                @Override
+                public void close() throws IOException {
+                    bytes.close();
+                }
+            });
+            setUpStream(input, FIXED_CLOCK);
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            assertPartialFailure(result, input, ExecutionStatus.ERROR, null);
+        }
+
+        @Test
+        @DisplayName("idle timeout returns dispatched chat text and skips extraction")
+        void shouldReturnPartialTextOnIdleTimeout() throws IOException {
+            final InputStream input = stream(PARTIAL_STREAM + ": heartbeat\n");
+            final Clock parserClock = mock(Clock.class);
+            when(parserClock.millis()).thenReturn(0L, 1L, 2L, 30_003L);
+            setUpStream(input, parserClock);
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            assertPartialFailure(result, input, ExecutionStatus.TIMEOUT, null);
+        }
+
+        @Test
+        @DisplayName("absolute timeout returns dispatched chat text despite active lines and skips extraction")
+        void shouldReturnPartialTextOnAbsoluteTimeout() throws IOException {
+            final InputStream input = stream(PARTIAL_STREAM + ": heartbeat\n");
+            final Clock parserClock = mock(Clock.class);
+            when(parserClock.millis()).thenReturn(0L, 1L, 2L, 6L);
+            setUpStream(input, parserClock);
+            when(sseEventProcessingProperties.getMaxTotalDurationMs()).thenReturn(5L);
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            assertPartialFailure(result, input, ExecutionStatus.TIMEOUT, null);
+        }
+
+        @Test
+        @DisplayName("size limit retains only dispatched events, partial text and truncation warning")
+        void shouldReturnPartialTextOnSizeLimit() throws IOException {
+            final InputStream input = stream(PARTIAL_STREAM + "data: {\"too\":\"large\"}\n\n");
+            setUpStream(input, FIXED_CLOCK);
+            final long maxBytes = PARTIAL_CHUNK.getBytes(StandardCharsets.UTF_8).length;
+            when(executionProperties.getMaxResponseSizeBytes()).thenReturn(maxBytes);
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            assertPartialFailure(
+                    result,
+                    input,
+                    ExecutionStatus.ERROR,
+                    "Response truncated: accumulated " + maxBytes + " bytes, limit " + maxBytes);
+        }
+
+        @Test
+        @DisplayName("empty stream returns the empty structured fallback and event list")
+        void shouldReturnEmptyStructuredFallback() {
+            final InputStream input = stream("");
+            setUpStream(input, FIXED_CLOCK);
+            when(responseColumnExtractor.extract(eq(columns), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            assertThat(result.getResponse().getEvents()).isEmpty();
+            assertThat(serializedResponse(result).get("body")).isEqualTo(realObjectMapper.readTree("{\"events\":[]}"));
+        }
+    }
+
+    @Nested
     @DisplayName("streaming response-column extraction")
     class StreamingExtraction {
 
@@ -2079,8 +2448,8 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(objectMapperMock.createObjectNode()).thenAnswer(inv -> realObjectMapper.createObjectNode());
-            when(objectMapperMock.createArrayNode()).thenAnswer(inv -> realObjectMapper.createArrayNode());
+            lenient().when(objectMapperMock.createObjectNode()).thenAnswer(inv -> realObjectMapper.createObjectNode());
+            lenient().when(objectMapperMock.createArrayNode()).thenAnswer(inv -> realObjectMapper.createArrayNode());
         }
 
         private ResolvedRequestService.ChainPlan singleRequestPlan(List<ResponseColumnDefinitionDto> columns) {
@@ -2099,9 +2468,8 @@ class TryItOutServiceTest {
         }
 
         @Test
-        @DisplayName("extracts an OpenAI-mode stream's assembled choices[0].message document (not the events "
-                + "envelope), while the response DTO still carries the events envelope + event list")
-        void shouldExtractFromAssembledDocumentWhileDtoKeepsEventsEnvelope() {
+        @DisplayName("extracts from the same assembled OpenAI document exposed in the response body")
+        void shouldExtractFromExposedAssembledDocument() {
             setUpDeploymentSuite();
             // Single-request/single-turn fast path with response columns.
             when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any(HttpSuite.class)))
@@ -2128,9 +2496,7 @@ class TryItOutServiceTest {
                     .isEqualTo("Hello");
             assertThat(extractionDocument.has("events")).isFalse();
 
-            // Display contract unchanged: the DTO body is still the {"events":[…]} envelope.
-            JsonNode body = (JsonNode) result.getResponse().getBody();
-            assertThat(body.get("events").size()).isEqualTo(2);
+            assertThat(result.getResponse().getBody()).isEqualTo(extractionDocument);
             assertThat(result.getResponse().getEvents()).hasSize(2);
             assertThat(result.getResponse().getStreamingStatus()).isNull();
             assertThat(result.getExtractedColumns().get("answer").asString()).isEqualTo("Hello");
@@ -2243,8 +2609,17 @@ class TryItOutServiceTest {
             assertThat(result.getResponse().getStreamingStatus()).isEqualTo(ExecutionStatus.ERROR);
             assertThat(result.getResponse().getTruncationWarning())
                     .isEqualTo("Response truncated: accumulated 10 bytes, limit 5");
-            // The events received before truncation stay visible.
             assertThat(result.getResponse().getEvents()).hasSize(1);
+            assertThat(result.getResponse().getEvents().getFirst().getData())
+                    .isEqualTo(openAiDelta("Hel").data());
+            assertThat(result.getResponse().getBody()).isEqualTo(realObjectMapper.readTree("\"Hel\""));
+            assertThat(new JsonMapperConfiguration()
+                            .objectMapper()
+                            .readTree(
+                                    new JsonMapperConfiguration().objectMapper().writeValueAsString(result))
+                            .get("response")
+                            .get("body"))
+                    .isEqualTo(realObjectMapper.readTree("\"Hel\""));
         }
 
         @Test
@@ -2265,6 +2640,7 @@ class TryItOutServiceTest {
             assertThat(result.getExtractionWarnings()).isNull();
             assertThat(result.getResponse().getStreamingStatus()).isEqualTo(ExecutionStatus.TIMEOUT);
             assertThat(result.getResponse().getEvents()).hasSize(1);
+            assertThat(result.getResponse().getBody()).isEqualTo(realObjectMapper.readTree("\"Hel\""));
         }
     }
 

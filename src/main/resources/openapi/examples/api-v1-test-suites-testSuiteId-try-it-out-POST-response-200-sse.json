@@ -4,7 +4,13 @@
     "body": {
       "contentType": "application/json",
       "content": {
-        "messages": [{ "role": "user", "content": "What is the weather?" }]
+        "stream": true,
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is the weather?"
+          }
+        ]
       }
     },
     "warnings": []
@@ -13,14 +19,42 @@
     "statusCode": 200,
     "streaming": true,
     "body": {
-      "events": [
-        { "event": "message", "data": { "status": "processing" } },
-        { "event": "result",  "data": { "output": "The weather is sunny.", "confidence": 0.95 } }
+      "choices": [
+        {
+          "message": {
+            "role": "assistant",
+            "content": "The weather is sunny."
+          },
+          "finish_reason": "stop",
+          "index": 0
+        }
       ]
     },
     "events": [
-      { "event": "message", "data": { "status": "processing" } },
-      { "event": "result",  "data": { "output": "The weather is sunny.", "confidence": 0.95 } }
+      {
+        "event": "message",
+        "data": {
+          "choices": [
+            {
+              "delta": {
+                "content": "The weather is "
+              }
+            }
+          ]
+        }
+      },
+      {
+        "event": "message",
+        "data": {
+          "choices": [
+            {
+              "delta": {
+                "content": "sunny."
+              }
+            }
+          ]
+        }
+      }
     ]
   },
   "durationMs": 1842

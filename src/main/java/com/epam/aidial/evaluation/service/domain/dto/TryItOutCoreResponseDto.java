@@ -17,7 +17,16 @@ public class TryItOutCoreResponseDto {
 
     private int statusCode;
 
-    /** Parsed JSON response body, or {@code {"events": [...]}} envelope for SSE responses. */
+    /** Evaluation-equivalent assembled value for SSE, or the existing HTTP/MCP response body otherwise. */
+    @Schema(
+            description = "For SSE, the evaluation-equivalent assembled JSON value: recognized providers return "
+                    + "their assembled document on success; interrupted recognized streams can return partial text "
+                    + "as a JSON string. Unrecognized or empty streams use the structured events-envelope fallback. "
+                    + "If assembly fails and output is unavailable, a diagnostic events envelope is returned "
+                    + "with the error status retained. Assembled SSE JSON object, array, scalar and null values "
+                    + "retain their types. For non-SSE HTTP, this is the parsed JSON body or raw string; a null "
+                    + "root body and null map properties are omitted. For MCP, this is the parsed final "
+                    + "tool-result document.")
     private Object body;
 
     /**
@@ -27,11 +36,12 @@ public class TryItOutCoreResponseDto {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Boolean streaming;
 
-    /**
-     * Parsed SSE events for frontend debugging. Present only when {@link #streaming} is
-     * {@code true}; {@code null} (omitted from JSON) for non-SSE responses.
-     */
+    /** Parsed SSE events, independent of the assembled body; omitted for non-SSE HTTP and MCP. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "Parsed SSE events in receipt order, independently of the assembled body, including "
+                    + "an empty array for an empty stream. Each event's data is parsed JSON when valid or a raw "
+                    + "string otherwise; these are not byte-verbatim transport data. Omitted for non-SSE HTTP and MCP.")
     private List<SseEventDto> events;
 
     /**

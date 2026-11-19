@@ -32,6 +32,8 @@ import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutWithVariablesRequestDto;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -39,6 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpEntity;
@@ -48,9 +51,115 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 @DisplayName("Try It Out Functional Tests")
 public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctionalTest {
+
+    @ParameterizedTest(name = "route={0}, variables={1}")
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    @DisplayName("Both HTTP targets and endpoints expose assembled SSE bodies and ordered parsed events")
+    void shouldExposeSseBodyAndEventsOnWire(boolean route, boolean variables) {
+        final TestSuiteResponseDto suite = route ? createStreamingRouteSuite() : createSuiteWithTemplate();
+        final TestCaseResponseDto testCase = variables
+                ? null
+                : createTestCase(suite.getId(), "streaming case", route ? Map.of() : Map.of("promptField", "hello"));
+        final String first =
+                "{\"choices\":[{\"delta\":{\"content\":\"Hel\",\"custom_content\":{\"attachments\":[{\"index\":0,\"nullable\":null}]}}}]}";
+        final String second = "{\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}";
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(sseReply(first, second));
+
+        final ResponseEntity<String> response = postTryOut(suite, testCase, variables);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        final JsonNode result = objectMapper.readTree(response.getBody()).get("response");
+        assertThat(result.get("statusCode").asInt()).isEqualTo(200);
+        assertThat(result.get("streaming").asBoolean()).isTrue();
+        assertThat(result.get("body")).isEqualTo(objectMapper.readTree("""
+                {"choices":[{"message":{"role":"assistant","content":"Hello","custom_content":{"attachments":[{"index":0,"nullable":null}]}},
+                "finish_reason":"stop","index":0}]}
+                """));
+        assertThat(result.get("events")).isEqualTo(objectMapper.readTree("""
+                [{"event":"message","data":%s},{"event":"message","data":%s}]
+                """.formatted(first, second)));
+        assertThat(result.has("streamingStatus")).isFalse();
+    }
+
+    @ParameterizedTest(name = "variables={0}")
+    @CsvSource({"false", "true"})
+    @DisplayName("Both endpoints preserve non-SSE body and omit streaming fields on the wire")
+    void shouldPreserveNonSseResponseOnWire(boolean variables) {
+        final TestSuiteResponseDto suite = createSuiteWithTemplate();
+        final TestCaseResponseDto testCase =
+                variables ? null : createTestCase(suite.getId(), "ordinary case", Map.of("promptField", "hello"));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(
+                        200, false, Map.of("value", "ordinary"), null, new HttpHeaders()));
+
+        final ResponseEntity<String> response = postTryOut(suite, testCase, variables);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        final JsonNode result = objectMapper.readTree(response.getBody()).get("response");
+        assertThat(result.get("body")).isEqualTo(objectMapper.readTree("{\"value\":\"ordinary\"}"));
+        assertThat(result.has("streaming")).isFalse();
+        assertThat(result.has("events")).isFalse();
+        assertThat(result.has("streamingStatus")).isFalse();
+    }
+
+    private ResponseEntity<String> postTryOut(
+            TestSuiteResponseDto suite, TestCaseResponseDto testCase, boolean variables) {
+        if (variables) {
+            final TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
+                    .variables(Map.of(0, Map.of("prompt", "hello")))
+                    .build();
+            return restTemplate.postForEntity(
+                    apiUrl("/test-suites/" + suite.getId() + "/try-it-out"), jsonEntity(request), String.class);
+        }
+        return restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + testCase.getId() + "/try-it-out"),
+                null,
+                String.class);
+    }
+
+    private String chatDelta(String content) {
+        final ObjectNode chunk = objectMapper.createObjectNode();
+        final ObjectNode choice = chunk.putArray("choices").addObject();
+        choice.putObject("delta").put("content", content);
+        return objectMapper.writeValueAsString(chunk);
+    }
+
+    private DeploymentInvocationResult sseReply(String... events) {
+        final String data = String.join(
+                        "",
+                        List.of(events).stream()
+                                .map(event -> "data: " + event + "\n\n")
+                                .toList()) + "data: [DONE]\n\n";
+        return new DeploymentInvocationResult(
+                200, true, null, new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)), new HttpHeaders());
+    }
+
+    private TestSuiteResponseDto createStreamingRouteSuite() {
+        final TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("Streaming Route " + UUID.randomUUID())
+                .suiteType(SuiteType.ROUTE)
+                .routesRef(RouteReferenceDto.builder()
+                        .name("routes/platform/validate-route")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/validate/items")
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of()))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/validate/items")
+                        .build())
+                .build();
+        final ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
 
     // --- 6.4 Test-case try-it-out ---
 
@@ -193,7 +302,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
 
         AtomicInteger call = new AtomicInteger();
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
-                .thenAnswer(inv -> chatReply("reply-" + call.getAndIncrement()));
+                .thenAnswer(inv -> sseReply(chatDelta("reply-" + call.getAndIncrement())));
 
         ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
                 apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
@@ -219,6 +328,17 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
 
         // history carries every turn, in order, including the last (which duplicates the top-level fields).
         assertThat(body.getHistory()).hasSize(3);
+        for (int i = 0; i < 3; i++) {
+            final JsonNode historyResponse =
+                    objectMapper.valueToTree(body.getHistory().get(i).getResponse());
+            assertThat(historyResponse.at("/body/choices/0/message/content").asString())
+                    .isEqualTo("reply-" + i);
+            assertThat(historyResponse
+                            .at("/events/0/data/choices/0/delta/content")
+                            .asString())
+                    .isEqualTo("reply-" + i);
+            assertThat(historyResponse.get("events").size()).isEqualTo(1);
+        }
         String turn0RequestBody = objectMapper.writeValueAsString(
                 body.getHistory().get(0).getResolvedRequest().getBody());
         assertThat(turn0RequestBody).contains("q0").doesNotContain("q1");
@@ -231,11 +351,13 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
     void shouldStopAtFirstFailedTurnForMultiTurnTestCase() {
         TestSuiteResponseDto suite = createHistoryAccumulatingChatSuite("TryOut MT fail-fast");
         UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
-        TestCaseResponseDto tc =
-                createMultiTurnCase(datasetId, "conv-fail", List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1")));
+        TestCaseResponseDto tc = createMultiTurnCase(
+                datasetId,
+                "conv-fail",
+                List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1"), Map.of("prompt", "q2")));
 
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
-                .thenReturn(chatReply("reply-0"))
+                .thenReturn(sseReply("{\"choices\":[{\"delta\":{\"content\":\"reply-0\"}}]}"))
                 .thenReturn(
                         new DeploymentInvocationResult(500, false, Map.of("error", "boom"), null, new HttpHeaders()));
 
@@ -251,7 +373,15 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
 
         assertThat(body.getHistory()).hasSize(2);
         assertThat(body.getHistory().get(0).getResponse().getStatusCode()).isEqualTo(200);
+        final JsonNode firstResponse =
+                objectMapper.valueToTree(body.getHistory().get(0).getResponse());
+        assertThat(firstResponse.at("/body/choices/0/message/content").asString())
+                .isEqualTo("reply-0");
+        assertThat(firstResponse.at("/events/0/data/choices/0/delta/content").asString())
+                .isEqualTo("reply-0");
         assertThat(body.getHistory().get(1).getResponse()).isEqualTo(body.getResponse());
+        assertThat(body.getHistory().get(1).getExtractedColumns()).isNull();
+        verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), any());
     }
 
     // --- Fix: a JSON body whose JSONata evaluation fails must abort try-it-out, never invoke the
@@ -633,7 +763,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
 
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenReturn(configureReply(7))
-                .thenReturn(chatReply("final answer"));
+                .thenReturn(sseReply("{\"choices\":[{\"delta\":{\"content\":\"final answer\"}}]}"));
 
         ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
                 apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
@@ -660,6 +790,15 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         assertThat(second.getTurnIndex()).isNull();
         assertThat(second.getTotalTurns()).isNull();
         assertThat(second.getExtractedColumns().get("answer").asString()).isEqualTo("final answer");
+        final JsonNode firstResponse = objectMapper.valueToTree(first.getResponse());
+        final JsonNode secondResponse = objectMapper.valueToTree(second.getResponse());
+        assertThat(firstResponse.at("/body/usage/total_tokens").asInt()).isEqualTo(7);
+        assertThat(firstResponse.has("events")).isFalse();
+        assertThat(firstResponse.has("streaming")).isFalse();
+        assertThat(secondResponse.at("/body/choices/0/message/content").asString())
+                .isEqualTo("final answer");
+        assertThat(secondResponse.at("/events/0/data/choices/0/delta/content").asString())
+                .isEqualTo("final answer");
 
         // Request #1's outgoing body was resolved with $configId bound to request #0's REAL extracted value.
         String secondRequestBody =

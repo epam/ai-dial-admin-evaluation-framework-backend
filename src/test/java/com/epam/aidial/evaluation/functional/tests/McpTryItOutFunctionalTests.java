@@ -30,6 +30,8 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Functional tests for MCP try-it-out (test case and variables modes).
@@ -69,6 +71,12 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
         assertThat(response.getBody().getResponse()).isNotNull();
         assertThat(response.getBody().getResponse().getStatusCode()).isEqualTo(200);
         assertThat(response.getBody().getDurationMs()).isNotNull();
+
+        final ResponseEntity<String> wire = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                String.class);
+        assertMcpWireResponse(wire, "AI is artificial intelligence");
     }
 
     @Test
@@ -94,6 +102,23 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getResponse()).isNotNull();
         assertThat(response.getBody().getResponse().getStatusCode()).isEqualTo(200);
+
+        final ResponseEntity<String> wire = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/try-it-out"), jsonEntity(request), String.class);
+        assertMcpWireResponse(wire, "Variable result");
+    }
+
+    private void assertMcpWireResponse(ResponseEntity<String> response, String text) {
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        final JsonNode result = objectMapper.readTree(response.getBody()).get("response");
+        final ObjectNode expected = objectMapper.createObjectNode();
+        final ObjectNode content = expected.putArray("content").addObject();
+        content.put("type", "text");
+        content.put("text", text);
+        expected.put("isError", false);
+        assertThat(result.get("body")).isEqualTo(expected);
+        assertThat(result.has("streaming")).isFalse();
+        assertThat(result.has("events")).isFalse();
     }
 
     @Test

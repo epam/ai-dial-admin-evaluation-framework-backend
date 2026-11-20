@@ -321,9 +321,9 @@ public class TryItOutService {
      * Extracts one invocation's response columns from the same document the run path would extract from:
      * for a streaming invocation that is the accumulator-assembled document (an OpenAI-mode stream's
      * concatenated deltas become a non-streaming {@code choices[0].message} document, so a column like
-     * {@code choices[0].message.content} resolves here exactly as in a run), NOT the {@code
-     * {"events":[…]}} envelope the response DTO displays. For a non-streaming invocation it is the parsed
-     * response body itself, serialized lazily so a zero-column suite never pays for it.
+     * {@code choices[0].message.content} resolves here exactly as in a run). The same assembled document
+     * is exposed as the streaming response body. For a non-streaming invocation it is the parsed response
+     * body itself, serialized lazily so a zero-column suite never pays for it.
      */
     private ResponseColumnExtractor.ExtractionResult extractColumns(
             List<ResponseColumnDefinitionDto> responseColumns, TurnInvocationResult result) {
@@ -397,9 +397,8 @@ public class TryItOutService {
      * @param status the invocation's effective execution status — the HTTP status mapping, downgraded to
      *     the SSE parse status when a streaming response did not complete; anything but {@code SUCCESS}
      *     skips extraction and stops the chain
-     * @param extractionDocumentJson the run-equivalent document to extract response columns from when it
-     *     differs from the displayed {@code response.body} (streaming responses only); {@code null} means
-     *     "serialize {@code response.body} lazily instead"
+     * @param extractionDocumentJson the serialized run-equivalent streaming response document, also exposed
+     *     as the parsed {@code response.body}; {@code null} means serialize {@code response.body} lazily
      */
     private record TurnInvocationResult(
             ResolvedRequestDto resolvedRequest,
@@ -743,13 +742,11 @@ public class TryItOutService {
     }
 
     /**
-     * Consumes a streaming response exactly once and produces both views of it: the display view (the
-     * {@code {"events":[…]}} envelope plus the verbatim event list the UI renders — an unchanged contract)
-     * and the extraction view (the run path's assembled document, so response-column JSONata sees what a
-     * real run would). The parse happens here and its result is handed to {@link
-     * StreamingResponseAccumulator#assemble(SseParseResult)} — the same accumulator {@code
-     * DeploymentTurnInvoker} uses — instead of re-reading the already-drained stream. A non-{@code
-     * SUCCESS} parse status is reported back so the caller treats the invocation as failed.
+     * Consumes a streaming response once and exposes its parsed events alongside the run-equivalent
+     * assembled document when available; otherwise the body contains a structured events fallback.
+     * The same serialized document is used for response-column extraction.
+     * The parse result is handed to {@link StreamingResponseAccumulator#assemble(SseParseResult)}
+     * without re-reading the stream. A non-{@code SUCCESS} status makes the invocation fail.
      */
     private StreamingInvocation readStream(DeploymentInvocationResult result) {
         final long maxBytes = evaluationRunProperties.getExecution().getMaxResponseSizeBytes();
@@ -768,35 +765,26 @@ public class TryItOutService {
                 .toList();
 
         final ExecutionStatus status = accumulator.getExecutionStatus();
+        final String assembledDocument = accumulator.getResponseBody();
         final TryItOutCoreResponseDto responseDto = TryItOutCoreResponseDto.builder()
                 .statusCode(result.statusCode())
-                .body(buildSseEnvelope(parseResult.events()))
+                .body(
+                        assembledDocument != null
+                                ? objectMapper.readTree(assembledDocument)
+                                : buildSseEnvelope(parseResult.events()))
                 .streaming(true)
                 .events(eventDtos)
                 .streamingStatus(status != ExecutionStatus.SUCCESS ? status : null)
                 .truncationWarning(accumulator.getTruncationWarning())
                 .build();
-        return new StreamingInvocation(responseDto, status, accumulator.getResponseBody());
+        return new StreamingInvocation(responseDto, status, assembledDocument);
     }
 
-    /**
-     * One streaming invocation's two views: the response DTO shown to the client (events envelope + event
-     * list) and the run-equivalent assembled document used for response-column extraction, plus the
-     * stream's terminal status.
-     */
-    private record StreamingInvocation(
-            TryItOutCoreResponseDto response, ExecutionStatus status, String extractionDocumentJson) {}
-
-    /**
-     * The display envelope: every received event in order, regardless of the stream's mode. It is what the
-     * response DTO's {@code body} carries (and what the accumulator's structured-SSE mode also produces);
-     * extraction, however, runs against {@link StreamingInvocation#extractionDocumentJson()}.
-     */
     private ObjectNode buildSseEnvelope(List<SseEvent> events) {
-        ObjectNode envelope = objectMapper.createObjectNode();
-        ArrayNode eventsArray = objectMapper.createArrayNode();
+        final ObjectNode envelope = objectMapper.createObjectNode();
+        final ArrayNode eventsArray = objectMapper.createArrayNode();
         for (SseEvent event : events) {
-            ObjectNode eventNode = objectMapper.createObjectNode();
+            final ObjectNode eventNode = objectMapper.createObjectNode();
             eventNode.put("event", event.event());
             if (event.data() instanceof JsonNode jsonNode) {
                 eventNode.set("data", jsonNode);
@@ -808,6 +796,10 @@ public class TryItOutService {
         envelope.set("events", eventsArray);
         return envelope;
     }
+
+    /** Carries the response, stream status and serialized document used for extraction. */
+    private record StreamingInvocation(
+            TryItOutCoreResponseDto response, ExecutionStatus status, String extractionDocumentJson) {}
 
     private static HttpHeaders toHttpHeaders(List<KeyValueTemplateDto> headerList) {
         HttpHeaders headers = new HttpHeaders();

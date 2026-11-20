@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -73,6 +74,187 @@ class StreamingResponseAccumulatorTest {
             JsonNode message = choice.get("message");
             assertThat(message.get("role").asString()).isEqualTo("assistant");
             assertThat(message.get("content").asString()).isEqualTo("Test response");
+        }
+
+        @Test
+        @DisplayName("Should preserve delta custom_fields annotations in the assembled message")
+        void accumulate_customFieldsAnnotations_preservedOntoAssembledMessage() throws Exception {
+            final InputStream stream = buildSseStream(
+                    "event: message\ndata: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}",
+                    "event: message\ndata: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"See the reference.\"}}]}",
+                    "event: message\ndata: {\"choices\":[{\"index\":0,\"delta\":{\"custom_fields\":{\"annotations\":["
+                            + "{\"target\":{\"selector\":{\"type\":\"CssSelector\",\"tag\":\"a\",\"id\":\"reference-7\"}},"
+                            + "\"body\":{\"title\":\"Synthetic reference\",\"quote\":\"A short supporting passage.\","
+                            + "\"source\":{\"type\":\"WebPage\",\"url\":\"https://example.org/reference\"},"
+                            + "\"selector\":[{\"type\":\"TextQuoteSelector\",\"exact\":\"supporting passage\"}]}}]}}}]}",
+                    "data: [DONE]");
+            final JsonNode expectedCustomFields = OBJECT_MAPPER.readTree("""
+                    {
+                      "annotations": [{
+                        "target": {"selector": {"type": "CssSelector", "tag": "a", "id": "reference-7"}},
+                        "body": {
+                          "title": "Synthetic reference",
+                          "quote": "A short supporting passage.",
+                          "source": {"type": "WebPage", "url": "https://example.org/reference"},
+                          "selector": [{"type": "TextQuoteSelector", "exact": "supporting passage"}]
+                        }
+                      }]
+                    }
+                    """);
+
+            final StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            final JsonNode message = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message");
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+            assertThat(message.get("content").asString()).isEqualTo("See the reference.");
+            assertThat(message.get("custom_fields")).isEqualTo(expectedCustomFields);
+        }
+
+        @Test
+        @DisplayName("Should append custom-fields arrays and merge nested objects across chunks")
+        void accumulate_customFieldsAcrossChunks_appendsAndMerges() {
+            final InputStream stream = buildSseStream("""
+                    data: {"choices":[{"delta":{"content":"Hello","custom_fields":{"annotations":[{"id":"a"}],"metadata":{"label":"first","tags":["one"]}}}}]}
+                    """.strip(), """
+                    data: {"choices":[{"delta":{"content":" world","custom_fields":{"annotations":[{"id":"a"},null,{"id":"b"}],"metadata":{"label":"second","tags":["two"]}}}}]}
+                    """.strip());
+            final StreamingResponseAccumulator accumulator = createAccumulator();
+
+            accumulator.accumulate(stream);
+
+            final JsonNode message = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message");
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+            assertThat(message.get("content").asString()).isEqualTo("Hello world");
+            assertThat(message.get("custom_fields")).isEqualTo(OBJECT_MAPPER.readTree("""
+                    {"annotations":[{"id":"a"},{"id":"a"},null,{"id":"b"}],
+                     "metadata":{"label":"second","tags":["one","two"]}}
+                    """));
+        }
+
+        @Test
+        @DisplayName("Should assemble custom content and custom fields independently")
+        void accumulate_bothExtensions_assembledIndependently() {
+            final InputStream stream = buildSseStream("""
+                    data: {"choices":[{"delta":{"content":"Hi","custom_content":{"stages":[{"index":0,"name":"search"}],"tags":["old"]},"custom_fields":{"tags":["old"]}}}]}
+                    """.strip(), """
+                    data: {"choices":[{"delta":{"custom_content":{"stages":[{"index":0,"status":"done"}],"tags":["new"]},"custom_fields":{"tags":["new"]}}}]}
+                    """.strip());
+            final StreamingResponseAccumulator accumulator = createAccumulator();
+
+            accumulator.accumulate(stream);
+
+            final JsonNode message = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message");
+            assertThat(message.get("content").asString()).isEqualTo("Hi");
+            assertThat(message.get("custom_content")).isEqualTo(OBJECT_MAPPER.readTree("""
+                    {"stages":[{"index":0,"name":"search","status":"done"}],"tags":["new"]}
+                    """));
+            assertThat(message.get("custom_fields")).isEqualTo(OBJECT_MAPPER.readTree("""
+                    {"tags":["old","new"]}
+                    """));
+        }
+
+        @Test
+        @DisplayName("Should omit custom fields when deltas contain no valid fields")
+        void accumulate_missingOrInvalidCustomFields_omitsExtension() {
+            final InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_fields\":null}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_fields\":42}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_fields\":\"invalid\"}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_fields\":[]}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_fields\":{}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_fields\":{\"ignored\":null}}}]}");
+            final StreamingResponseAccumulator accumulator = createAccumulator();
+
+            accumulator.accumulate(stream);
+
+            final JsonNode message = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message");
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+            assertThat(message.get("content").asString()).isEqualTo("Hi");
+            assertThat(message.has("custom_fields")).isFalse();
+        }
+
+        @Test
+        @DisplayName("Should preserve accumulated fields after an invalid extension payload")
+        void accumulate_invalidCustomFieldsAfterValid_retainsFields() {
+            final InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"custom_fields\":{\"value\":\"retained\"}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_fields\":[1]}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_fields\":null}}]}");
+            final StreamingResponseAccumulator accumulator = createAccumulator();
+
+            accumulator.accumulate(stream);
+
+            final JsonNode fields = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message")
+                    .get("custom_fields");
+            assertThat(fields).isEqualTo(OBJECT_MAPPER.readTree("{\"value\":\"retained\"}"));
+        }
+
+        @Test
+        @DisplayName("Should convert first-choice scalar text and ignore malformed or later choices")
+        void accumulate_scalarContentAndMalformedDeltas_preservesFirstChoiceBehavior() {
+            final InputStream stream = buildSseStream(
+                    """
+                    data: {"choices":[{"delta":{"content":42}},{"delta":{"content":"ignored","custom_fields":{"ignored":1}}}]}
+                    """.strip(),
+                    "data: {\"choices\":[null]}",
+                    "data: {\"choices\":[{\"delta\":null}]}",
+                    "data: {\"choices\":[{\"delta\":\"invalid\"}]}",
+                    "data: {\"choices\":[]}",
+                    "data: {\"choices\":{}}",
+                    "data: {\"choices\":[{\"delta\":{\"content\":true}}]}");
+            final StreamingResponseAccumulator accumulator = createAccumulator();
+
+            accumulator.accumulate(stream);
+
+            final JsonNode message = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message");
+            assertThat(message.get("content").asString()).isEqualTo("42true");
+            assertThat(message.has("custom_fields")).isFalse();
+        }
+
+        @Test
+        @DisplayName("Should keep text-only fallback and parser status for an unsuccessful parsed result")
+        void assemble_nonSuccessWithCustomFields_retainsTextAndStatus() {
+            final List<SseEvent> events = List.of(
+                    new SseEvent("message", OBJECT_MAPPER.readTree("""
+                            {"choices":[{"delta":{"content":"Hello","custom_fields":{"annotations":[1]}}}]}
+                            """)),
+                    new SseEvent("message", OBJECT_MAPPER.readTree("""
+                            {"choices":[{"delta":{"content":" world","custom_content":{"state":"running"}}}]}
+                            """)));
+            final StreamingResponseAccumulator accumulator = createAccumulator();
+
+            accumulator.assemble(new SseParseResult(events, ExecutionStatus.TIMEOUT, "partial response"));
+
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.TIMEOUT);
+            assertThat(accumulator.getTruncationWarning()).isEqualTo("partial response");
+            assertThat(OBJECT_MAPPER.readTree(accumulator.getResponseBody()))
+                    .isEqualTo(OBJECT_MAPPER.readTree("\"Hello world\""));
         }
 
         @Test

@@ -52,7 +52,30 @@ public class RunPassCountService {
      */
     @Transactional("analyticsTransactionManager")
     public boolean record(UUID runId, UUID suiteId, UUID computationId, long runCreatedAtMs) {
-        return write(runId, suiteId, computationId, runCreatedAtMs);
+        final RunPassCount row = count(runId, suiteId, computationId, runCreatedAtMs);
+        final boolean inserted = runPassCountRepository.insertIfAbsent(row);
+        if (!inserted) {
+            log.info(
+                    "Pass counts of run {} computation {} were already recorded; nothing written",
+                    runId,
+                    row.getComputationId());
+        } else if (row.getComputationId() == null) {
+            log.info(
+                    "Recorded pass counts of run {}: no test cases at computation {}; stored as 0 of 0 without a"
+                            + " computation (suite {})",
+                    runId,
+                    computationId,
+                    suiteId);
+        } else {
+            log.info(
+                    "Recorded pass counts of run {}: {} of {} test cases passed (computation {}, suite {})",
+                    runId,
+                    row.getPassedCount(),
+                    row.getTotalCount(),
+                    computationId,
+                    suiteId);
+        }
+        return inserted;
     }
 
     /**
@@ -113,25 +136,37 @@ public class RunPassCountService {
         return new ReconciledBatch(written, deferred);
     }
 
+    /** Reconciliation write: logged per run at DEBUG only; the pass has its own summary line. */
     private boolean write(UUID runId, UUID suiteId, UUID computationId, long runCreatedAtMs) {
+        final RunPassCount row = count(runId, suiteId, computationId, runCreatedAtMs);
+        final boolean inserted = runPassCountRepository.insertIfAbsent(row);
+        log.debug(
+                "Reconciled pass counts of run {} computation {}: {} of {}, inserted={}",
+                runId,
+                row.getComputationId(),
+                row.getPassedCount(),
+                row.getTotalCount(),
+                inserted);
+        return inserted;
+    }
+
+    /** Counts the computation and builds the row to store; a computation without any rows becomes the null one. */
+    private RunPassCount count(UUID runId, UUID suiteId, UUID computationId, long runCreatedAtMs) {
         final PassCountTotals totals = computationId == null
                 ? new PassCountTotals(0, 0)
                 : runPassCountRepository.countForComputation(runId, computationId);
         final boolean noRows = totals.total() == 0;
-        final UUID storedComputation = noRows ? null : computationId;
         final long computedAtMs = noRows
                 ? NULL_COMPUTATION_COMPUTED_AT_MS
                 : runPassCountRepository.findComputedAtMs(runId, computationId).orElse(NULL_COMPUTATION_COMPUTED_AT_MS);
-        final boolean inserted = runPassCountRepository.insertIfAbsent(RunPassCount.builder()
+        return RunPassCount.builder()
                 .testSuiteRunId(runId)
                 .testSuiteId(suiteId)
-                .computationId(storedComputation)
+                .computationId(noRows ? null : computationId)
                 .runCreatedAtMs(runCreatedAtMs)
                 .passedCount(totals.passed())
                 .totalCount(totals.total())
                 .computedAtMs(computedAtMs)
-                .build());
-        log.debug("Pass counts of run {} computation {}: inserted={}", runId, storedComputation, inserted);
-        return inserted;
+                .build();
     }
 }

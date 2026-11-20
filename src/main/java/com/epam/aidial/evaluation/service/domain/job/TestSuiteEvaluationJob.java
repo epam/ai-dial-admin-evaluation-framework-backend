@@ -323,7 +323,13 @@ public class TestSuiteEvaluationJob {
         try {
             runPassCountService.record(run.getId(), run.getTestSuiteId(), computationId, run.getCreatedAt());
         } catch (RuntimeException e) {
-            log.warn("Failed to record pass counts of completed run {}: {}", run.getId(), e.getMessage(), e);
+            log.warn(
+                    "Failed to record pass counts of completed run {} computation {}; reconciliation will record"
+                            + " them: {}",
+                    run.getId(),
+                    computationId,
+                    e.getMessage(),
+                    e);
         }
     }
 

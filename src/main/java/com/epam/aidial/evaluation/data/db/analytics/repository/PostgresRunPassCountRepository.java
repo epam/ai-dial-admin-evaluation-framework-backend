@@ -4,13 +4,16 @@ import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.RUN_PASS_
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 
+import com.epam.aidial.evaluation.constants.AnalyticsConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.PassCountTotals;
 import com.epam.aidial.evaluation.data.db.analytics.model.RecordedComputation;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCount;
+import com.epam.aidial.evaluation.data.db.analytics.model.WeeklySuiteHealth;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -32,6 +35,7 @@ import org.jooq.SelectSelectStep;
 import org.jooq.SortField;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
+import org.jooq.impl.SQLDataType;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
@@ -47,12 +51,20 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
     private static final String ALL_SUCCESS = "all_success";
     private static final String STATUS = "execution_status";
     private static final String PASSED = "passed";
+    private static final String PER_RUN = "per_run";
+    private static final String COMPUTATION_RANK = "computation_rank";
     private static final String TOTAL_ELEMENTS = "total_elements";
     private static final String SUITES_ALIAS = "s";
     private static final String LATEST_ALIAS = "l";
     private static final String TEST_SUITE_ID_COLUMN = "test_suite_id";
     private static final String SKIP_SCAN_CTE = "suite_skip_scan";
     private static final Table<?> SKIP_SCAN_CTE_TABLE = DSL.table(DSL.name(SKIP_SCAN_CTE));
+    private static final String PER_SUITE_WEEK = "per_suite_week";
+    private static final String WEEK_INDEX = "week_index";
+    private static final String PASSED_SUM = "passed";
+    private static final String TOTAL_SUM = "total";
+    private static final String HEALTHY_COUNT = "healthy_count";
+    private static final String FAILING_COUNT = "failing_count";
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
@@ -224,6 +236,11 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
         return dsl.fetchCount(dsl.selectOne().from(suites).crossJoin(latest));
     }
 
+    private static Condition suiteIdCondition(Collection<UUID> suiteIds) {
+        final String[] ids = suiteIds.stream().map(UUID::toString).toArray(String[]::new);
+        return RUN_PASS_COUNTS.TEST_SUITE_ID.eq(DSL.any(ids));
+    }
+
     /** The distinct requested ids as a one-column table; a duplicated input id must not duplicate rows. */
     private static Table<?> unnestedSuites(Collection<UUID> suiteIds) {
         final String[] ids = suiteIds.stream().map(UUID::toString).distinct().toArray(String[]::new);
@@ -290,6 +307,67 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
                         .asc(),
                 RUN_PASS_COUNTS.COMPUTED_AT_MS.desc(),
                 RUN_PASS_COUNTS.COMPUTATION_ID.asc());
+    }
+
+    @Override
+    public List<WeeklySuiteHealth> findWeeklySuiteHealth(
+            Collection<UUID> suiteIds, long startMs, long endMs, double threshold) {
+        if (suiteIds != null && suiteIds.isEmpty()) {
+            return List.of();
+        }
+        final Condition suiteScope = suiteIds == null ? DSL.noCondition() : suiteIdCondition(suiteIds);
+        final Condition scope = suiteScope
+                .and(RUN_PASS_COUNTS.RUN_CREATED_AT_MS.ge(startMs))
+                .and(RUN_PASS_COUNTS.RUN_CREATED_AT_MS.lt(endMs));
+        final Table<?> perRun = computationRankedPerRun(scope);
+        final Field<Long> weekIndex = perRun.field(RUN_PASS_COUNTS.RUN_CREATED_AT_MS)
+                .sub(DSL.inline(startMs))
+                .div(DSL.inline(AnalyticsConstants.WEEK_MS));
+        final Field<BigDecimal> passedSum = DSL.sum(perRun.field(RUN_PASS_COUNTS.PASSED_COUNT));
+        final Field<BigDecimal> totalSum = DSL.sum(perRun.field(RUN_PASS_COUNTS.TOTAL_COUNT));
+        final Table<?> perSuiteWeek = dsl.select(
+                        perRun.field(RUN_PASS_COUNTS.TEST_SUITE_ID),
+                        weekIndex.as(WEEK_INDEX),
+                        passedSum.as(PASSED_SUM),
+                        totalSum.as(TOTAL_SUM))
+                .from(perRun)
+                .where(perRun.field(COMPUTATION_RANK, Integer.class).eq(1))
+                .groupBy(perRun.field(RUN_PASS_COUNTS.TEST_SUITE_ID), weekIndex)
+                .having(totalSum.gt(BigDecimal.ZERO))
+                .asTable(PER_SUITE_WEEK);
+
+        final Field<Long> week = perSuiteWeek.field(WEEK_INDEX, Long.class);
+        final Field<Double> rate = perSuiteWeek
+                .field(PASSED_SUM, BigDecimal.class)
+                .cast(SQLDataType.DOUBLE)
+                .div(perSuiteWeek.field(TOTAL_SUM, BigDecimal.class).cast(SQLDataType.DOUBLE));
+        return dsl.select(
+                        week,
+                        DSL.count().filterWhere(rate.ge(threshold)).as(HEALTHY_COUNT),
+                        DSL.count().filterWhere(rate.lt(threshold)).as(FAILING_COUNT))
+                .from(perSuiteWeek)
+                .groupBy(week)
+                .orderBy(week)
+                .fetch(r -> new WeeklySuiteHealth(
+                        r.get(week).intValue(),
+                        r.get(HEALTHY_COUNT, Integer.class),
+                        r.get(FAILING_COUNT, Integer.class)));
+    }
+
+    /**
+     * Tombstone-filtered rows of the scope, each with its rank among its run's computations (see
+     * {@link #computationOrder}). Callers keep rank 1 to reduce each run to its latest computation.
+     */
+    private Table<?> computationRankedPerRun(Condition scope) {
+        final List<SelectField<?>> perRunColumns = new ArrayList<>(List.of(RUN_PASS_COUNTS.fields()));
+        perRunColumns.add(DSL.rowNumber()
+                .over(DSL.partitionBy(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID).orderBy(computationOrder()))
+                .as(COMPUTATION_RANK));
+        return dsl.select(perRunColumns)
+                .from(RUN_PASS_COUNTS)
+                .where(scope)
+                .and(RunDeletionFilter.notDeleted(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID))
+                .asTable(PER_RUN);
     }
 
     private static List<SelectField<?>> projection(Table<?> ranked) {

@@ -1,12 +1,14 @@
+# Suite Health Distribution
+
 ## Purpose
 
 The System Health dashboard shows, week by week, how many test suites were healthy and how many were failing, so a platform-wide change in quality is visible at a glance. This capability returns those weekly counts for all suites, or for the suites matching a filter, from the stored run pass counts.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Health-distribution endpoint
 The system SHALL expose `GET /api/v1/analytics/test-suites/health-distribution` returning an object with `threshold` (the threshold applied) and `weeks`, a list with exactly one entry per requested week, ordered oldest first. Each entry SHALL contain `weekStart` (epoch milliseconds), `healthyCount`, `failingCount` and `suiteCount`, where `suiteCount` equals `healthyCount` plus `failingCount`. A week in which no suite is counted SHALL still have an entry, with all three counts 0. The response SHALL NOT be paged. The endpoint has no `sort` parameter; a supplied `sort` SHALL have no effect on the response.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Default request
 - **WHEN** the endpoint is called without parameters
@@ -22,7 +24,7 @@ Status: **Planned**
 
 ### Requirement: Weeks
 A week SHALL start on Monday 00:00:00.000 UTC and last seven days. A run SHALL belong to the week containing its creation timestamp. `weekStart` SHALL be the first millisecond of the week. The last entry SHALL be the week containing the current time, even when that week has only just begun; the entries before it SHALL be the immediately preceding weeks without gaps. The number of entries SHALL be the `weeks` parameter: default 8, minimum 1, maximum 52. A `weeks` value outside that range or not an integer SHALL be rejected with HTTP 400.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Run at the first millisecond of a week
 - **WHEN** a run was created on a Monday at 00:00:00.000 UTC
@@ -46,7 +48,7 @@ Status: **Planned**
 
 ### Requirement: Weekly suite pass rate and health
 For each week, a suite's pass rate SHALL be the sum of passed counts divided by the sum of total counts over the suite's recorded completed runs created in that week (see `run-pass-counts`), each run read at its latest recorded computation. A suite SHALL be counted in a week only when that sum of total counts is greater than 0; a suite with no recorded run in the week, or whose runs in the week have no test cases, SHALL NOT be counted in that week and SHALL NOT be assigned the state of another week. A counted suite SHALL be healthy when its weekly pass rate is greater than or equal to the threshold and failing otherwise. One suite SHALL be counted independently in every week in which it has runs. Deleted runs SHALL NOT contribute.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Pooled rate over several runs
 - **WHEN** in one week a suite has a run with 1 of 10 test cases passed and a run with 90 of 90 passed, and the threshold is 0.75
@@ -78,7 +80,7 @@ Status: **Planned**
 
 ### Requirement: Threshold parameter
 The endpoint SHALL accept `threshold`, a number from 0 to 1 inclusive, default 0.75, and SHALL echo the value applied in the response. A value outside that range or not a number SHALL be rejected with HTTP 400.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Custom threshold
 - **WHEN** `threshold` is 0.9 and a suite's weekly rate is 0.8
@@ -94,7 +96,7 @@ Status: **Planned**
 
 ### Requirement: Suite filter
 The endpoint SHALL accept the `filter` parameter with the same fields, operators and validation as the run-trends endpoint (see `suite-run-trends`). Without a filter, every suite with recorded runs SHALL be considered, regardless of which suites the run-trends endpoint returns on any page. With a filter, only matching suites SHALL be counted. An invalid filter SHALL be rejected with HTTP 400.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Filter by suite type
 - **WHEN** the request filters `suiteType eq "MCP_TOOL"` and, in the current week, two MCP suites and three other suites have runs
@@ -110,7 +112,7 @@ Status: **Planned**
 
 ### Requirement: Datasource separation
 Pass counts SHALL be read from the analytics datasource. When a filter is given, the matching suite ids SHALL be read from the meta datasource before the analytics read; a meta query SHALL NOT execute inside an analytics transaction. Without a filter, the request SHALL NOT read the meta datasource.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Unfiltered request
 - **WHEN** the endpoint is called without a filter
@@ -118,8 +120,10 @@ Status: **Planned**
 
 ### Requirement: OpenAPI documentation
 The endpoint SHALL be documented with minimal and full `200` response examples under `src/main/resources/openapi/examples/` named for the registered path, its `filter` parameter SHALL carry the generated query-parameter description, and `threshold` and `weeks` SHALL be described with their defaults and ranges. The examples SHALL appear in `/v3/api-docs`.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Examples appear in the API docs
 - **WHEN** `/v3/api-docs` is requested
 - **THEN** the operation `GET /api/v1/analytics/test-suites/health-distribution` carries the `200` response examples and described `filter`, `threshold` and `weeks` parameters
+
+**Implementation notes:** `SuiteHealthDistributionController` (`web.controller`), `SuiteHealthDistributionService`, `HealthWeekRange` and `WeekRange` (`service.domain.analytics`), DTOs `SuiteHealthDistributionDto` / `SuiteHealthWeekDto` (`service.domain.dto.analytics`), `AnalyticsConstants.WEEK_MS` / `HEALTH_DISTRIBUTION_*`; weekly counts are read through `RunPassCountService.getWeeklySuiteHealth` → `PostgresRunPassCountRepository.findWeeklySuiteHealth` (model `WeeklySuiteHealth`); suite ids through `TestSuiteService.findIds`; query-parameter docs registered in `OpenApiQueryParamCustomizer`; examples `api-v1-analytics-test-suites-health-distribution-GET-response-200-{minimal,full}.json`; tests `SuiteHealthDistributionFunctionalTests`, `SuiteHealthDistributionServiceTest`, `HealthWeekRangeTest`.

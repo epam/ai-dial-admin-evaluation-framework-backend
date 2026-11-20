@@ -77,12 +77,12 @@ public class RunPassCountService {
      * least {@code minComputationAgeMs} old; a run without eval summaries and without any row gets the
      * null-computation row.
      *
-     * @return the number of rows inserted
+     * @return the rows inserted and the runs deferred because their latest computation is still too recent
      */
     @Transactional("analyticsTransactionManager")
-    public int reconcileBatch(List<CompletedRunKey> runs, long minComputationAgeMs) {
+    public ReconciledBatch reconcileBatch(List<CompletedRunKey> runs, long minComputationAgeMs) {
         if (runs.isEmpty()) {
-            return 0;
+            return ReconciledBatch.EMPTY;
         }
         final List<UUID> runIds = runs.stream().map(CompletedRunKey::id).toList();
         final Map<UUID, LatestComputation> latestByRun = evalSummaryRepository.findLatestComputations(runIds);
@@ -93,19 +93,24 @@ public class RunPassCountService {
 
         final long now = clock.millis();
         int written = 0;
+        int deferred = 0;
         for (final CompletedRunKey run : runs) {
             final LatestComputation latest = latestByRun.get(run.id());
-            final boolean due = latest == null
+            final boolean missing = latest == null
                     ? !runsWithAnyRow.contains(run.id())
-                    : !recordedPairs.contains(new RecordedComputation(run.id(), latest.computationId()))
-                            && now - latest.computedAtMs() >= minComputationAgeMs;
-            if (due
-                    && write(
-                            run.id(), run.suiteId(), latest != null ? latest.computationId() : null, run.createdAt())) {
+                    : !recordedPairs.contains(new RecordedComputation(run.id(), latest.computationId()));
+            if (!missing) {
+                continue;
+            }
+            if (latest != null && now - latest.computedAtMs() < minComputationAgeMs) {
+                deferred++;
+                continue;
+            }
+            if (write(run.id(), run.suiteId(), latest != null ? latest.computationId() : null, run.createdAt())) {
                 written++;
             }
         }
-        return written;
+        return new ReconciledBatch(written, deferred);
     }
 
     private boolean write(UUID runId, UUID suiteId, UUID computationId, long runCreatedAtMs) {

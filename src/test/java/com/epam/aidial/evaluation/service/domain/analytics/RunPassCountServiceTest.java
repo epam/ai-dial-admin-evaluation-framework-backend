@@ -5,11 +5,18 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.data.db.analytics.model.LatestComputation;
 import com.epam.aidial.evaluation.data.db.analytics.model.PassCountTotals;
+import com.epam.aidial.evaluation.data.db.analytics.model.RecordedComputation;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCount;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunPassCountRepository;
+import com.epam.aidial.evaluation.data.db.model.CompletedRunKey;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -93,5 +100,36 @@ class RunPassCountServiceTest {
         assertThat(row.getPassedCount()).isEqualTo(2);
         assertThat(row.getTotalCount()).isEqualTo(3);
         assertThat(row.getComputedAtMs()).isEqualTo(77L);
+    }
+
+    @Test
+    @DisplayName("a batch reports the rows written and the runs deferred because their computation is too recent")
+    void reconcileBatchReportsWrittenAndDeferred() {
+        final long now = 10_000_000L;
+        final long minAgeMs = 600_000L;
+        service = new RunPassCountService(
+                runPassCountRepository, evalSummaryRepository, Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC));
+        final CompletedRunKey due = new CompletedRunKey(UUID.randomUUID(), suiteId, 1L);
+        final CompletedRunKey tooRecent = new CompletedRunKey(UUID.randomUUID(), suiteId, 2L);
+        final CompletedRunKey recorded = new CompletedRunKey(UUID.randomUUID(), suiteId, 3L);
+        final UUID dueComputation = UUID.randomUUID();
+        final UUID recentComputation = UUID.randomUUID();
+        final UUID recordedComputation = UUID.randomUUID();
+        when(evalSummaryRepository.findLatestComputations(List.of(due.id(), tooRecent.id(), recorded.id())))
+                .thenReturn(Map.of(
+                        due.id(), new LatestComputation(dueComputation, now - minAgeMs),
+                        tooRecent.id(), new LatestComputation(recentComputation, now - minAgeMs + 1),
+                        recorded.id(), new LatestComputation(recordedComputation, 0L)));
+        when(runPassCountRepository.findRecordedComputations(List.of(due.id(), tooRecent.id(), recorded.id())))
+                .thenReturn(List.of(new RecordedComputation(recorded.id(), recordedComputation)));
+        when(runPassCountRepository.countForComputation(due.id(), dueComputation))
+                .thenReturn(new PassCountTotals(1, 2));
+        when(runPassCountRepository.findComputedAtMs(due.id(), dueComputation)).thenReturn(Optional.of(5L));
+        when(runPassCountRepository.insertIfAbsent(any())).thenReturn(true);
+
+        final ReconciledBatch batch = service.reconcileBatch(List.of(due, tooRecent, recorded), minAgeMs);
+
+        assertThat(batch).isEqualTo(new ReconciledBatch(1, 1));
+        assertThat(insertedRow().getTestSuiteRunId()).isEqualTo(due.id());
     }
 }

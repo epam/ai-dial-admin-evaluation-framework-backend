@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.configuration.properties.analytics.RunPassCountReconciliationProperties;
 import com.epam.aidial.evaluation.data.db.model.CompletedRunKey;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +40,8 @@ class RunPassCountReconciliationJobTest {
         properties.setEnabled(true);
         properties.setBatchSize(2);
         properties.setMinComputationAgeMs(600_000L);
-        job = new RunPassCountReconciliationJob(properties, testSuiteRunService, runPassCountService);
+        job = new RunPassCountReconciliationJob(
+                properties, testSuiteRunService, runPassCountService, Clock.systemUTC());
     }
 
     private static CompletedRunKey key(long createdAt) {
@@ -55,7 +57,7 @@ class RunPassCountReconciliationJobTest {
         when(testSuiteRunService.getCompletedRunKeysAfter(2L, first.get(1).id(), 2))
                 .thenReturn(second);
         when(runPassCountService.reconcileBatch(first, 600_000L)).thenThrow(new IllegalStateException("db down"));
-        when(runPassCountService.reconcileBatch(second, 600_000L)).thenReturn(1);
+        when(runPassCountService.reconcileBatch(second, 600_000L)).thenReturn(new ReconciledBatch(1, 0));
 
         final int written = job.reconcile();
 

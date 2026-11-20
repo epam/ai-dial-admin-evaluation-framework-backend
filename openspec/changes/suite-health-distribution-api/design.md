@@ -48,14 +48,16 @@ See proposal.md for motivation. What shapes the approach:
 
 ### D2. Week range component
 
-New injectable `HealthWeekRange` component (`service.domain.analytics`, `Clock` injected) with one method returning the range for a number of weeks: `startMs` (Monday 00:00 UTC of the oldest week) and the list of `weekStart` values. A constant `WEEK_MS = 7 * 86_400_000` lives in `AnalyticsConstants`.
+New injectable `HealthWeekRange` component (`service.domain.analytics`, `Clock` injected) with one method returning, for a number of weeks, a `WeekRange` record (same package): `startMs` (Monday 00:00 UTC of the oldest week), `endMs` (exclusive: the first millisecond after the current week) and `weekStarts` (oldest first). A constant `long WEEK_MS = 7L * 86_400_000L` lives in `AnalyticsConstants`; it must be a `long`, because 52 weeks in milliseconds does not fit an `int`.
+
+- The current week start is taken from the calendar, not from epoch arithmetic: `LocalDate.now(clock.withZone(UTC)).with(TemporalAdjusters.previousOrSame(MONDAY))` at start of day. Flooring epoch milliseconds to a multiple of `WEEK_MS` would give Thursday starts, because 1970-01-01 was a Thursday.
 
 - UTC has no daylight saving, so every week is exactly `WEEK_MS` long and a run's week is `(run_created_at_ms - startMs) / WEEK_MS` by integer division. This keeps bucketing in plain `BIGINT` arithmetic — no `date_trunc`, no time zone functions, the same expression on any vendor.
 - Alternative considered: `date_trunc('week', to_timestamp(...))` in SQL. Rejected: it depends on the session time zone unless carefully forced to UTC, and the service would still have to generate the empty weeks.
 
 ### D3. One aggregate query
 
-New repository read `findWeeklySuiteHealth(suiteIdsOrNull, startMs, weekMs, weekCount, threshold)` returning `List<WeeklySuiteHealth(weekIndex, healthyCount, failingCount)>` (model in `data.db.analytics.model`), only for weeks that have counted suites:
+New repository read `findWeeklySuiteHealth(suiteIdsOrNull, startMs, endMs, threshold)` returning `List<WeeklySuiteHealth(weekIndex, healthyCount, failingCount)>` (model in `data.db.analytics.model`), only for weeks that have counted suites:
 
 ```sql
 SELECT week_index,
@@ -63,7 +65,7 @@ SELECT week_index,
        count(*) FILTER (WHERE passed::float8 / total <  :threshold) AS failing_count
 FROM (
     SELECT test_suite_id,
-           (run_created_at_ms - :startMs) / :weekMs AS week_index,
+           (run_created_at_ms - :startMs) / <WEEK_MS> AS week_index,
            sum(passed_count) AS passed,
            sum(total_count)  AS total
     FROM   <latest computation per run, tombstone-filtered, scoped>
@@ -73,9 +75,9 @@ FROM (
 GROUP BY week_index
 ```
 
-- The inner source is the existing per-run reduction, extracted from `rankedPerSuite` into a shared private method (`latestComputationPerRun(scope)`); `rankedPerSuite` keeps adding its per-suite rank on top. The scope condition gains `run_created_at_ms >= :startMs AND run_created_at_ms < :startMs + :weekCount * :weekMs`, applied before the window function so only the range's rows are ranked. Restricting by run creation time before ranking is safe: all computations of one run share `run_created_at_ms`.
+- The inner source is the existing per-run reduction, extracted from `rankedPerSuite` into a shared private method (`latestComputationPerRun(scope)`); `rankedPerSuite` keeps adding its per-suite rank on top. The scope condition gains `run_created_at_ms >= :startMs AND run_created_at_ms < :endMs`, applied before the window function so only the range's rows are ranked. Both bounds are computed in Java as `long`; the week length is inlined from `AnalyticsConstants.WEEK_MS` as a `BIGINT`. The lower bound guarantees a non-negative `week_index`. Restricting by run creation time before ranking is safe: all computations of one run share `run_created_at_ms`.
 - The rate is computed as `passed::float8 / total`, the same double division `PassRateCalculator` performs, so a suite whose rate displays as 0.75 is classified consistently with the other cards.
-- `RunPassCountService.getWeeklySuiteHealth(...)` is a plain pass-through (single statement, no `@Transactional` needed, as for the other reads).
+- `RunPassCountService.getWeeklySuiteHealth(...)` is a plain pass-through. Unlike the run-trends and pass-rate readers, which wrap two statements in one read-only analytics transaction for a consistent view, this reader issues a single statement and opens no transaction around it.
 - Alternative considered: return per suite-week rows and bucket in Java. Rejected: transfers up to suites × weeks rows for a result of at most 52 pairs of numbers.
 
 ### D4. No new index
@@ -97,7 +99,9 @@ No analytics transaction is opened around step 3 and no meta read follows it, so
 
 - Exact boundaries (Monday 00:00, Sunday 23:59:59.999, year change, week count) are unit-tested in `HealthWeekRangeTest` with `Clock.fixed`.
 - Functional tests take the application's `Clock` bean, derive the current week start with the same component, and seed pass-count rows at offsets from week starts (first and last millisecond included). The query has no "now" upper bound other than the end of the current week, so a row seeded later in the current week than the actual time is still counted.
-- A test that starts just before Monday 00:00 UTC and sends its request just after would see its rows one week off. The window is milliseconds per week; accepted, documented in the test class.
+- A test that starts just before Monday 00:00 UTC and sends its request just after would see its rows one week off. Each test reads the current week start before seeding and again after the response and is skipped (`Assumptions.assumeTrue`) when the two differ.
+- A run job finishing late from an earlier nested test class can record a pass-count row stamped "now", which lands in the current week. Tests asserting exact counts therefore either place their rows in past weeks or scope the request with an `id in [...]` filter on the suites they created. Only the "Default request" and "No recorded runs" scenarios run unfiltered, and they assert shape (and zero counts for past weeks), not current-week counts.
+- The "Unfiltered request" scenario of the datasource requirement is verified by the service unit test (no `TestSuiteService` interaction), not by a functional test.
 
 ## Risks / Trade-offs
 
@@ -105,7 +109,8 @@ No analytics transaction is opened around step 3 and no meta read follows it, so
 - [Numbers are low until reconciliation has recorded older runs] → same behaviour and same mitigation (first pass 60 s after startup) as run trends; mentioned in the endpoint description.
 - [Pooled rate hides a single bad run among large good ones] → intended (user decision); the run-trends card shows per-run rates.
 - [A large filter result passes many suite ids to the analytics query] → same `= ANY(array)` shape run trends already uses.
-- [Midnight-boundary flake in functional tests] → see D6.
+- [Midnight-boundary and stray-row flakes in functional tests] → see D6.
+- [Query parameter `weeks` (a number) and response field `weeks` (a list) share a name] → kept for brevity; both OpenAPI descriptions say which is which.
 
 ## Migration Plan
 

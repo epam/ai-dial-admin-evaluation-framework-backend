@@ -12,7 +12,7 @@ The System Health dashboard has a second card next to "Evaluation run trends": "
   - `threshold` — default 0.75, 0 to 1 inclusive;
   - `weeks` — default 8, 1 to 52;
   - `filter` — the test suite filter the run-trends endpoint takes.
-  An out-of-range `threshold` or `weeks`, or an invalid `filter`, returns 400.
+  A `threshold` or `weeks` that is out of range or not a number, or an invalid `filter`, returns 400.
 - The chart is global: it covers every suite matching the filter, independent of the run-trends page.
 - No paging and no `sort` parameter.
 

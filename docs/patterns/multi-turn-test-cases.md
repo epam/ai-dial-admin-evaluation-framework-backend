@@ -22,9 +22,9 @@ Turn count `N` is `multiTurnData.length` **iff** `runner.job.PerTurnBindingDetec
 
 Each turn's request body is JSONata-evaluated (`runner.service.RequestBodyEvaluator`) with a `Frame` binding the **previous** turn's reconciled extracted response columns by name (e.g. a `history` response column is reachable as `$history`) — there is no hardcoded `messages` array or `choices[0].message` reply path; history accumulation is entirely the author's JSONata expression (typically `$append($history, [...])`) over whatever response columns the suite extracts.
 
-Streaming is supported on every turn (`DeploymentTurnInvoker` branches on the response's SSE content type; `stream:false` is no longer force-injected), with DIAL `delta.custom_content` chunks merged by `runner.job.CustomContentAccumulator` into the assembled `choices[0].message.custom_content`.
+Streaming is supported on every turn (`DeploymentTurnInvoker` branches on the response's SSE content type; `stream:false` is no longer force-injected). In OpenAI chat-completions mode, DIAL `delta.custom_content` chunks merge into `choices[0].message.custom_content` and `delta.custom_fields` chunks merge independently into `choices[0].message.custom_fields`. See [streaming extension assembly](evaluation-runner-core-module.md#streaming-extension-assembly) for merge semantics and the internal array replacement option.
 
-`TurnLoopExecutor`, `PerTurnBindingDetector`, and `CustomContentAccumulator` live in the [`evaluation-runner-core` module](evaluation-runner-core-module.md) alongside the rest of the Phase 1 execution path — they are not part of the EF backend's own `service.domain`/`service.domain.job` packages.
+`TurnLoopExecutor`, `PerTurnBindingDetector`, `CustomContentAccumulator`, and `CustomFieldsAccumulator` live in the [`evaluation-runner-core` module](evaluation-runner-core-module.md) alongside the rest of the Phase 1 execution path — they are not part of the EF backend's own `service.domain`/`service.domain.job` packages.
 
 ## Persisted result rows
 

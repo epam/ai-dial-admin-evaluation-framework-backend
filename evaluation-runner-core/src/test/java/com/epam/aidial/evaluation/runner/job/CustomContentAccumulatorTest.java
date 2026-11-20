@@ -153,6 +153,92 @@ class CustomContentAccumulatorTest {
         }
     }
 
+    @Test
+    @DisplayName("Should replace ordinary arrays recursively, including with empty arrays")
+    void accumulate_ordinaryArrays_replace() {
+        accumulator.accumulate(node("{\"items\":[1,2],\"metadata\":{\"tags\":[\"one\"],\"label\":\"kept\"}}"));
+        accumulator.accumulate(node("{\"items\":[],\"metadata\":{\"tags\":[\"two\"]}}"));
+
+        assertThat(accumulator.getMerged())
+                .isEqualTo(node("{\"items\":[],\"metadata\":{\"tags\":[\"two\"],\"label\":\"kept\"}}"));
+    }
+
+    @Test
+    @DisplayName("Should preserve copied null properties but ignore later null overwrites in ordinary objects")
+    void accumulate_ordinaryObjects_preserveCopiedNulls() {
+        accumulator.accumulate(node("{\"metadata\":{\"initial\":{\"missing\":null},\"label\":\"kept\"}}"));
+        accumulator.accumulate(node("{\"metadata\":{\"label\":null,\"newObject\":{\"missing\":null}}}"));
+
+        assertThat(accumulator.getMerged())
+                .isEqualTo(
+                        node(
+                                "{\"metadata\":{\"initial\":{\"missing\":null},\"label\":\"kept\",\"newObject\":{\"missing\":null}}}"));
+    }
+
+    @Test
+    @DisplayName("Should merge indexed partials while preserving copied nulls and unindexed receipt order")
+    void accumulate_indexedPartials_preserveCopiedNullsAndOrdering() {
+        accumulator.accumulate(node("""
+                {
+                  "attachments": [
+                    {"index": 2, "initial": {"missing": null}, "label": "kept"},
+                    {"label": "first"}
+                  ],
+                  "stages": [{"index": 1, "details": {"missing": null}, "state": "kept"}]
+                }
+                """));
+        accumulator.accumulate(node("""
+                {
+                  "attachments": [
+                    {"index": 2, "label": null, "newObject": {"missing": null}},
+                    {"index": 0, "label": "zero"},
+                    {"label": "second"}
+                  ],
+                  "stages": [{"index": 1, "state": null, "newObject": {"missing": null}}]
+                }
+                """));
+
+        assertThat(accumulator.getMerged()).isEqualTo(node("""
+                {
+                  "attachments": [
+                    {"index": 0, "label": "zero"},
+                    {"index": 2, "initial": {"missing": null}, "label": "kept", "newObject": {"missing": null}},
+                    {"label": "first"},
+                    {"label": "second"}
+                  ],
+                  "stages": [
+                    {"index": 1, "details": {"missing": null}, "state": "kept", "newObject": {"missing": null}}
+                  ]
+                }
+                """));
+    }
+
+    @Test
+    @DisplayName("Should isolate source events and returned results from accumulated content")
+    void accumulate_sourceAndResultMutations_areIsolated() {
+        final ObjectNode first = (ObjectNode)
+                node("{\"metadata\":{\"label\":\"first\"},\"attachments\":[{\"index\":0,\"name\":\"original\"}]}");
+        final ObjectNode second = (ObjectNode)
+                node("{\"metadata\":{\"other\":\"second\"},\"attachments\":[{\"index\":0,\"url\":\"link\"}]}");
+        final JsonNode originalFirst = first.deepCopy();
+        final JsonNode originalSecond = second.deepCopy();
+        accumulator.accumulate(first);
+        accumulator.accumulate(second);
+        assertThat(first).isEqualTo(originalFirst);
+        assertThat(second).isEqualTo(originalSecond);
+
+        ((ObjectNode) first.get("metadata")).put("label", "changed");
+        ((ObjectNode) second.get("attachments").get(0)).put("url", "changed");
+        final ObjectNode snapshot = accumulator.getMerged();
+        ((ObjectNode) snapshot.get("metadata")).put("other", "changed");
+        ((ObjectNode) snapshot.get("attachments").get(0)).put("name", "changed");
+
+        assertThat(accumulator.getMerged())
+                .isEqualTo(
+                        node(
+                                "{\"metadata\":{\"label\":\"first\",\"other\":\"second\"},\"attachments\":[{\"index\":0,\"name\":\"original\",\"url\":\"link\"}]}"));
+    }
+
     private JsonNode node(String json) {
         return OBJECT_MAPPER.readTree(json);
     }

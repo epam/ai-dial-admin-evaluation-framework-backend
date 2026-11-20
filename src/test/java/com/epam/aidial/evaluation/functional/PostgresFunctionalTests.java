@@ -77,6 +77,7 @@ import com.epam.aidial.evaluation.functional.tests.MultiTurnRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnSharedDataFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
+import com.epam.aidial.evaluation.functional.tests.OpenApiExamplesFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestCaseEvalScoreRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestCaseMetricScoreAggregatedRepositoryFunctionalTests;
@@ -426,6 +427,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class CsvImportPlainGoldenTests extends CsvImportPlainGoldenFunctionalTests {}
+
+    @Nested
+    class OpenApiExamplesTests extends OpenApiExamplesFunctionalTests {}
 
     @Nested
     class TryItOutTests extends TryItOutFunctionalTests {}

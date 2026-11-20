@@ -3,9 +3,7 @@ package com.epam.aidial.evaluation.service.domain.analytics;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCounts;
 import java.util.List;
-import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -14,41 +12,34 @@ class PassRateCalculatorTest {
 
     private final PassRateCalculator calculator = new PassRateCalculator();
 
-    private static RunPassCounts counts(long passedTrue, long passedFalse, long unscored, long failed) {
-        return new RunPassCounts(UUID.randomUUID(), passedTrue, passedFalse, unscored, failed);
+    @Test
+    @DisplayName("rate is passed over total: 1 of 2 is 0.5")
+    void rateIsPassedOverTotal() {
+        assertThat(calculator.rate(1, 2)).isEqualTo(0.5);
     }
 
     @Test
-    @DisplayName(
-            "with a threshold passed=true and unscored SUCCESS count: 1 passed, 1 below, 1 unscored, 1 failed is 0.5")
-    void thresholdCountsPassedTrueAndUnscored() {
-        assertThat(calculator.rate(counts(1, 1, 1, 1), true)).isEqualTo(0.5);
+    @DisplayName("2 of 3 is 2/3")
+    void twoOfThree() {
+        assertThat(calculator.rate(2, 3)).isCloseTo(2.0 / 3.0, within(1e-12));
     }
 
     @Test
-    @DisplayName("without a threshold every SUCCESS test case counts: 2 SUCCESS and 1 failed is 2/3")
-    void noThresholdCountsEverySuccessRow() {
-        assertThat(calculator.rate(counts(0, 0, 2, 1), false)).isCloseTo(2.0 / 3.0, within(1e-12));
+    @DisplayName("no test case passed gives 0.0")
+    void nonePassedIsZero() {
+        assertThat(calculator.rate(0, 3)).isEqualTo(0.0);
     }
 
     @Test
-    @DisplayName("a failed test case counts in the denominator and never as passed, with or without a threshold")
-    void failedIsNeverPassed() {
-        assertThat(calculator.rate(counts(0, 0, 0, 3), true)).isEqualTo(0.0);
-        assertThat(calculator.rate(counts(0, 0, 0, 3), false)).isEqualTo(0.0);
-    }
-
-    @Test
-    @DisplayName("a run with no rows has no rate")
+    @DisplayName("a run with no test cases has no rate")
     void emptyRunHasNoRate() {
-        assertThat(calculator.rate(counts(0, 0, 0, 0), true)).isNull();
-        assertThat(calculator.rate(counts(0, 0, 0, 0), false)).isNull();
+        assertThat(calculator.rate(0, 0)).isNull();
     }
 
     @Test
-    @DisplayName("a threshold run where every test case passed has rate 1.0")
+    @DisplayName("every test case passed has rate 1.0")
     void allPassedIsOne() {
-        assertThat(calculator.rate(counts(4, 0, 0, 0), true)).isEqualTo(1.0);
+        assertThat(calculator.rate(4, 4)).isEqualTo(1.0);
     }
 
     @Test

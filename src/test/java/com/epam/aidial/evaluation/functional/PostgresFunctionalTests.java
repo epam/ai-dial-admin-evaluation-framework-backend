@@ -97,10 +97,12 @@ import com.epam.aidial.evaluation.functional.tests.RunComparisonFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunComparisonRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunDeletionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RunPassCountFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RunPassCountReconciliationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SkillFieldFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuitePassRateEndpointFunctionalTests;
-import com.epam.aidial.evaluation.functional.tests.SuitePassRateRepositoryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.SuiteRunTrendFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationBindingFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationFileRefFunctionalTests;
@@ -184,7 +186,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
             "config.rest.security.mode=none",
             "spring.http.client.factory=jdk",
             "dial.api-key=test-api-key",
-            "revalidation.batch-size=2"
+            "revalidation.batch-size=2",
+            "analytics.run-pass-counts.reconciliation.enabled=false"
         })
 @Import(PostgresFunctionalTestConfiguration.class)
 @NestedTestConfiguration(NestedTestConfiguration.EnclosingConfiguration.INHERIT)
@@ -766,9 +769,6 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class PostgresTestCaseEvalScoreRepositoryTests extends PostgresTestCaseEvalScoreRepositoryFunctionalTests {}
 
     @Nested
-    class SuitePassRateRepositoryTests extends SuitePassRateRepositoryFunctionalTests {}
-
-    @Nested
     class SuitePassRateEndpointTests extends SuitePassRateEndpointFunctionalTests {}
 
     @Nested
@@ -946,4 +946,13 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class RunDeletionTests extends RunDeletionFunctionalTests {}
+
+    @Nested
+    class SuiteRunTrendTests extends SuiteRunTrendFunctionalTests {}
+
+    @Nested
+    class RunPassCountTests extends RunPassCountFunctionalTests {}
+
+    @Nested
+    class RunPassCountReconciliationTests extends RunPassCountReconciliationFunctionalTests {}
 }

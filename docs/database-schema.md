@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-11-12 (meta V1.38, analytics V1.22)
+> **Last sync**: 2026-11-12 (meta V1.38, analytics V1.23)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -1045,7 +1045,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 
 ## Table: `run_deletions` (Analytics DB)
 
-Soft-deletion tombstone table for marking analytics data as excluded from read paths. Preserves the append-only invariant: when a test suite run is deleted, a single row is appended here rather than updating or deleting existing analytics rows. Every read of an analytics table with a run-scoping column (`test_case_run_results`, `test_case_eval_summaries`, `test_case_eval_scores`, `test_case_metric_scores_aggregated`, `metric_score_result`) — direct repository reads and Query DSL entities alike — ANDs `NOT EXISTS (SELECT 1 FROM run_deletions WHERE test_suite_run_id = <table>.test_suite_run_id)` onto its own filter; the anti-join is a primary-key point lookup. Entity names and column sets seen by Query DSL clients are unchanged.
+Soft-deletion tombstone table for marking analytics data as excluded from read paths. Preserves the append-only invariant: when a test suite run is deleted, a single row is appended here rather than updating or deleting existing analytics rows. Every read of an analytics table with a run-scoping column (`test_case_run_results`, `test_case_eval_summaries`, `test_case_eval_scores`, `test_case_metric_scores_aggregated`, `metric_score_result`, `run_pass_counts`) — direct repository reads and Query DSL entities alike — ANDs `NOT EXISTS (SELECT 1 FROM run_deletions WHERE test_suite_run_id = <table>.test_suite_run_id)` onto its own filter; the anti-join is a primary-key point lookup. Entity names and column sets seen by Query DSL clients are unchanged.
 
 > **Note:** This table resides in the **analytics database**. It is append-only; rows are never updated or deleted.
 
@@ -1061,6 +1061,31 @@ Soft-deletion tombstone table for marking analytics data as excluded from read p
 ### Read-path exclusion
 
 The predicate is defined once in `RunDeletionFilter.notDeleted(...)`. Repositories apply it in each read method; Query DSL entities apply it through `StructuredQueryEntityResolver.baseCondition()`, which `StructuredQueryBuilder` ANDs onto every select of the entity (including subqueries). Writes (e.g., inserting new eval summaries) are never filtered. `JooqSchemaDriftTest` fails when a new analytics table with `test_suite_run_id` is not registered as tombstone-filtered.
+
+---
+
+## Table: `run_pass_counts` (Analytics DB)
+
+Per-run pass counts of completed runs, one row per `(test_suite_run_id, computation_id)`; append-only (rows are inserted with `ON CONFLICT DO NOTHING`, never updated). Lets dashboards sort and page all suites by their latest pass rate from one small row per run instead of counting test cases per request. A test case passes when all its eval-summary rows of the computation are `SUCCESS` and it has no failing `test_case_eval_scores` row; the total is the number of distinct test cases with a summary or score row. Readers use each run's latest computation (`computed_at_ms DESC, computation_id ASC`, a NULL computation last). Client-serving reads are tombstone-filtered (`RunDeletionFilter`); the writer-side count and existence reads are not.
+
+> **Note:** This table resides in the **analytics database**. No foreign keys, no partitioning.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `test_suite_run_id` | VARCHAR(36) | NOT NULL | - | The completed run (soft FK to meta `test_suite_runs.id`) |
+| `test_suite_id` | VARCHAR(36) | NOT NULL | - | The run's suite (soft FK to meta `test_suites.id`) |
+| `computation_id` | VARCHAR(36) | NULL | - | The computation counted; NULL only for a run without eval summaries (0 of 0) |
+| `run_created_at_ms` | BIGINT | NOT NULL | - | The run's `created_at_ms` |
+| `passed_count` | INTEGER | NOT NULL | - | Test cases that passed |
+| `total_count` | INTEGER | NOT NULL | - | Distinct test cases counted |
+| `computed_at_ms` | BIGINT | NOT NULL | - | The computation's timestamp (greatest `computed_at_ms` of its eval summaries); 0 for a NULL computation |
+
+### Indexes
+
+| Index name | Columns | Type | Purpose |
+|------------|---------|------|---------|
+| `uq_run_pass_counts_run_computation` | `(test_suite_run_id, COALESCE(computation_id, ''))` | UNIQUE BTREE (expression) | One row per run and computation; inserts use `ON CONFLICT DO NOTHING` without a conflict target because a column-list target does not match an expression index |
+| `idx_run_pass_counts_suite_run_created` | `(test_suite_id, run_created_at_ms DESC)` | BTREE | Latest runs per suite |
 
 ---
 
@@ -1142,6 +1167,7 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 | V1.20 | `V1.20__CreateTestCaseMetricScoresAggregatedTable.sql` | Created test_case_metric_scores_aggregated table (`id` PK, `test_suite_run_id`/`test_case_id`/`computation_id`, `metric_scores` JSONB NOT NULL DEFAULT '{}', `created_at_ms`, `computed_at_ms`); insert-only (`ON CONFLICT DO NOTHING`); unique index on `(test_suite_run_id, test_case_id, computation_id)`, lookup index on `computation_id` |
 | V1.21 | `V1.21__AddRunCaseContextToTestCaseEvalScores.sql` | Dropped and re-created test_case_eval_scores (`id` PK; `test_suite_run_id`/`test_case_id`/`test_case_name`/`computation_id`/`execution_status` NOT NULL; nullable `score`/`passed`; `computed_at_ms`); `eval_summary_id` removed; unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)` |
 | V1.22 | `V1.22__CreateRunDeletionsTable.sql` | Created `run_deletions` tombstone table (`test_suite_run_id` PK, `deleted_at_ms` NOT NULL) for soft-deletion of analytics rows |
+| V1.23 | `V1.23__CreateRunPassCountsTable.sql` | Created `run_pass_counts` (per-run, per-computation pass/total counts); unique expression index on `(test_suite_run_id, COALESCE(computation_id, ''))`, index on `(test_suite_id, run_created_at_ms DESC)` |
 
 ---
 

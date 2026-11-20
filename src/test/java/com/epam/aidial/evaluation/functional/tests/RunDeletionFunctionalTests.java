@@ -7,11 +7,13 @@ import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseMetricScoreAggregated;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
+import com.epam.aidial.evaluation.data.db.analytics.repository.RunPassCountRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseEvalScoreRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseMetricScoreAggregatedRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
+import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
@@ -79,6 +81,9 @@ public abstract class RunDeletionFunctionalTests {
     private MetricScoreResultRepository metricScoreResultRepository;
 
     @Autowired
+    private RunPassCountRepository runPassCountRepository;
+
+    @Autowired
     private StructuredQueryExecutor queryExecutor;
 
     @Test
@@ -95,6 +100,7 @@ public abstract class RunDeletionFunctionalTests {
 
         assertHidden(deletedRows);
         assertVisible(liveRows);
+        assertThat(latestPageRunIds(suite.getId())).containsExactly(live.getId());
     }
 
     @Test
@@ -112,6 +118,7 @@ public abstract class RunDeletionFunctionalTests {
 
         assertHidden(rows1);
         assertHidden(rows2);
+        assertThat(latestPageRunIds(suite.getId())).isEmpty();
     }
 
     @Test
@@ -128,7 +135,7 @@ public abstract class RunDeletionFunctionalTests {
     }
 
     /** Ids of the rows seeded for one run, so each read path can be probed for exactly those rows. */
-    private record SeededRows(UUID runId, UUID computationId, UUID runResultId, UUID evalSummaryId) {}
+    private record SeededRows(UUID runId, UUID suiteId, UUID computationId, UUID runResultId, UUID evalSummaryId) {}
 
     private TestSuite createSuite() {
         var dataset = metaTestDataHelper.createDataset("deletion-dataset-" + UUID.randomUUID());
@@ -140,6 +147,7 @@ public abstract class RunDeletionFunctionalTests {
         final UUID testCaseId = UUID.randomUUID();
         final long now = System.currentTimeMillis();
 
+        analyticsTestDataHelper.createRunPassCount(runId, suiteId, computationId, now, 1, 1, now);
         final UUID runResultId =
                 analyticsTestDataHelper.createTestRunResult(runId, suiteId, testCaseId, "test-case-1", "{}", "{}", now);
         final UUID evalSummaryId = analyticsTestDataHelper.createEvalSummary(
@@ -174,7 +182,7 @@ public abstract class RunDeletionFunctionalTests {
                 .value(0.5)
                 .computedAtMs(now)
                 .build()));
-        return new SeededRows(runId, computationId, runResultId, evalSummaryId);
+        return new SeededRows(runId, suiteId, computationId, runResultId, evalSummaryId);
     }
 
     private void assertVisible(SeededRows rows) {
@@ -198,6 +206,13 @@ public abstract class RunDeletionFunctionalTests {
     /** One count per directly-read table; each repository method is the one production code uses. */
     private List<Long> directReadCounts(SeededRows rows) {
         return List.of(
+                (long)
+                        runPassCountRepository
+                                .findLatestRanked(List.of(rows.suiteId()), 10)
+                                .getOrDefault(rows.suiteId(), List.of())
+                                .stream()
+                                .filter(r -> r.getTestSuiteRunId().equals(rows.runId()))
+                                .count(),
                 testCaseRunResultRepository.findById(rows.runResultId()).isPresent() ? 1L : 0L,
                 evalSummaryRepository.findById(rows.evalSummaryId()).isPresent() ? 1L : 0L,
                 evalSummaryRepository.existsByRunIdAndComputationId(rows.runId(), rows.computationId()) ? 1L : 0L,
@@ -208,6 +223,12 @@ public abstract class RunDeletionFunctionalTests {
                 (long) metricScoreResultRepository
                         .findByRunAndComputation(rows.runId(), rows.computationId())
                         .size());
+    }
+
+    private List<UUID> latestPageRunIds(UUID suiteId) {
+        return runPassCountRepository.findLatestPage(List.of(suiteId), PageRequest.of(0, 100)).getContent().stream()
+                .map(r -> r.getTestSuiteRunId())
+                .toList();
     }
 
     private int queryRowCount(String entity, UUID runId) {

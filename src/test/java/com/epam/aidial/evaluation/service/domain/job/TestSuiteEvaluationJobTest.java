@@ -53,6 +53,7 @@ import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
+import com.epam.aidial.evaluation.service.domain.analytics.RunPassCountService;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotDatasetMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
@@ -96,6 +97,7 @@ import org.slf4j.MDC;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.ObjectMapper;
 
@@ -143,6 +145,9 @@ class TestSuiteEvaluationJobTest {
     private MetricScoreComputationExecutor metricScoreComputation;
 
     @Mock
+    private RunPassCountService runPassCountService;
+
+    @Mock
     private Clock clock;
 
     @Mock
@@ -183,6 +188,7 @@ class TestSuiteEvaluationJobTest {
                 metricEvaluationProperties,
                 metricEvaluationExecutor,
                 metricScoreComputation,
+                runPassCountService,
                 clock,
                 metaTransactionManager,
                 taskExecutor,
@@ -1005,6 +1011,49 @@ class TestSuiteEvaluationJobTest {
             verify(metricScoreComputation, never()).execute(any());
             verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
             verify(repository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
+        }
+
+        @Test
+        @DisplayName("records pass counts once the run is COMPLETED, with the run's suite and creation time")
+        void recordsPassCountsAfterCompletion() {
+            stubResolvableRun();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            when(repository.updateToCompleted(eq(runId), anyLong(), anyLong())).thenReturn(1);
+
+            job.run(runId, null, true, handle);
+
+            verify(runPassCountService).record(eq(runId), eq(suiteId), any(), eq(1000L));
+        }
+
+        @Test
+        @DisplayName("does not record pass counts when the completed write affects no rows")
+        void doesNotRecordWhenNotCompleted() {
+            stubResolvableRun();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            when(repository.updateToCompleted(eq(runId), anyLong(), anyLong())).thenReturn(0);
+
+            job.run(runId, null, true, handle);
+
+            verify(runPassCountService, never()).record(any(), any(), any(), anyLong());
+        }
+
+        @Test
+        @DisplayName("a pass-count failure that is not a DataAccessException leaves the run COMPLETED and notified")
+        void passCountFailureDoesNotFailTheRun() {
+            stubResolvableRun();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            when(repository.updateToCompleted(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            when(runPassCountService.record(any(), any(), any(), anyLong()))
+                    .thenThrow(new CannotCreateTransactionException("no connection"));
+
+            job.run(runId, null, true, handle);
+
+            verify(repository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
+            verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
+            // once after updateToRunning, once as the terminal notification
+            verify(sseService, times(2)).notifyStatusUpdate(any());
+            assertThat(runSpan().getAttributes().get(AttributeKey.stringKey(TracingConstants.EVAL_RUN_STATUS)))
+                    .isEqualTo("COMPLETED");
         }
 
         @Test

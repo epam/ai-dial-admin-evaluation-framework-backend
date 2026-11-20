@@ -156,7 +156,8 @@ class JooqSchemaDriftTest {
             "test_case_eval_summaries",
             "test_case_eval_scores",
             "test_case_metric_scores_aggregated",
-            "metric_score_result");
+            "metric_score_result",
+            "run_pass_counts");
 
     private static final Set<String> FROZEN_TABLES = Set.of("run_metric_snapshots");
 

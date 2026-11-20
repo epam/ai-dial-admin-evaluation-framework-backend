@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.functional.helper;
 
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.RUN_PASS_COUNTS;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
@@ -26,6 +27,38 @@ public class AnalyticsTestDataHelper {
     @Transactional("analyticsTransactionManager")
     public void cleanupResults() {
         analyticsDsl.deleteFrom(TEST_CASE_RUN_RESULTS).execute();
+    }
+
+    /** Inserts a pass-count row directly (null computation allowed); the run-created timestamp is the given value. */
+    @Transactional("analyticsTransactionManager")
+    public void createRunPassCount(
+            UUID runId,
+            UUID suiteId,
+            UUID computationId,
+            long runCreatedAtMs,
+            int passedCount,
+            int totalCount,
+            long computedAtMs) {
+        analyticsDsl
+                .insertInto(RUN_PASS_COUNTS)
+                .set(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID, runId.toString())
+                .set(RUN_PASS_COUNTS.TEST_SUITE_ID, suiteId.toString())
+                .set(RUN_PASS_COUNTS.COMPUTATION_ID, computationId != null ? computationId.toString() : null)
+                .set(RUN_PASS_COUNTS.RUN_CREATED_AT_MS, runCreatedAtMs)
+                .set(RUN_PASS_COUNTS.PASSED_COUNT, passedCount)
+                .set(RUN_PASS_COUNTS.TOTAL_COUNT, totalCount)
+                .set(RUN_PASS_COUNTS.COMPUTED_AT_MS, computedAtMs)
+                .execute();
+    }
+
+    public long countRunPassCounts() {
+        Long count = analyticsDsl.selectCount().from(RUN_PASS_COUNTS).fetchOne(0, Long.class);
+        return count != null ? count : 0L;
+    }
+
+    @Transactional("analyticsTransactionManager")
+    public void cleanupRunPassCounts() {
+        analyticsDsl.deleteFrom(RUN_PASS_COUNTS).execute();
     }
 
     public long countAll() {

@@ -1,0 +1,18 @@
+{
+  "content": [
+    {
+      "suiteId": "9d1c7a40-6b2e-4f3a-8e55-0a7b3c9d2e11",
+      "suiteName": "Chat regression",
+      "suiteType": "DEPLOYMENT",
+      "evaluatee": {"id": "gpt-4o", "name": "GPT-4o", "type": "dial-model"},
+      "runs": [
+        {"runId": "3f2b8c1e-5a4d-4e7b-9c1a-2d6e8f0a1b3c", "createdAt": 1790000000000, "passRate": 0.5, "passedCount": 5, "totalCount": 10}
+      ],
+      "latestPassRate": 0.5
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}

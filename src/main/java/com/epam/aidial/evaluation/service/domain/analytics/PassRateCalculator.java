@@ -1,34 +1,22 @@
 package com.epam.aidial.evaluation.service.domain.analytics;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCounts;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.Collection;
 import org.springframework.stereotype.Component;
 
 /**
- * The pass-rate rule for one run, and the mean across runs. Pure: no I/O.
- *
- * <p>A run's pass rate is passed test cases over all test cases of its computation:
- * <ul>
- *   <li>run has a threshold — {@code passed = true} counts, and so does an unscored SUCCESS test case (no
- *       numeric sample, e.g. every metric condition-skipped; it may have no score row at all); a
- *       {@code passed = false} and any non-SUCCESS test case do not;</li>
- *   <li>run has no threshold — {@code passed} is never set, so every SUCCESS test case counts.</li>
- * </ul>
+ * The pass rate of one run's stored counts, and the mean across runs. Pure: no I/O. The pass rule itself lives in
+ * the counting query of {@code run-pass-counts}.
  */
 @Component
 @LogExecution
 public class PassRateCalculator {
 
-    /** Pass rate in {@code [0, 1]}, or {@code null} when the run has no rows. */
-    public Double rate(RunPassCounts counts, boolean hasThreshold) {
-        final long total = counts.total();
+    /** Pass rate in {@code [0, 1]}, or {@code null} when the run has no test cases. */
+    public Double rate(long passed, long total) {
         if (total == 0) {
             return null;
         }
-        final long passed = hasThreshold
-                ? counts.passedTrue() + counts.unscored()
-                : counts.passedTrue() + counts.passedFalse() + counts.unscored();
         return (double) passed / total;
     }
 

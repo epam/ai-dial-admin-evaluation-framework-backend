@@ -40,6 +40,7 @@ import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -123,6 +124,22 @@ public class TestSuiteService {
         } catch (InvalidFilterException ex) {
             throw new FilterValidationException(ex.getMessage(), ex.getDetails());
         }
+    }
+
+    /** Ids of the suites matching the filters; an invalid filter is a {@link FilterValidationException}. */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public List<UUID> findIds(List<FilterCondition> filters) {
+        try {
+            return testSuiteRepository.findIds(filters != null ? filters : List.of());
+        } catch (InvalidFilterException ex) {
+            throw new FilterValidationException(ex.getMessage(), ex.getDetails());
+        }
+    }
+
+    /** One bulk read of id, name, suite type and target reference columns; other fields are unset. */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public List<TestSuite> findByIds(Collection<UUID> ids) {
+        return testSuiteRepository.findByIds(ids);
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)

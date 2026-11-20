@@ -1,11 +1,18 @@
 package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
+import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
@@ -23,6 +30,9 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.runner.job.EvaluationWorker;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
@@ -39,6 +49,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -69,6 +80,12 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private EvaluationWorker evaluationWorker;
+
+    @Autowired
+    private TestCaseRunResultRepository testCaseRunResultRepository;
 
     private UUID newDatasetWithSchema(List<FieldDefinitionDto> schema) {
         try {
@@ -111,7 +128,8 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
         // envelope {"error":{"code":"INVOCATION_ERROR",...}}. The executor's *synthetic* ERROR
         // path (envelope {"error":{"type":"RuntimeException","origin":"executor",...}}) only
         // fires when the worker itself throws, which requires worker-level mocking and is
-        // exercised by InProcessEvaluationExecutorTest#shouldSynthesizeErrorRow_whenWorkerThrows.
+        // exercised by shouldPersistSyntheticErrorRowAndKeepOtherRows_whenWorkerItselfThrows below
+        // and by TestCaseRunnerTest#shouldSynthesizeErrorRow_whenWorkerThrows.
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
         assertThat(results).hasSize(2);
 
@@ -132,6 +150,66 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
         // Either the worker-level INVOCATION_ERROR envelope or the executor-level synthetic
         // envelope is acceptable here; both preserve the failure as a non-silent ERROR row.
         assertThat(responseBody).contains("simulated worker boom");
+    }
+
+    @Test
+    @DisplayName("Should persist a run-scoped synthetic ERROR row with an eval summary and keep the other "
+            + "test case's row when the worker itself throws")
+    void shouldPersistSyntheticErrorRowAndKeepOtherRows_whenWorkerItselfThrows() {
+        TestSuiteResponseDto suite = createTestSuite("Suite Worker Itself Throws");
+        createTestCaseForSuite(suite.getId(), "TC-throws", Map.of("expected", "a"));
+        createTestCaseForSuite(suite.getId(), "TC-ok", Map.of("expected", "b"));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(
+                        200,
+                        false,
+                        Map.of("id", "mock", "choices", List.of(Map.of("message", Map.of("content", "answer")))),
+                        null,
+                        new HttpHeaders()));
+        // The worker throwing (not the deployment invoker) is what reaches the executor's synthetic-row path.
+        doThrow(new IllegalStateException("simulated worker bug"))
+                .when(evaluationWorker)
+                .execute(
+                        argThat(input -> input != null && "TC-throws".equals(input.getTestCaseName())),
+                        any(),
+                        anyInt(),
+                        any());
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<TestCaseRunResult> runScopedResults = testCaseRunResultRepository
+                .findAll(
+                        List.of(FilterCondition.builder()
+                                .field("runId")
+                                .operator(FilterOperator.EQ)
+                                .rawValue(run.getId().toString())
+                                .build()),
+                        run.getCreatedAt(),
+                        null,
+                        100)
+                .content();
+        assertThat(runScopedResults)
+                .extracting(TestCaseRunResult::getTestCaseName, TestCaseRunResult::getExecutionStatus)
+                .containsExactlyInAnyOrder(
+                        tuple("TC-throws", ExecutionStatus.ERROR), tuple("TC-ok", ExecutionStatus.SUCCESS));
+        assertThat(runScopedResults)
+                .filteredOn(r -> "TC-throws".equals(r.getTestCaseName()))
+                .singleElement()
+                .satisfies(r -> {
+                    final JsonNode error =
+                            objectMapper.readTree(r.getResponseBody()).get("error");
+                    assertThat(error.get("origin").asString()).isEqualTo("executor");
+                    assertThat(error.get("message").asString()).isEqualTo("simulated worker bug");
+                });
+
+        List<Map<String, Object>> summaries = analyticsTestDataHelper.findEvalSummariesByRunId(run.getId());
+        assertThat(summaries)
+                .filteredOn(s -> "TC-throws".equals(s.get("test_case_name")))
+                .singleElement()
+                .satisfies(s -> assertThat(String.valueOf(s.get("execution_status")))
+                        .isNotEqualTo(ExecutionStatus.SUCCESS.name()));
     }
 
     @Test

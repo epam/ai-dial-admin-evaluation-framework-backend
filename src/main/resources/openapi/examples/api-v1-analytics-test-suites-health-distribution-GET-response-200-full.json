@@ -1,0 +1,8 @@
+{
+  "threshold": 0.75,
+  "weeks": [
+    {"weekStart": 1794182400000, "healthyCount": 10, "failingCount": 4, "suiteCount": 14},
+    {"weekStart": 1794787200000, "healthyCount": 12, "failingCount": 3, "suiteCount": 15},
+    {"weekStart": 1795392000000, "healthyCount": 0, "failingCount": 0, "suiteCount": 0}
+  ]
+}

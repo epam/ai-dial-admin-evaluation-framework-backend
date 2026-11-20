@@ -29,12 +29,20 @@ Both go through `RunPassCountService`. Reconciliation runs on every instance wit
 
 `RunPassCountService.getLatestPage` (each suite's latest run, sorted worst-first, with total) and `getLatestRecordedRuns` (latest N runs per suite). Both reduce to each run's latest computation (`computed_at_ms DESC, computation_id ASC`, null computation last) and rank a suite's runs by `run_created_at_ms DESC, test_suite_run_id DESC`. Used by `SuiteRunTrendService` and `SuitePassRateService`, which therefore agree on every run's pass rate.
 
+`RunPassCountService.getWeeklySuiteHealth` serves `SuiteHealthDistributionService` (`GET /api/v1/analytics/test-suites/health-distribution`): per week, how many suites are healthy and how many are failing at a given threshold.
+
+- Same latest-computation reduction as the other readers (shared `computationRankedPerRun`).
+- A suite's weekly rate is pooled: sum of passed over sum of total across its runs created that week. A suite with no runs, or a total of 0, in a week is not counted in that week.
+- Weeks are UTC, Monday start. `HealthWeekRange` takes the current week start from the calendar; flooring epoch milliseconds to a week would give Thursday starts. A run's week is `(run_created_at_ms - startMs) / WEEK_MS` in `BIGINT` arithmetic, with both values inlined as literals so the select-list and `GROUP BY` expressions match.
+- One statement, no transaction, and no meta read unless a suite filter is given (a deleted suite's runs are tombstoned, so they drop out on their own).
+- No index supports the unfiltered range scan on `run_created_at_ms`. Add one on `(run_created_at_ms)` if the table grows well beyond a few thousand runs.
+
 Client-serving reads apply `RunDeletionFilter.notDeleted`. Writer-side reads (the count, the existence check, the latest-computation lookup) are deliberately unfiltered; see [run deletion tombstone](run-deletion-tombstone.md).
 
 ## Consequences to keep in mind
 
-- A completed run without a row is invisible to both endpoints until reconciliation records it.
+- A completed run without a row is invisible to every reader until reconciliation records it.
 - A functional test that drives a run to COMPLETED leaves a `run_pass_counts` row. Tests asserting totals call `AnalyticsTestDataHelper.cleanupRunPassCounts()` first.
 - A future re-scoring feature should record its own row when it finishes; reconciliation is the fallback.
 
-Full rationale: `openspec/changes/evaluation-run-trends-api/design.md`.
+Full rationale: `openspec/changes/evaluation-run-trends-api/design.md` and `openspec/changes/suite-health-distribution-api/design.md` (both under `openspec/changes/archive/` once archived).

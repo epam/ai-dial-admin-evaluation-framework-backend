@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.data.db.analytics.repository;
 import com.epam.aidial.evaluation.data.db.analytics.model.PassCountTotals;
 import com.epam.aidial.evaluation.data.db.analytics.model.RecordedComputation;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCount;
+import com.epam.aidial.evaluation.data.db.analytics.model.WeeklySuiteHealth;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import java.util.Collection;
@@ -48,4 +49,14 @@ public interface RunPassCountRepository {
      * run first, then suite id. A null {@code suiteIds} means all suites; an empty collection means none.
      */
     Page<RunPassCount> findLatestPage(Collection<UUID> suiteIds, PageRequest pageRequest);
+
+    /**
+     * Per week of {@code [startMs, endMs)} (index {@code (run_created_at_ms - startMs) / WEEK_MS}), the suites whose
+     * pooled pass rate (sum of passed over sum of total across the suite's runs created that week, each at its latest
+     * computation, deleted runs excluded) is at or above {@code threshold} (healthy) or below it (failing). Suites
+     * with no counted test cases that week are skipped, and weeks without counted suites are absent. A null
+     * {@code suiteIds} means all suites; an empty collection means none.
+     */
+    List<WeeklySuiteHealth> findWeeklySuiteHealth(
+            Collection<UUID> suiteIds, long startMs, long endMs, double threshold);
 }

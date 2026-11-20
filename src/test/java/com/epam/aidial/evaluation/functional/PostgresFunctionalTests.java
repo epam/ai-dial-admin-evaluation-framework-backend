@@ -101,6 +101,7 @@ import com.epam.aidial.evaluation.functional.tests.RunPassCountFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunPassCountReconciliationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SkillFieldFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.SuiteHealthDistributionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuitePassRateEndpointFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteRunTrendFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
@@ -949,6 +950,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class SuiteRunTrendTests extends SuiteRunTrendFunctionalTests {}
+
+    @Nested
+    class SuiteHealthDistributionTests extends SuiteHealthDistributionFunctionalTests {}
 
     @Nested
     class RunPassCountTests extends RunPassCountFunctionalTests {}

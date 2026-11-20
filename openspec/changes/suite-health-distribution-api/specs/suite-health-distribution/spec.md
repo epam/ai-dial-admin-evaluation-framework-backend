@@ -5,7 +5,7 @@ The System Health dashboard shows, week by week, how many test suites were healt
 ## ADDED Requirements
 
 ### Requirement: Health-distribution endpoint
-The system SHALL expose `GET /api/v1/analytics/test-suites/health-distribution` returning an object with `threshold` (the threshold applied) and `weeks`, a list with exactly one entry per requested week, ordered oldest first. Each entry SHALL contain `weekStart` (epoch milliseconds), `healthyCount`, `failingCount` and `suiteCount`, where `suiteCount` equals `healthyCount` plus `failingCount`. A week in which no suite is counted SHALL still have an entry, with all three counts 0. The response SHALL NOT be paged and the endpoint SHALL NOT accept a `sort` parameter.
+The system SHALL expose `GET /api/v1/analytics/test-suites/health-distribution` returning an object with `threshold` (the threshold applied) and `weeks`, a list with exactly one entry per requested week, ordered oldest first. Each entry SHALL contain `weekStart` (epoch milliseconds), `healthyCount`, `failingCount` and `suiteCount`, where `suiteCount` equals `healthyCount` plus `failingCount`. A week in which no suite is counted SHALL still have an entry, with all three counts 0. The response SHALL NOT be paged. The endpoint has no `sort` parameter; a supplied `sort` SHALL have no effect on the response.
 Status: **Planned**
 
 #### Scenario: Default request
@@ -89,7 +89,7 @@ Status: **Planned**
 - **THEN** every counted suite is healthy
 
 #### Scenario: Threshold out of range
-- **WHEN** `threshold` is -0.1, 1.5 or not a number
+- **WHEN** `threshold` is -0.1, 1.5, `NaN`, `Infinity` or not a number
 - **THEN** the response is HTTP 400
 
 ### Requirement: Suite filter

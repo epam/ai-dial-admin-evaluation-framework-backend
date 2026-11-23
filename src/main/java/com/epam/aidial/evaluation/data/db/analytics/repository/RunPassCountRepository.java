@@ -39,7 +39,8 @@ public interface RunPassCountRepository {
 
     /**
      * For each suite, up to {@code perSuiteLimit} latest runs (newest first by run creation, then run id
-     * descending), each with its latest computation's counts. Suites without rows are absent from the map.
+     * descending), each with its latest computation's counts. Suites without rows are absent from the map; a limit
+     * of zero or less returns an empty map.
      */
     Map<UUID, List<RunPassCount>> findLatestRanked(Collection<UUID> suiteIds, int perSuiteLimit);
 

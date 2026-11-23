@@ -20,11 +20,15 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jooq.CommonTableExpression;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
+import org.jooq.Record1;
 import org.jooq.SelectField;
+import org.jooq.SelectFromStep;
+import org.jooq.SelectSelectStep;
 import org.jooq.SortField;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -43,10 +47,12 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
     private static final String ALL_SUCCESS = "all_success";
     private static final String STATUS = "execution_status";
     private static final String PASSED = "passed";
-    private static final String PER_RUN = "per_run";
-    private static final String RANKED = "ranked";
-    private static final String COMPUTATION_RANK = "computation_rank";
-    private static final String SUITE_RANK = "suite_rank";
+    private static final String TOTAL_ELEMENTS = "total_elements";
+    private static final String SUITES_ALIAS = "s";
+    private static final String LATEST_ALIAS = "l";
+    private static final String TEST_SUITE_ID_COLUMN = "test_suite_id";
+    private static final String SKIP_SCAN_CTE = "suite_skip_scan";
+    private static final Table<?> SKIP_SCAN_CTE_TABLE = DSL.table(DSL.name(SKIP_SCAN_CTE));
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
@@ -147,19 +153,21 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
 
     @Override
     public Map<UUID, List<RunPassCount>> findLatestRanked(Collection<UUID> suiteIds, int perSuiteLimit) {
-        if (suiteIds == null || suiteIds.isEmpty()) {
+        if (suiteIds == null || suiteIds.isEmpty() || perSuiteLimit <= 0) {
             return Map.of();
         }
-        final Table<?> ranked = rankedPerSuite(suiteIdCondition(suiteIds));
+        final Table<?> suites = unnestedSuites(suiteIds);
+        final Table<?> latest = latestRunsLateral(suites, perSuiteLimit, true);
         final Map<UUID, List<RunPassCount>> bySuite = new LinkedHashMap<>();
-        dsl.select(projection(ranked))
-                .from(ranked)
-                .where(ranked.field(SUITE_RANK, Integer.class).le(perSuiteLimit))
+        dsl.select(projection(latest))
+                .from(suites)
+                .crossJoin(latest)
                 .orderBy(
-                        ranked.field(RUN_PASS_COUNTS.TEST_SUITE_ID),
-                        ranked.field(SUITE_RANK, Integer.class).asc())
+                        latest.field(RUN_PASS_COUNTS.TEST_SUITE_ID).asc(),
+                        latest.field(RUN_PASS_COUNTS.RUN_CREATED_AT_MS).desc(),
+                        latest.field(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID).desc())
                 .forEach(r -> {
-                    final RunPassCount row = toModel(r, ranked);
+                    final RunPassCount row = toModel(r, latest);
                     bySuite.computeIfAbsent(row.getTestSuiteId(), k -> new ArrayList<>())
                             .add(row);
                 });
@@ -171,70 +179,117 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
         if (suiteIds != null && suiteIds.isEmpty()) {
             return Page.empty(pageRequest);
         }
-        final Condition scope = suiteIds == null ? DSL.noCondition() : suiteIdCondition(suiteIds);
-        final Table<?> ranked = rankedPerSuite(scope);
-        final Condition latestOnly = ranked.field(SUITE_RANK, Integer.class).eq(1);
+        final Table<?> suites = suiteIds == null ? allSuites() : unnestedSuites(suiteIds);
+        final Table<?> latest = latestRunsLateral(suites, 1, false);
 
-        final Field<Integer> passed = ranked.field(RUN_PASS_COUNTS.PASSED_COUNT);
-        final Field<Integer> total = ranked.field(RUN_PASS_COUNTS.TOTAL_COUNT);
+        final Field<Integer> passed = latest.field(RUN_PASS_COUNTS.PASSED_COUNT);
+        final Field<Integer> total = latest.field(RUN_PASS_COUNTS.TOTAL_COUNT);
         final Field<Double> rate =
                 DSL.field("cast({0} as double precision) / nullif({1}, 0)", Double.class, passed, total);
-        final List<SortField<?>> order = List.of(
-                rate.asc().nullsLast(),
-                ranked.field(RUN_PASS_COUNTS.RUN_CREATED_AT_MS).desc(),
-                ranked.field(RUN_PASS_COUNTS.TEST_SUITE_ID).asc());
+        final Field<Integer> totalElements = DSL.count().over().as(TOTAL_ELEMENTS);
+        final List<SelectField<?>> columns = new ArrayList<>(projection(latest));
+        columns.add(totalElements);
 
-        final long totalElements = dsl.fetchCount(dsl.selectOne().from(ranked).where(latestOnly));
-        final List<RunPassCount> content = dsl.select(projection(ranked))
-                .from(ranked)
-                .where(latestOnly)
-                .orderBy(order)
+        final List<Record> rows = dsl.select(columns)
+                .from(suites)
+                .crossJoin(latest)
+                .orderBy(
+                        rate.asc().nullsLast(),
+                        latest.field(RUN_PASS_COUNTS.RUN_CREATED_AT_MS).desc(),
+                        latest.field(RUN_PASS_COUNTS.TEST_SUITE_ID).asc())
                 .limit(pageRequest.getValidatedSize())
                 .offset(pageRequest.getOffset())
-                .fetch(r -> toModel(r, ranked));
-        return Page.of(content, pageRequest, totalElements);
-    }
-
-    private static Condition suiteIdCondition(Collection<UUID> suiteIds) {
-        final String[] ids = suiteIds.stream().map(UUID::toString).toArray(String[]::new);
-        return RUN_PASS_COUNTS.TEST_SUITE_ID.eq(DSL.any(ids));
+                .fetch();
+        final List<RunPassCount> content =
+                rows.stream().map(r -> toModel(r, latest)).toList();
+        return Page.of(content, pageRequest, totalOf(rows, totalElements, suites, latest, pageRequest));
     }
 
     /**
-     * Tombstone-filtered rows reduced to each run's latest computation (null computation last, then greatest
-     * {@code computed_at_ms}, then smallest computation id), then ranked per suite by run creation descending, run id
-     * descending. Column fields keep their generated identity so callers resolve them with {@code field(...)}.
+     * The total comes from the window count of any returned row. An empty page carries none: offset 0 means no
+     * suite at all, a page past the end needs one separate count to keep reporting the real total.
      */
-    private Table<?> rankedPerSuite(Condition scope) {
-        final List<SelectField<?>> perRunColumns = new ArrayList<>(List.of(RUN_PASS_COUNTS.fields()));
-        perRunColumns.add(DSL.rowNumber()
-                .over(DSL.partitionBy(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID)
-                        .orderBy(
-                                DSL.when(RUN_PASS_COUNTS.COMPUTATION_ID.isNull(), 1)
-                                        .otherwise(0)
-                                        .asc(),
-                                RUN_PASS_COUNTS.COMPUTED_AT_MS.desc(),
-                                RUN_PASS_COUNTS.COMPUTATION_ID.asc()))
-                .as(COMPUTATION_RANK));
-        final Table<?> perRun = dsl.select(perRunColumns)
-                .from(RUN_PASS_COUNTS)
-                .where(scope)
-                .and(RunDeletionFilter.notDeleted(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID))
-                .asTable(PER_RUN);
-        final List<SelectField<?>> latestRunColumns = new ArrayList<>();
-        for (final Field<?> f : RUN_PASS_COUNTS.fields()) {
-            latestRunColumns.add(perRun.field(f));
+    private long totalOf(
+            List<Record> rows,
+            Field<Integer> totalElements,
+            Table<?> suites,
+            Table<?> latest,
+            PageRequest pageRequest) {
+        if (!rows.isEmpty()) {
+            return rows.getFirst().get(totalElements);
         }
-        latestRunColumns.add(DSL.rowNumber()
-                .over(DSL.partitionBy(perRun.field(RUN_PASS_COUNTS.TEST_SUITE_ID))
-                        .orderBy(
-                                perRun.field(RUN_PASS_COUNTS.RUN_CREATED_AT_MS).desc(),
-                                perRun.field(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID).desc()))
-                .as(SUITE_RANK));
-        return dsl.select(latestRunColumns)
-                .from(perRun)
-                .where(perRun.field(COMPUTATION_RANK, Integer.class).eq(1))
-                .asTable(RANKED);
+        if (pageRequest.getOffset() == 0) {
+            return 0L;
+        }
+        return dsl.fetchCount(dsl.selectOne().from(suites).crossJoin(latest));
+    }
+
+    /** The distinct requested ids as a one-column table; a duplicated input id must not duplicate rows. */
+    private static Table<?> unnestedSuites(Collection<UUID> suiteIds) {
+        final String[] ids = suiteIds.stream().map(UUID::toString).distinct().toArray(String[]::new);
+        return DSL.unnest(ids).asTable(SUITES_ALIAS, TEST_SUITE_ID_COLUMN);
+    }
+
+    /**
+     * Every suite with a stored row, found by a recursive skip scan over the suite-first index (one probe per
+     * suite) instead of a scan of every row. The suite list is not tombstone-filtered: a suite whose runs are all
+     * deleted yields no row from the lateral and drops out.
+     */
+    private Table<?> allSuites() {
+        final Field<String> suiteColumn = DSL.field(DSL.name(TEST_SUITE_ID_COLUMN), String.class);
+        final Field<String> previous = DSL.field(DSL.name(SKIP_SCAN_CTE, TEST_SUITE_ID_COLUMN), String.class);
+        final CommonTableExpression<Record1<String>> skipScan = DSL.name(SKIP_SCAN_CTE)
+                .fields(TEST_SUITE_ID_COLUMN)
+                .as(dsl.select(RUN_PASS_COUNTS.TEST_SUITE_ID)
+                        .from(RUN_PASS_COUNTS)
+                        .orderBy(RUN_PASS_COUNTS.TEST_SUITE_ID)
+                        .limit(1)
+                        .unionAll(dsl.select(DSL.field(dsl.select(RUN_PASS_COUNTS.TEST_SUITE_ID)
+                                        .from(RUN_PASS_COUNTS)
+                                        .where(RUN_PASS_COUNTS.TEST_SUITE_ID.gt(previous))
+                                        .orderBy(RUN_PASS_COUNTS.TEST_SUITE_ID)
+                                        .limit(1)))
+                                .from(SKIP_SCAN_CTE_TABLE)
+                                .where(previous.isNotNull())));
+        return dsl.withRecursive(skipScan)
+                .select(suiteColumn)
+                .from(skipScan)
+                .where(suiteColumn.isNotNull())
+                .asTable(SUITES_ALIAS);
+    }
+
+    /**
+     * Per suite, its newest runs each at the run's latest computation, tombstone-filtered, newest first, at most
+     * {@code perSuiteLimit}. With {@code onePerRun}, {@code DISTINCT ON} keeps one row per run before the limit so a
+     * recomputed run does not take several slots; a limit of one needs no such step.
+     */
+    private Table<?> latestRunsLateral(Table<?> suites, int perSuiteLimit, boolean onePerRun) {
+        final List<SortField<?>> order = new ArrayList<>();
+        order.add(RUN_PASS_COUNTS.RUN_CREATED_AT_MS.desc());
+        order.add(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID.desc());
+        order.addAll(computationOrder());
+        final SelectSelectStep<Record> select = dsl.select(RUN_PASS_COUNTS.fields());
+        final SelectFromStep<Record> from = onePerRun
+                ? select.distinctOn(RUN_PASS_COUNTS.RUN_CREATED_AT_MS, RUN_PASS_COUNTS.TEST_SUITE_RUN_ID)
+                : select;
+        return DSL.lateral(from.from(RUN_PASS_COUNTS)
+                        .where(RUN_PASS_COUNTS
+                                .TEST_SUITE_ID
+                                .eq(suites.field(TEST_SUITE_ID_COLUMN, String.class))
+                                .and(RunDeletionFilter.notDeleted(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID)))
+                        .orderBy(order)
+                        .limit(perSuiteLimit))
+                .asTable(LATEST_ALIAS);
+    }
+
+    /** A run's computations, best first: null computation last, then greatest {@code computed_at_ms}, then id. */
+    private static List<SortField<?>> computationOrder() {
+        return List.of(
+                DSL.when(RUN_PASS_COUNTS.COMPUTATION_ID.isNull(), 1)
+                        .otherwise(0)
+                        .asc(),
+                RUN_PASS_COUNTS.COMPUTED_AT_MS.desc(),
+                RUN_PASS_COUNTS.COMPUTATION_ID.asc());
     }
 
     private static List<SelectField<?>> projection(Table<?> ranked) {

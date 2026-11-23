@@ -27,7 +27,15 @@ Both go through `RunPassCountService`. Reconciliation runs on every instance wit
 
 ## Readers
 
-`RunPassCountService.getLatestPage` (each suite's latest run, sorted worst-first, with total) and `getLatestRecordedRuns` (latest N runs per suite). Both reduce to each run's latest computation (`computed_at_ms DESC, computation_id ASC`, null computation last) and rank a suite's runs by `run_created_at_ms DESC, test_suite_run_id DESC`. Used by `SuiteRunTrendService` and `SuitePassRateService`, which therefore agree on every run's pass rate.
+`RunPassCountService.getLatestPage` (each suite's latest run, sorted worst-first, with total) and `getLatestRecordedRuns` (latest N runs per suite). Used by `SuiteRunTrendService` and `SuitePassRateService`, which therefore agree on every run's pass rate.
+
+Both go to each suite and read only the top of its `(test_suite_id, run_created_at_ms DESC)` index range (`CROSS JOIN LATERAL … LIMIT`), so the cost follows the number of suites, not the run history. Do not replace this with window functions over the table: ranking every row first took seconds at a million rows.
+
+- One ordering inside a suite expresses both "newest run" and "that run's latest computation": `run_created_at_ms DESC, test_suite_run_id DESC`, then null computation last, `computed_at_ms DESC`, `computation_id ASC`. It relies on all rows of one run sharing `run_created_at_ms` and `test_suite_id`.
+- The page takes `LIMIT 1`. The top-N read applies `DISTINCT ON (run_created_at_ms, test_suite_run_id)` before its limit; without it a recomputed run would take several of the N slots.
+- The tombstone filter sits inside the lateral, so a suite whose newest run is deleted falls back to an older one and a suite with only deleted runs drops out.
+- Suite list: the distinct requested ids (`unnest`) when a filter is given; otherwise a recursive skip scan that hops through the index one suite at a time (`SELECT DISTINCT` would read every row).
+- Total: `count(*) OVER ()` in the page statement. An empty page carries no total, so a page past the end (offset > 0) runs one fallback count.
 
 Client-serving reads apply `RunDeletionFilter.notDeleted`. Writer-side reads (the count, the existence check, the latest-computation lookup) are deliberately unfiltered; see [run deletion tombstone](run-deletion-tombstone.md).
 
@@ -37,4 +45,4 @@ Client-serving reads apply `RunDeletionFilter.notDeleted`. Writer-side reads (th
 - A functional test that drives a run to COMPLETED leaves a `run_pass_counts` row. Tests asserting totals call `AnalyticsTestDataHelper.cleanupRunPassCounts()` first.
 - A future re-scoring feature should record its own row when it finishes; reconciliation is the fallback.
 
-Full rationale: `openspec/changes/evaluation-run-trends-api/design.md`.
+Full rationale: `openspec/changes/archive/2026-11-19-evaluation-run-trends-api/design.md` and `openspec/changes/archive/2026-11-23-optimize-run-pass-count-latest-reads/design.md`.

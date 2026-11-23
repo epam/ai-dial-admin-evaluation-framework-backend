@@ -14,6 +14,8 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryReposi
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunPassCountRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseEvalScoreRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.data.db.model.pagination.Page;
+import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
@@ -21,12 +23,17 @@ import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.analytics.RunDeletionService;
 import com.epam.aidial.evaluation.service.domain.analytics.RunPassCountService;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.job.ActiveRunRegistry;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -64,6 +71,9 @@ public abstract class RunPassCountFunctionalTests extends AbstractMcpFunctionalT
 
     @Autowired
     private EvalSummaryRepository evalSummaryRepository;
+
+    @Autowired
+    private RunDeletionService runDeletionService;
 
     @Autowired
     private McpToolInvoker mcpToolInvoker;
@@ -369,6 +379,162 @@ public abstract class RunPassCountFunctionalTests extends AbstractMcpFunctionalT
         assertThat(terminal.getStatus()).isEqualTo(RunStatus.CANCELLED.name());
         assertThat(runPassCountRepository.findRecordedComputations(List.of(createdRun)))
                 .isEmpty();
+    }
+
+    private UUID seedRun(UUID suite, long runCreatedAt, UUID computation, long computedAt) {
+        final UUID run = UUID.randomUUID();
+        analyticsTestDataHelper.createRunPassCount(run, suite, computation, runCreatedAt, 1, 2, computedAt);
+        return run;
+    }
+
+    private void seedComputation(UUID run, UUID suite, long runCreatedAt, UUID computation, long computedAt) {
+        analyticsTestDataHelper.createRunPassCount(run, suite, computation, runCreatedAt, 1, 2, computedAt);
+    }
+
+    private List<UUID> pageSuites(Collection<UUID> suiteIds, int page, int size) {
+        return runPassCountRepository.findLatestPage(suiteIds, PageRequest.of(page, size)).getContent().stream()
+                .map(RunPassCount::getTestSuiteId)
+                .toList();
+    }
+
+    @Test
+    @DisplayName("top-N per suite: recomputed runs take one slot each, at their latest computation")
+    void rankedReturnsDistinctRunsAtLatestComputation() {
+        final List<UUID> runs = new ArrayList<>();
+        final UUID firstComputation = UUID.randomUUID();
+        for (int i = 1; i <= 12; i++) {
+            runs.add(seedRun(suiteId, i * 1000L, firstComputation, 100L));
+        }
+        final Map<UUID, UUID> latestComputation = new HashMap<>();
+        for (int i = 9; i < 12; i++) {
+            final UUID newer = UUID.randomUUID();
+            seedComputation(runs.get(i), suiteId, (i + 1) * 1000L, newer, 200L);
+            latestComputation.put(runs.get(i), newer);
+        }
+
+        final List<RunPassCount> rows =
+                runPassCountRepository.findLatestRanked(List.of(suiteId), 10).get(suiteId);
+
+        assertThat(rows)
+                .extracting(RunPassCount::getTestSuiteRunId)
+                .containsExactlyElementsOf(runs.reversed().subList(0, 10));
+        assertThat(rows)
+                .allSatisfy(r -> assertThat(r.getComputationId())
+                        .isEqualTo(latestComputation.getOrDefault(r.getTestSuiteRunId(), firstComputation)));
+    }
+
+    @Test
+    @DisplayName("duplicate suite ids in the input return each run once from both reads")
+    void duplicateSuiteIdsReturnEachRunOnce() {
+        final UUID older = seedRun(suiteId, 1000L, computationId, 100L);
+        final UUID newer = seedRun(suiteId, 2000L, computationId, 100L);
+
+        final List<RunPassCount> ranked = runPassCountRepository
+                .findLatestRanked(List.of(suiteId, suiteId), 10)
+                .get(suiteId);
+        final Page<RunPassCount> page =
+                runPassCountRepository.findLatestPage(List.of(suiteId, suiteId), PageRequest.of(0, 10));
+
+        assertThat(ranked).extracting(RunPassCount::getTestSuiteRunId).containsExactly(newer, older);
+        assertThat(page.getContent())
+                .extracting(RunPassCount::getTestSuiteRunId)
+                .containsExactly(newer);
+        assertThat(page.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a page past the end is empty and still reports the real total, filtered and unfiltered")
+    void pagePastTheEndKeepsTotal() {
+        final List<UUID> suites = List.of(suiteId, UUID.randomUUID(), UUID.randomUUID());
+        for (final UUID suite : suites) {
+            seedRun(suite, 1000L, computationId, 100L);
+        }
+
+        final Page<RunPassCount> filtered = runPassCountRepository.findLatestPage(suites, PageRequest.of(1, 10));
+        final Page<RunPassCount> unfiltered = runPassCountRepository.findLatestPage(null, PageRequest.of(1, 10));
+
+        assertThat(filtered.getContent()).isEmpty();
+        assertThat(filtered.getTotalElements()).isEqualTo(3);
+        assertThat(unfiltered.getContent()).isEmpty();
+        assertThat(unfiltered.getTotalElements()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("deleted runs: an all-deleted suite is absent, a suite with a deleted newest run shows its older run")
+    void deletedRunsAreExcluded() {
+        final UUID allDeletedSuite = UUID.randomUUID();
+        final UUID newestDeletedSuite = UUID.randomUUID();
+        final UUID untouchedSuite = UUID.randomUUID();
+        runDeletionService.markDeleted(List.of(
+                seedRun(allDeletedSuite, 1000L, computationId, 100L),
+                seedRun(allDeletedSuite, 2000L, computationId, 100L)));
+        final UUID live = seedRun(newestDeletedSuite, 1000L, computationId, 100L);
+        runDeletionService.markDeleted(seedRun(newestDeletedSuite, 2000L, computationId, 100L));
+        seedRun(untouchedSuite, 3000L, computationId, 100L);
+        final List<UUID> all = List.of(allDeletedSuite, newestDeletedSuite, untouchedSuite);
+
+        for (final Collection<UUID> scope : Arrays.<Collection<UUID>>asList(all, null)) {
+            final Page<RunPassCount> page = runPassCountRepository.findLatestPage(scope, PageRequest.of(0, 10));
+            assertThat(page.getContent())
+                    .extracting(RunPassCount::getTestSuiteId)
+                    .containsExactlyInAnyOrder(newestDeletedSuite, untouchedSuite);
+            assertThat(page.getTotalElements()).isEqualTo(2);
+            assertThat(page.getContent().stream()
+                            .filter(r -> r.getTestSuiteId().equals(newestDeletedSuite))
+                            .findFirst()
+                            .orElseThrow()
+                            .getTestSuiteRunId())
+                    .isEqualTo(live);
+        }
+        assertThat(runPassCountRepository.findLatestRanked(all, 10))
+                .containsOnlyKeys(newestDeletedSuite, untouchedSuite);
+    }
+
+    @Test
+    @DisplayName("a run with a null-computation row and a real computation is read at the real computation")
+    void nullComputationRowLosesToRealComputation() {
+        final UUID run = seedRun(suiteId, 1000L, null, 0L);
+        seedComputation(run, suiteId, 1000L, computationId, 5L);
+
+        final RunPassCount ranked = runPassCountRepository
+                .findLatestRanked(List.of(suiteId), 10)
+                .get(suiteId)
+                .getFirst();
+        final RunPassCount page = runPassCountRepository
+                .findLatestPage(List.of(suiteId), PageRequest.of(0, 10))
+                .getContent()
+                .getFirst();
+
+        assertThat(ranked.getComputationId()).isEqualTo(computationId);
+        assertThat(page.getComputationId()).isEqualTo(computationId);
+    }
+
+    @Test
+    @DisplayName("an unfiltered page over several suites returns every suite once")
+    void unfilteredPageReturnsEverySuiteOnce() {
+        final List<UUID> suites = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            final UUID suite = UUID.randomUUID();
+            suites.add(suite);
+            seedRun(suite, 1000L, computationId, 100L);
+            seedRun(suite, 2000L, computationId, 100L);
+        }
+
+        final Page<RunPassCount> page = runPassCountRepository.findLatestPage(null, PageRequest.of(0, 10));
+
+        assertThat(page.getContent())
+                .extracting(RunPassCount::getTestSuiteId)
+                .containsExactlyInAnyOrderElementsOf(suites);
+        assertThat(page.getTotalElements()).isEqualTo(5);
+        assertThat(pageSuites(null, 0, 2)).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("a per-suite limit of zero returns an empty map")
+    void zeroLimitReturnsEmptyMap() {
+        seedRun(suiteId, 1000L, computationId, 100L);
+
+        assertThat(runPassCountRepository.findLatestRanked(List.of(suiteId), 0)).isEmpty();
     }
 
     private UUID startRun(UUID testSuiteId) {

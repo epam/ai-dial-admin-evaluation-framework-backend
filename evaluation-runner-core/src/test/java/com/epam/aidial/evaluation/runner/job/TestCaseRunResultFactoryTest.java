@@ -17,6 +17,8 @@ import tools.jackson.databind.ObjectMapper;
 class TestCaseRunResultFactoryTest {
 
     private static final long NOW_MS = 1_700_000_000_000L;
+    private static final long RUN_CREATED_AT_MS = 1_600_000_000_000L;
+    private static final UUID SUITE_ID = UUID.randomUUID();
 
     private ObjectMapper objectMapper;
     private TestCaseRunResultFactory factory;
@@ -38,11 +40,14 @@ class TestCaseRunResultFactoryTest {
     }
 
     @Test
-    @DisplayName("errorResult builds expected ERROR envelope and timing fields")
+    @DisplayName(
+            "errorResult builds expected ERROR envelope, timing fields, empty extraction values, and the run's suite id and "
+                    + "creation timestamp")
     void errorResult_buildsExpectedEnvelope() throws Exception {
         TestCaseRunInput input = buildInput();
 
-        TestCaseRunResult row = factory.errorResult(input, 2, new RuntimeException("boom"), NOW_MS);
+        TestCaseRunResult row =
+                factory.errorResult(input, 2, new RuntimeException("boom"), SUITE_ID, RUN_CREATED_AT_MS, NOW_MS);
 
         assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
         assertThat(row.getResponseStatusCode()).isNull();
@@ -51,7 +56,10 @@ class TestCaseRunResultFactoryTest {
         assertThat(row.getExecDurationMs()).isEqualTo(0L);
         assertThat(row.getRetryCount()).isEqualTo(0);
         assertThat(row.getLogDetails()).isNull();
-        assertThat(row.getCreatedAtMs()).isEqualTo(NOW_MS);
+        assertThat(row.getTestSuiteId()).isEqualTo(SUITE_ID);
+        assertThat(row.getExtractedColumns()).isEqualTo("{}");
+        assertThat(row.getExtractionWarnings()).isEqualTo("[]");
+        assertThat(row.getCreatedAtMs()).isEqualTo(RUN_CREATED_AT_MS).isNotEqualTo(row.getExecStartedAtMs());
 
         JsonNode envelope = objectMapper.readTree(row.getResponseBody());
         assertThat(envelope.get("error").get("type").asString()).isEqualTo("RuntimeException");
@@ -70,7 +78,7 @@ class TestCaseRunResultFactoryTest {
             }
         };
 
-        TestCaseRunResult row = factory.errorResult(input, 0, cause, NOW_MS);
+        TestCaseRunResult row = factory.errorResult(input, 0, cause, SUITE_ID, RUN_CREATED_AT_MS, NOW_MS);
 
         JsonNode envelope = objectMapper.readTree(row.getResponseBody());
         assertThat(envelope.get("error").get("message").asString()).isEmpty();
@@ -88,7 +96,7 @@ class TestCaseRunResultFactoryTest {
         };
 
         assertThatNoException().isThrownBy(() -> {
-            TestCaseRunResult row = factory.errorResult(input, 0, adversarial, NOW_MS);
+            TestCaseRunResult row = factory.errorResult(input, 0, adversarial, SUITE_ID, RUN_CREATED_AT_MS, NOW_MS);
             assertThat(row).isNotNull();
             assertThat(row.getResponseBody()).isNotBlank();
             // Must be valid JSON regardless of the adversarial input
@@ -101,7 +109,8 @@ class TestCaseRunResultFactoryTest {
     void errorResult_copiesInputFields() {
         TestCaseRunInput input = buildInput();
 
-        TestCaseRunResult row = factory.errorResult(input, 7, new RuntimeException("x"), NOW_MS);
+        TestCaseRunResult row =
+                factory.errorResult(input, 7, new RuntimeException("x"), SUITE_ID, RUN_CREATED_AT_MS, NOW_MS);
 
         assertThat(row.getId()).isNotNull();
         assertThat(row.getTestSuiteRunId()).isEqualTo(input.getRunId());

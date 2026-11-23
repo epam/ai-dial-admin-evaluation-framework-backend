@@ -10,7 +10,6 @@ import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunReconciliation;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -386,106 +385,5 @@ public abstract class PostgresTestSuiteRunRepositoryFunctionalTests extends Base
         assertThat(reconciled.getCompletedAt()).isNotNull();
         assertThat(reconciled.getErrorMessage()).isNull();
         assertThat(reconciled.getErrorDetails()).isNull();
-    }
-
-    // --- findLatestCompletedRunIds (suites pass-rate run selection) ---
-
-    @Test
-    @DisplayName(
-            "findLatestCompletedRunIds returns the newest completed runs first and keeps only the requested number")
-    void latestCompletedRunsNewestFirstLimited() {
-        UUID suiteId =
-                metaTestDataHelper.createTestSuite("Repo latestCompleted Limit").getId();
-        UUID oldest = completedRunCreatedAt(suiteId, 1_000L);
-        UUID middle = completedRunCreatedAt(suiteId, 2_000L);
-        UUID newest = completedRunCreatedAt(suiteId, 3_000L);
-
-        Map<UUID, List<UUID>> result = runRepository.findLatestCompletedRunIds(List.of(suiteId), 2);
-
-        assertThat(result).containsOnlyKeys(suiteId);
-        assertThat(result.get(suiteId)).containsExactly(newest, middle).doesNotContain(oldest);
-    }
-
-    @Test
-    @DisplayName("findLatestCompletedRunIds skips FAILED, CANCELLED, RUNNING and PENDING runs even when they are newer")
-    void latestCompletedRunsSkipNonCompleted() {
-        UUID suiteId = metaTestDataHelper
-                .createTestSuite("Repo latestCompleted Status")
-                .getId();
-        UUID completed = completedRunCreatedAt(suiteId, 1_000L);
-        for (RunStatus status : List.of(RunStatus.FAILED, RunStatus.CANCELLED)) {
-            UUID newer = metaTestDataHelper.createTestSuiteRun(suiteId, status).getId();
-            metaTestDataHelper.forceRunCreatedAt(newer, 5_000L);
-        }
-        UUID running = metaTestDataHelper
-                .createRunWithStatus(suiteId, RunStatus.RUNNING)
-                .getId();
-        metaTestDataHelper.forceRunCreatedAt(running, 6_000L);
-        UUID pending = metaTestDataHelper
-                .createRunWithStatus(suiteId, RunStatus.PENDING)
-                .getId();
-        metaTestDataHelper.forceRunCreatedAt(pending, 7_000L);
-        try {
-            Map<UUID, List<UUID>> result = runRepository.findLatestCompletedRunIds(List.of(suiteId), 2);
-
-            assertThat(result.get(suiteId)).containsExactly(completed);
-        } finally {
-            // RUNNING / PENDING rows left lying around would count toward other tests' active-run limits.
-            metaTestDataHelper.deleteRun(running);
-            metaTestDataHelper.deleteRun(pending);
-        }
-    }
-
-    @Test
-    @DisplayName("findLatestCompletedRunIds breaks a created_at tie on the larger run id")
-    void latestCompletedRunsTieBreaksOnLargerRunId() {
-        UUID suiteId =
-                metaTestDataHelper.createTestSuite("Repo latestCompleted Tie").getId();
-        UUID first = completedRunCreatedAt(suiteId, 4_000L);
-        UUID second = completedRunCreatedAt(suiteId, 4_000L);
-        UUID larger = first.toString().compareTo(second.toString()) > 0 ? first : second;
-        UUID smaller = larger.equals(first) ? second : first;
-
-        Map<UUID, List<UUID>> result = runRepository.findLatestCompletedRunIds(List.of(suiteId), 2);
-
-        assertThat(result.get(suiteId)).containsExactly(larger, smaller);
-    }
-
-    @Test
-    @DisplayName("findLatestCompletedRunIds ranks each suite on its own and omits a suite with no completed run")
-    void latestCompletedRunsPerSuite() {
-        UUID suiteA =
-                metaTestDataHelper.createTestSuite("Repo latestCompleted A").getId();
-        UUID suiteB =
-                metaTestDataHelper.createTestSuite("Repo latestCompleted B").getId();
-        UUID suiteFailedOnly = metaTestDataHelper
-                .createTestSuite("Repo latestCompleted Failed")
-                .getId();
-        UUID firstSuiteRun = completedRunCreatedAt(suiteA, 9_000L);
-        UUID secondSuiteOlder = completedRunCreatedAt(suiteB, 1_000L);
-        UUID secondSuiteNewer = completedRunCreatedAt(suiteB, 2_000L);
-        metaTestDataHelper.createTestSuiteRun(suiteFailedOnly, RunStatus.FAILED);
-
-        Map<UUID, List<UUID>> result =
-                runRepository.findLatestCompletedRunIds(List.of(suiteA, suiteB, suiteFailedOnly), 2);
-
-        assertThat(result).containsOnlyKeys(suiteA, suiteB);
-        assertThat(result.get(suiteA)).containsExactly(firstSuiteRun);
-        assertThat(result.get(suiteB)).containsExactly(secondSuiteNewer, secondSuiteOlder);
-    }
-
-    @Test
-    @DisplayName("findLatestCompletedRunIds returns an empty map for an empty or null suite list")
-    void latestCompletedRunsEmptyInput() {
-        assertThat(runRepository.findLatestCompletedRunIds(List.of(), 2)).isEmpty();
-        assertThat(runRepository.findLatestCompletedRunIds(null, 2)).isEmpty();
-    }
-
-    private UUID completedRunCreatedAt(UUID suiteId, long createdAtMs) {
-        UUID runId = metaTestDataHelper
-                .createTestSuiteRun(suiteId, RunStatus.COMPLETED)
-                .getId();
-        metaTestDataHelper.forceRunCreatedAt(runId, createdAtMs);
-        return runId;
     }
 }

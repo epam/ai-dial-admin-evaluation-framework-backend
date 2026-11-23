@@ -1,0 +1,30 @@
+{
+  "content": [
+    {
+      "suiteId": "9d1c7a40-6b2e-4f3a-8e55-0a7b3c9d2e11",
+      "suiteName": "Docs search regression",
+      "suiteType": "MCP_TOOL",
+      "evaluatee": {"id": "docs-toolset", "name": "Docs toolset", "type": "dial-toolset", "toolName": "search"},
+      "runs": [
+        {"runId": "3f2b8c1e-5a4d-4e7b-9c1a-2d6e8f0a1b3c", "createdAt": 1789900000000, "passRate": 0.9, "passedCount": 9, "totalCount": 10},
+        {"runId": "7a1e5d92-3c8b-4b6f-a0d4-91c2e7f3b8a5", "createdAt": 1790000000000, "passRate": 0.8, "passedCount": 8, "totalCount": 10}
+      ],
+      "latestPassRate": 0.8,
+      "previousPassRate": 0.9,
+      "delta": -0.1
+    },
+    {
+      "suiteId": "c4e9b2d7-1f5a-4c83-b6e0-5d7a9f2c4e18",
+      "suiteName": "Validate route",
+      "suiteType": "ROUTE",
+      "evaluatee": {"name": "routes/platform/validate-route"},
+      "runs": [
+        {"runId": "b8d3f6a1-9e2c-4d57-8a14-6c0e3b7d5f92", "createdAt": 1790000100000, "passedCount": 0, "totalCount": 0}
+      ]
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 2,
+  "totalPages": 1
+}

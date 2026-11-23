@@ -630,6 +630,18 @@ Runtime bounds applied to every JSONata expression evaluation (request-template 
 | `jsonata.evaluation-timeout-ms` | `JSONATA_EVALUATION_TIMEOUT_MS` | `10000` | No | - | Maximum wall-clock time in milliseconds a single JSONata expression evaluation may run before it is aborted. Minimum `1`. |
 | `jsonata.max-recursion-depth` | `JSONATA_MAX_RECURSION_DEPTH` | `1000` | No | - | Maximum call-stack recursion depth a single JSONata expression evaluation may reach before it is aborted. Minimum `1`. |
 
+### 6.14 Analytics Run Pass-Count Reconciliation
+
+A scheduled job that records the pass counts missing for `COMPLETED` runs (records whose write failed, runs completed before records existed, and runs that received a newer computation through the eval-summary write API). It runs on every instance without a lock; the insert is idempotent.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `analytics.run-pass-counts.reconciliation.enabled` | `ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_ENABLED` | `true` | No | - | Whether the reconciliation job runs. When `false` every scheduled pass is a no-op. |
+| `analytics.run-pass-counts.reconciliation.initial-delay-ms` | `ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_INITIAL_DELAY_MS` | `60000` | No | `analytics.run-pass-counts.reconciliation.enabled=true` | Delay in milliseconds between application startup and the first pass. Minimum `0`. |
+| `analytics.run-pass-counts.reconciliation.interval-ms` | `ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_INTERVAL_MS` | `3600000` | No | `analytics.run-pass-counts.reconciliation.enabled=true` | Delay in milliseconds between the end of one pass and the start of the next (1 hour). Minimum `1`. |
+| `analytics.run-pass-counts.reconciliation.batch-size` | `ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_BATCH_SIZE` | `500` | No | `analytics.run-pass-counts.reconciliation.enabled=true` | Number of `COMPLETED` runs handled per batch (one meta read page and one analytics transaction). Minimum `1`. |
+| `analytics.run-pass-counts.reconciliation.min-computation-age-ms` | `ANALYTICS_RUN_PASS_COUNTS_RECONCILIATION_MIN_COMPUTATION_AGE_MS` | `600000` | No | `analytics.run-pass-counts.reconciliation.enabled=true` | Minimum age in milliseconds of a run's latest computation before it is recorded (10 minutes). Younger computations are left for a later pass so that a computation still being written through the eval-summary write API is not recorded half-way; a record is never updated. Minimum `0`. |
+
 ---
 
 ## 7. Data Management

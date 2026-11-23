@@ -6,6 +6,7 @@ import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE
 import com.epam.aidial.evaluation.data.db.analytics.mapper.EvalSummaryRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
+import com.epam.aidial.evaluation.data.db.analytics.model.LatestComputation;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
@@ -34,6 +35,7 @@ import org.jooq.JSONB;
 import org.jooq.Query;
 import org.jooq.Record;
 import org.jooq.Record1;
+import org.jooq.Record2;
 import org.jooq.SelectLimitStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -59,6 +61,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     private static final String RUN_ID_COLUMN = "run_id";
     private static final String LATEST_TABLE = "latest";
     private static final String COMPUTATION_ID_COLUMN = "computation_id";
+    private static final String COMPUTED_AT_COLUMN = "computed_at_ms";
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
@@ -223,6 +226,37 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .from(runIdsTable)
                 .crossJoin(latestPerRun)
                 .forEach(r -> result.put(UUID.fromString(r.value1()), UUID.fromString(r.value2())));
+        return result;
+    }
+
+    @Override
+    public Map<UUID, LatestComputation> findLatestComputations(Collection<UUID> runIds) {
+        if (runIds == null || runIds.isEmpty()) {
+            return Map.of();
+        }
+
+        String[] ids = runIds.stream().distinct().map(UUID::toString).toArray(String[]::new);
+        Table<?> runIdsTable = DSL.unnest(ids).as(RUN_IDS_TABLE, RUN_ID_COLUMN);
+        Field<String> runIdField = runIdsTable.field(RUN_ID_COLUMN, String.class);
+
+        Table<Record2<String, Long>> latestPerRun = DSL.lateral(
+                        dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID, TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS)
+                                .from(TEST_CASE_EVAL_SUMMARIES)
+                                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runIdField))
+                                .orderBy(
+                                        TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc(),
+                                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.asc())
+                                .limit(1))
+                .as(LATEST_TABLE, COMPUTATION_ID_COLUMN, COMPUTED_AT_COLUMN);
+        Field<String> latestComputationIdField = latestPerRun.field(COMPUTATION_ID_COLUMN, String.class);
+        Field<Long> latestComputedAtField = latestPerRun.field(COMPUTED_AT_COLUMN, Long.class);
+
+        Map<UUID, LatestComputation> result = new HashMap<>();
+        dsl.select(runIdField, latestComputationIdField, latestComputedAtField)
+                .from(runIdsTable)
+                .crossJoin(latestPerRun)
+                .forEach(r -> result.put(
+                        UUID.fromString(r.value1()), new LatestComputation(UUID.fromString(r.value2()), r.value3())));
         return result;
     }
 

@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
+import com.epam.aidial.evaluation.data.db.analytics.model.LatestComputation;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
@@ -63,6 +64,12 @@ public interface EvalSummaryRepository {
      *     without touching the database
      */
     Map<UUID, UUID> findLatestComputationIds(Collection<UUID> runIds);
+
+    /**
+     * Writer-side variant of {@link #findLatestComputationIds}: not tombstone-filtered, and each entry carries
+     * the computation's timestamp. A run with no eval summary is absent from the map.
+     */
+    Map<UUID, LatestComputation> findLatestComputations(Collection<UUID> runIds);
 
     /**
      * Tells whether the given computation produced any eval summary for the run, without

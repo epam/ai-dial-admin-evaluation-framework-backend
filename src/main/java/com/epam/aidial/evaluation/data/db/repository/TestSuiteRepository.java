@@ -5,6 +5,7 @@ import com.epam.aidial.evaluation.data.db.model.TestSuiteSummary;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -80,4 +81,14 @@ public interface TestSuiteRepository {
      * Used by the detach-dataset flow inside the meta transaction.
      */
     void updateDatasetId(UUID suiteId, UUID newDatasetId, long updatedAt);
+
+    /** Ids of every suite matching the filters (all suites when empty). Throws {@code InvalidFilterException}. */
+    List<UUID> findIds(List<FilterCondition> filters);
+
+    /**
+     * Loads, for the given ids in one query, only id, name, suite type and the target reference columns
+     * ({@code deployment_ref}, {@code routes_ref}, {@code mcp_deployment_ref}, {@code tool_ref}); every other
+     * field of the returned suites is unset. Missing ids are absent from the result.
+     */
+    List<TestSuite> findByIds(Collection<UUID> ids);
 }

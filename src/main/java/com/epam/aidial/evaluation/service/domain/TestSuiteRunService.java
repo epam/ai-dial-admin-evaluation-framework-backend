@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerClient;
 import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerException;
 import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
+import com.epam.aidial.evaluation.data.db.model.CompletedRunKey;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
@@ -42,7 +43,6 @@ import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import com.epam.aidial.evaluation.utils.CorrelationIdContext;
 import io.opentelemetry.context.Context;
 import java.io.InputStream;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -381,23 +381,12 @@ public class TestSuiteRunService {
     }
 
     /**
-     * Each run's {@code overallScoreThreshold} as captured in its suite snapshot, in one read. A run with no
-     * snapshot or no threshold is absent from the map (callers treat that as "no threshold"); unknown run ids
-     * are ignored.
+     * A keyset page of {@code COMPLETED} runs as {@code (id, suiteId, createdAt)}, ordered by
+     * {@code (createdAt, id)} ascending after the given position (both null for the first page).
      */
     @Transactional(value = "metaTransactionManager", readOnly = true)
-    public Map<UUID, Double> getThresholdsByRunIds(Collection<UUID> runIds) {
-        return testSuiteRunRepository.findThresholdsByRunIds(runIds);
-    }
-
-    /**
-     * Each suite's newest {@code perSuite} {@code COMPLETED} run ids, newest first, in one read. Runs that
-     * are not COMPLETED (in flight, failed or cancelled) are never returned; a suite with no completed run is
-     * absent from the map.
-     */
-    @Transactional(value = "metaTransactionManager", readOnly = true)
-    public Map<UUID, List<UUID>> getLatestCompletedRunIdsBySuite(Collection<UUID> suiteIds, int perSuite) {
-        return testSuiteRunRepository.findLatestCompletedRunIds(suiteIds, perSuite);
+    public List<CompletedRunKey> getCompletedRunKeysAfter(Long afterCreatedAtMs, UUID afterId, int limit) {
+        return testSuiteRunRepository.findCompletedRunKeysAfter(afterCreatedAtMs, afterId, limit);
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)

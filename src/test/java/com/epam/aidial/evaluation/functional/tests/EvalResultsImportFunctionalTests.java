@@ -11,8 +11,11 @@ import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationRequestDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
+import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
+import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
@@ -34,6 +37,7 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteUpdateResultDto;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageResponseDto;
 import java.math.BigDecimal;
@@ -83,6 +87,9 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
 
     @Autowired
     private TestCaseRunInputRepository testCaseRunInputRepository;
+
+    @Autowired
+    private TestCaseRunResultRepository testCaseRunResultRepository;
 
     // -------------------------------------------------------------------------
     // Happy-path and Phase 2+3 smoke tests
@@ -166,6 +173,49 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
         List<Map<String, Object>> snapshots = metaTestDataHelper.findRunMetricSnapshotsByRunId(runId);
         assertThat(snapshots).hasSize(1);
         assertThat(snapshots.get(0).get("tsmd_name")).isEqualTo("Accuracy");
+    }
+
+    @Test
+    @DisplayName("Should persist ISO timestamps as epoch milliseconds and calculate duration")
+    void shouldPersistIsoTimestampsAndDuration() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("expected")
+                .type(SchemaFieldType.STRING)
+                .required(true)
+                .build()));
+        TestSuiteResponseDto suite = createSuiteWithResponseColumn("Suite For ISO Import", datasetId);
+        String csv = buildCsv(
+                List.of("testCaseName", "runIndex", "executionStatus", "startedAt", "completedAt", "testCaseData"),
+                List.of(List.of(
+                        "tc-iso",
+                        "0",
+                        "SUCCESS",
+                        "2026-05-25T10:22:12.226Z",
+                        "2026-05-25T10:22:13.226Z",
+                        "{\"expected\":\"a\"}")));
+
+        ResponseEntity<TestSuiteRunResponseDto> response =
+                postImportCsv(suite.getId(), csv, TestSuiteRunResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        UUID runId = response.getBody().getId();
+        assertThat(awaitRunTerminal(runId, 15).getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<TestCaseRunResult> rows = testCaseRunResultRepository
+                .findAll(
+                        List.of(FilterCondition.builder()
+                                .field("runId")
+                                .operator(FilterOperator.EQ)
+                                .rawValue(runId.toString())
+                                .build()),
+                        response.getBody().getCreatedAt(),
+                        null,
+                        2)
+                .content();
+        assertThat(rows).hasSize(1);
+        TestCaseRunResult result = rows.getFirst();
+        assertThat(result.getExecStartedAtMs()).isEqualTo(1_779_704_532_226L);
+        assertThat(result.getExecCompletedAtMs()).isEqualTo(1_779_704_533_226L);
+        assertThat(result.getExecDurationMs()).isEqualTo(1_000L);
     }
 
     @Test

@@ -4,11 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.configuration.properties.analytics.AnalyticsResultsProperties;
+import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
+import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
@@ -17,6 +20,7 @@ import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.DatasetSchemaProvider;
 import com.epam.aidial.evaluation.service.domain.SchemaValidationService;
 import com.epam.aidial.evaluation.service.domain.TestCaseFieldScopeResolver;
+import com.epam.aidial.evaluation.service.domain.csv.CsvTimestampCodec;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.io.ByteArrayInputStream;
@@ -66,7 +70,8 @@ class EvalResultsCsvParserTest {
                 new ObjectMapper(),
                 analyticsResultsProperties,
                 schemaValidationService,
-                testCaseFieldScopeResolver);
+                testCaseFieldScopeResolver,
+                new CsvTimestampCodec());
 
         datasetId = UUID.randomUUID();
 
@@ -87,6 +92,68 @@ class EvalResultsCsvParserTest {
 
     private long byteSize(String csv) {
         return csv.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    @Nested
+    @DisplayName("CSV timestamps")
+    class TimestampTests {
+        @Test
+        @DisplayName("mixed ISO and legacy values convert for both timestamp fields and duration")
+        void mixedTimestamps() {
+            String csv = """
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS, 2026-05-25T10:22:12.226Z ,1779704533226,{}
+                tc2,0,SUCCESS,-1,1970-01-01T00:00:00.1Z,{}
+                tc3,0,SUCCESS,1970-01-01T00:00:00Z,1970-01-01T00:00:00.12Z,{}
+                """;
+            List<TestCaseRunResult> items = parser.parse(datasetId, csvStream(csv), byteSize(csv), ',');
+            assertThat(items).hasSize(3);
+            assertThat(items.get(0).getExecStartedAtMs()).isEqualTo(1779704532226L);
+            assertThat(items.get(0).getExecCompletedAtMs()).isEqualTo(1779704533226L);
+            assertThat(items.get(0).getExecDurationMs()).isEqualTo(1000L);
+            assertThat(items.get(1).getExecStartedAtMs()).isEqualTo(-1L);
+            assertThat(items.get(1).getExecCompletedAtMs()).isEqualTo(100L);
+            assertThat(items.get(1).getExecDurationMs()).isEqualTo(101L);
+            assertThat(items.get(2).getExecStartedAtMs()).isZero();
+            assertThat(items.get(2).getExecCompletedAtMs()).isEqualTo(120L);
+        }
+
+        @Test
+        @DisplayName("invalid timestamps and missing required fields aggregate across rows")
+        void timestampErrorsAggregate() {
+            String csv = """
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,2023-02-29T00:00:00Z,9223372036854775808,{}
+                tc2,0,SUCCESS,,1970-01-01T00:00:00.0001Z,{}
+                tc3,0,SUCCESS,0, ,{}
+                """;
+            assertThatThrownBy(() -> parser.parse(datasetId, csvStream(csv), byteSize(csv), ','))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("row 0: startedAt")
+                    .hasMessageContaining("row 0: completedAt")
+                    .hasMessageContaining("row 1: startedAt must not be null")
+                    .hasMessageContaining("row 1: completedAt")
+                    .hasMessageContaining("row 2: completedAt must not be null");
+        }
+
+        @Test
+        @DisplayName("mixed-format reversed timestamps fail existing batch ordering validation")
+        void orderingAfterConversion() {
+            String csv = """
+                testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
+                tc1,0,SUCCESS,1970-01-01T00:00:02Z,1000,{}
+                """;
+            List<TestCaseRunResult> items = parser.parse(datasetId, csvStream(csv), byteSize(csv), ',');
+            AnalyticsResultsProperties.Batch batch = new AnalyticsResultsProperties.Batch();
+            batch.setMaxItems(100);
+            AnalyticsResultsProperties props = new AnalyticsResultsProperties();
+            props.setBatch(batch);
+            EvalResultsImportService service = new EvalResultsImportService(
+                    mock(TestCaseRunResultRepository.class), props, new CsvImportProperties());
+            assertThatThrownBy(() -> service.validateBatch(items))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("completedAt must be >= startedAt");
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -357,7 +424,8 @@ class EvalResultsCsvParserTest {
                     new ObjectMapper(),
                     smallSizeProps,
                     schemaValidationService,
-                    testCaseFieldScopeResolver);
+                    testCaseFieldScopeResolver,
+                    new CsvTimestampCodec());
 
             String csv = "testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData\n"
                     + "tc1,0,SUCCESS,1000,1500,{}\n";
@@ -381,7 +449,8 @@ class EvalResultsCsvParserTest {
                     new ObjectMapper(),
                     capProps,
                     schemaValidationService,
-                    testCaseFieldScopeResolver);
+                    testCaseFieldScopeResolver,
+                    new CsvTimestampCodec());
 
             String csv = """
                 testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData
@@ -707,7 +776,8 @@ class EvalResultsCsvParserTest {
                     new ObjectMapper(),
                     props,
                     realSchemaValidationService,
-                    testCaseFieldScopeResolver);
+                    testCaseFieldScopeResolver,
+                    new CsvTimestampCodec());
         }
 
         @Test

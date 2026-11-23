@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.DatasetSchemaProvider;
 import com.epam.aidial.evaluation.service.domain.SchemaValidationService;
 import com.epam.aidial.evaluation.service.domain.TestCaseFieldScopeResolver;
+import com.epam.aidial.evaluation.service.domain.csv.CsvTimestampCodec;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -85,6 +86,7 @@ public class EvalResultsCsvParser {
     private final AnalyticsResultsProperties analyticsResultsProperties;
     private final SchemaValidationService schemaValidationService;
     private final TestCaseFieldScopeResolver testCaseFieldScopeResolver;
+    private final CsvTimestampCodec csvTimestampCodec;
 
     /**
      * Parses the uploaded CSV stream into a validated list of {@link TestCaseRunResult} stubs.
@@ -227,8 +229,8 @@ public class EvalResultsCsvParser {
         Integer responseStatusCode = parseOptionalInt(responseStatusCodeRaw, rowIndex, "responseStatusCode", rowErrors);
         ExecutionStatus executionStatus =
                 parseExecutionStatus(executionStatusRaw, rowIndex, "executionStatus", rowErrors);
-        Long startedAt = parseOptionalLong(startedAtRaw, rowIndex, "startedAt", rowErrors);
-        Long completedAt = parseOptionalLong(completedAtRaw, rowIndex, "completedAt", rowErrors);
+        Long startedAt = parseOptionalTimestamp(startedAtRaw, rowIndex, "startedAt", rowErrors);
+        Long completedAt = parseOptionalTimestamp(completedAtRaw, rowIndex, "completedAt", rowErrors);
         Integer retryCount = parseOptionalInt(retryCountRaw, rowIndex, "retryCount", rowErrors);
         String logDetailsJson = parseOptionalJsonToString(logDetailsRaw, rowIndex, "logDetails", rowErrors);
         String extractedColumnsJson =
@@ -471,14 +473,11 @@ public class EvalResultsCsvParser {
         }
     }
 
-    private Long parseOptionalLong(String raw, int rowIndex, String field, List<String> errors) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
+    private Long parseOptionalTimestamp(String raw, int rowIndex, String field, List<String> errors) {
         try {
-            return Long.parseLong(raw.trim());
-        } catch (NumberFormatException e) {
-            errors.add("row " + rowIndex + ": " + field + " must be a long integer, got: '" + raw.trim() + "'");
+            return csvTimestampCodec.parse(raw);
+        } catch (IllegalArgumentException e) {
+            errors.add("row " + rowIndex + ": " + field + ": " + e.getMessage());
             return null;
         }
     }

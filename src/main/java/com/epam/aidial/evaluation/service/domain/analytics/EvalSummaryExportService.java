@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser;
+import com.epam.aidial.evaluation.service.domain.csv.CsvTimestampCodec;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryExportRequestDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.FilterValidationException;
@@ -34,6 +35,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
@@ -65,6 +67,7 @@ public class EvalSummaryExportService {
     private static final String LATEST_SENTINEL = "latest";
     private static final String RUN_ID_FILTER_FIELD = "runId";
     private static final int PREVIEW_PAGE_SIZE = 10;
+    private static final Set<String> TIMESTAMP_COLUMNS = Set.of("createdAt", "computedAt");
 
     private final TestSuiteRunRepository runRepository;
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
@@ -76,6 +79,7 @@ public class EvalSummaryExportService {
     private final ObjectMapper objectMapper;
     private final CsvExportProperties csvExportProperties;
     private final CsvDelimiterParser csvDelimiterParser;
+    private final CsvTimestampCodec csvTimestampCodec;
     private final TransactionTemplate metaTransactionTemplate;
     private final TransactionTemplate analyticsTransactionTemplate;
 
@@ -90,6 +94,7 @@ public class EvalSummaryExportService {
             ObjectMapper objectMapper,
             CsvExportProperties csvExportProperties,
             CsvDelimiterParser csvDelimiterParser,
+            CsvTimestampCodec csvTimestampCodec,
             @Qualifier("metaTransactionManager") PlatformTransactionManager metaTxManager,
             @Qualifier("analyticsTransactionManager") PlatformTransactionManager analyticsTxManager) {
         this.runRepository = runRepository;
@@ -102,6 +107,7 @@ public class EvalSummaryExportService {
         this.objectMapper = objectMapper;
         this.csvExportProperties = csvExportProperties;
         this.csvDelimiterParser = csvDelimiterParser;
+        this.csvTimestampCodec = csvTimestampCodec;
         this.metaTransactionTemplate = new TransactionTemplate(metaTxManager);
         this.metaTransactionTemplate.setReadOnly(true);
         this.analyticsTransactionTemplate = new TransactionTemplate(analyticsTxManager);
@@ -159,7 +165,11 @@ public class EvalSummaryExportService {
                     EvalSummaryExportRow row = new EvalSummaryExportRow(summary, objectMapper);
                     List<String> cells = new ArrayList<>(effective.size());
                     for (ColumnDescriptor descriptor : effective) {
-                        cells.add(formatCsvCell(descriptor.valueExtractor().apply(row)));
+                        Object value = descriptor.valueExtractor().apply(row);
+                        cells.add(
+                                TIMESTAMP_COLUMNS.contains(descriptor.name())
+                                        ? csvTimestampCodec.format((Long) value)
+                                        : formatCsvCell(value));
                     }
                     printer.printRecord(cells);
                 }

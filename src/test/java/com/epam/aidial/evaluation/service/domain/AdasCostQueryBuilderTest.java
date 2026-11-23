@@ -104,7 +104,7 @@ class AdasCostQueryBuilderTest {
                 .containsExactly(
                         new OutputColumn(new FnExpr("count", false, List.of()), null),
                         new OutputColumn(
-                                new FnExpr("sum", false, List.of(new FieldExpr("deployment_price"))), "total_cost"));
+                                new FnExpr("sum", false, List.of(new FieldExpr("total_price"))), "total_cost"));
     }
 
     @Test
@@ -191,7 +191,7 @@ class AdasCostQueryBuilderTest {
               "group_by": [],
               "select": [
                 { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
-                { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "deployment_price" } ] }, "as": "total_cost" }
+                { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" }
               ]
             }
             """);

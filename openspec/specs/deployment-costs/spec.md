@@ -10,13 +10,15 @@ The system SHALL expose `GET /api/v1/costs/deployment/**`, treating everything a
 segment as the deployment ID (so IDs containing slashes are supported as-is), accepting `from` and `to`
 (epoch-millisecond `Long`, required, inclusive bounds) as query parameters, and returning the total price
 of test-case execution calls and the total price of metric-evaluation calls for that deployment within
-`[from, to]`, sourced from dial-adas usage-log data correlated by the `deployment` field, the
+`[from, to]` (summing `total_price`, not `deployment_price`: application deployments have a
+`total_price` but no `deployment_price`, and the `deployment` filter excludes nested rows so nothing is
+double counted), sourced from dial-adas usage-log data correlated by the `deployment` field, the
 `request_time` range, and the OTel baggage execution-phase tag. Status: Implemented.
 
 #### Scenario: Deployment has both execution and metric-evaluation usage data in range
 - **WHEN** a client requests `GET /api/v1/costs/deployment/{id}?from={fromMs}&to={toMs}` for a
   deployment with usage-log rows in that window for both phases
-- **THEN** the system returns 200 with a body containing `totalTestCaseCost` (the sum of `deployment_price`
+- **THEN** the system returns 200 with a body containing `totalTestCaseCost` (the sum of `total_price`
   across dial-adas usage-log rows tagged `eval.phase=execution`, filtered to `deployment={id}` and
   `request_time` between `fromMs` and `toMs` inclusive) and `totalMetricEvalCost` (the same computation
   for rows tagged `eval.phase=metric-evaluation`)
@@ -69,7 +71,7 @@ baggage-phase technique used by the existing run-scoped cost query. Status: Impl
 
 #### Scenario: Aggregate computed server-side
 - **WHEN** the system requests a total for a deployment, time range, and phase
-- **THEN** it issues a single `"mode": "aggregate"` query with a `sum(deployment_price)` selection (aliased
+- **THEN** it issues a single `"mode": "aggregate"` query with a `sum(total_price)` selection (aliased
   so the response can be read directly) rather than fetching individual usage-log rows and summing them
   in application code
 

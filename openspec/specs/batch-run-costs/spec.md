@@ -64,6 +64,8 @@ dial-adas aggregate query against `dial_usage_log`, filtered by an `or` of per-r
 `eval.run.id` (no `eval.phase` predicate, since the total spans both phases), grouped by a `run_id`
 value derived per row via a `case`/`when`/`then`/`else` select expression that maps each row back to the
 run id whose baggage predicate matched it.
+Costs are summed from `deployment_price` (leaf price) rather than `total_price`, because a run's baggage can
+match both an application row and its nested model rows.
 Status: **Implemented**
 
 #### Scenario: Single dial-adas query regardless of run count

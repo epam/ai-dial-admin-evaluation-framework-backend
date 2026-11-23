@@ -40,7 +40,18 @@ public class AdasCostQueryBuilder {
 
     private static final String ENTITY = "dial_usage_log";
     private static final String BAGGAGE_FIELD = "usage_request_baggage.baggage";
+    /**
+     * Run-scoped queries match every usage row tagged with the run's baggage, so an application's own row
+     * and its nested model rows can both match; summing the leaf {@code deployment_price} avoids counting
+     * the same spend twice.
+     */
     private static final String DEPLOYMENT_PRICE_FIELD = "deployment_price";
+    /**
+     * Deployment-scoped queries filter on {@code deployment}, so nested rows are never included. Applications
+     * have a {@code total_price} but no {@code deployment_price}, hence this field.
+     */
+    private static final String TOTAL_PRICE_FIELD = "total_price";
+
     private static final String TOTAL_COST_ALIAS = "total_cost";
     private static final String TEST_CASE_COST_ALIAS = "test_case_cost";
     private static final String METRIC_EVAL_COST_ALIAS = "metric_eval_cost";
@@ -142,7 +153,7 @@ public class AdasCostQueryBuilder {
         return List.of(
                 new OutputColumn(new FnExpr("count", false, List.of()), null),
                 new OutputColumn(
-                        new FnExpr("sum", false, List.of(new FieldExpr(DEPLOYMENT_PRICE_FIELD))), TOTAL_COST_ALIAS));
+                        new FnExpr("sum", false, List.of(new FieldExpr(TOTAL_PRICE_FIELD))), TOTAL_COST_ALIAS));
     }
 
     private static OutputColumn phaseCostColumn(Expr baggageValue, EvalPhase phase, String alias) {

@@ -18,6 +18,9 @@ public final class ValidationConstants {
     /** Maximum number of run ids in a batch run-costs request. Matches {@code pagination.max-size}. */
     public static final int MAX_BATCH_RUN_IDS = 1000;
 
+    /** Maximum number of deployment ids in a total-cost request body. */
+    public static final int MAX_COST_DEPLOYMENT_IDS = 1000;
+
     /** Maximum number of distinct suite ids in a suite pass-rate summary request. */
     public static final int MAX_BATCH_SUITE_IDS = 100;
 

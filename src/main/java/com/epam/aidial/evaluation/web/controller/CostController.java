@@ -5,6 +5,8 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.CostService;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalCostRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -152,6 +154,59 @@ public class CostController {
     public List<TotalRunCostResponseDto> getTotalRunCosts(
             @Valid @org.springframework.web.bind.annotation.RequestBody TotalRunCostRequestDto request) {
         return costService.getTotalRunCosts(request.getRunIds());
+    }
+
+    @PostMapping(
+            value = "/total",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+            summary = "Get total evaluation cost for a period, optionally filtered by deployments",
+            description = "Computes, in a single dial-adas call, the total cost of all evaluation traffic "
+                    + "(test-case execution plus metric-evaluation judge calls) in [from, to] (inclusive, epoch "
+                    + "milliseconds), summing the cost of dial-adas usage-log rows tagged with the "
+                    + "evaluation phase, with its execution and metric-evaluation split. Without `deploymentIds` "
+                    + "the request's own price (`deployment_price`) is summed, so a request nested under an "
+                    + "application is counted once. With `deploymentIds` (up to "
+                    + ValidationConstants.MAX_COST_DEPLOYMENT_IDS
+                    + " entries) the totals are restricted to those deployments and `total_price` (the request "
+                    + "plus everything it initiated) is summed, so applications report their cost; listing an "
+                    + "application together with a deployment it calls counts that shared cost twice. Omitted, "
+                    + "null or empty `deploymentIds` means all deployments. Ids are matched as sent, still "
+                    + "percent-encoded, because the usage log "
+                    + "stores deployment IDs in that form. All three costs are null when no usage-log row "
+                    + "matches; a phase with no usage inside a non-empty period is 0. Usage of runs that were "
+                    + "deleted is still counted, since usage logs are not tombstoned. POST (with the "
+                    + "parameters in the body) rather than GET, since a long deployment id list would make for "
+                    + "an unwieldy query string.")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Costs computed",
+            content =
+                    @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = TotalCostResponseDto.class),
+                            examples = {
+                                @ExampleObject(
+                                        name = "minimal",
+                                        summary = "Total with phase split",
+                                        value = "{\"totalCost\":0.0123,\"testCaseCost\":0.0100,"
+                                                + "\"metricEvalCost\":0.0023}"),
+                                @ExampleObject(
+                                        name = "no-usage",
+                                        summary = "Period without any evaluation usage",
+                                        value = "{\"totalCost\":null,\"testCaseCost\":null,"
+                                                + "\"metricEvalCost\":null}")
+                            }))
+    @ApiResponse(
+            responseCode = "400",
+            description = "`from`/`to` missing, from > to, `deploymentIds` over "
+                    + ValidationConstants.MAX_COST_DEPLOYMENT_IDS + " entries or containing a blank id")
+    @ApiResponse(responseCode = "502", description = "dial-adas unreachable or returned an error")
+    @ApiResponse(responseCode = "504", description = "dial-adas request timed out")
+    public TotalCostResponseDto getTotalCost(
+            @Valid @org.springframework.web.bind.annotation.RequestBody TotalCostRequestDto request) {
+        return costService.getTotalCosts(request.getFrom(), request.getTo(), request.getDeploymentIds());
     }
 
     private static void validateId(String deploymentId) {

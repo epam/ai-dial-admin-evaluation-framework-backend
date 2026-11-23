@@ -5,6 +5,7 @@ import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 
 import com.epam.aidial.evaluation.constants.AnalyticsConstants;
+import com.epam.aidial.evaluation.data.db.analytics.mapper.RunPassCountRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.PassCountTotals;
 import com.epam.aidial.evaluation.data.db.analytics.model.RecordedComputation;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCount;
@@ -68,6 +69,8 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
+
+    private final RunPassCountRecordMapper recordMapper;
 
     /**
      * Writer-side, not tombstone-filtered. One row per test case: the distinct test cases of the eval summaries
@@ -179,7 +182,7 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
                         latest.field(RUN_PASS_COUNTS.RUN_CREATED_AT_MS).desc(),
                         latest.field(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID).desc())
                 .forEach(r -> {
-                    final RunPassCount row = toModel(r, latest);
+                    final RunPassCount row = recordMapper.map(r, latest);
                     bySuite.computeIfAbsent(row.getTestSuiteId(), k -> new ArrayList<>())
                             .add(row);
                 });
@@ -213,7 +216,7 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
                 .offset(pageRequest.getOffset())
                 .fetch();
         final List<RunPassCount> content =
-                rows.stream().map(r -> toModel(r, latest)).toList();
+                rows.stream().map(r -> recordMapper.map(r, latest)).toList();
         return Page.of(content, pageRequest, totalOf(rows, totalElements, suites, latest, pageRequest));
     }
 
@@ -376,18 +379,5 @@ public class PostgresRunPassCountRepository implements RunPassCountRepository {
             fields.add(ranked.field(f));
         }
         return fields;
-    }
-
-    private static RunPassCount toModel(Record r, Table<?> ranked) {
-        final String computation = r.get(ranked.field(RUN_PASS_COUNTS.COMPUTATION_ID));
-        return RunPassCount.builder()
-                .testSuiteRunId(UUID.fromString(r.get(ranked.field(RUN_PASS_COUNTS.TEST_SUITE_RUN_ID))))
-                .testSuiteId(UUID.fromString(r.get(ranked.field(RUN_PASS_COUNTS.TEST_SUITE_ID))))
-                .computationId(computation != null ? UUID.fromString(computation) : null)
-                .runCreatedAtMs(r.get(ranked.field(RUN_PASS_COUNTS.RUN_CREATED_AT_MS)))
-                .passedCount(r.get(ranked.field(RUN_PASS_COUNTS.PASSED_COUNT)))
-                .totalCount(r.get(ranked.field(RUN_PASS_COUNTS.TOTAL_COUNT)))
-                .computedAtMs(r.get(ranked.field(RUN_PASS_COUNTS.COMPUTED_AT_MS)))
-                .build();
     }
 }

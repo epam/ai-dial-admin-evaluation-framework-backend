@@ -111,6 +111,45 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
+    @DisplayName("Export formats timestamps as UTC ISO milliseconds while preview retains epoch numbers")
+    void exportFormatsTimestampsWhilePreviewRetainsEpochs() {
+        TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(testSuiteId);
+        metaTestDataHelper.forceRunCreatedAt(run.getId(), 1_779_704_532_226L);
+        UUID computationId = UUID.randomUUID();
+        EvalSummaryBatchWriteRequestDto writeRequest = EvalSummaryBatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(run.getId())
+                .computationId(computationId)
+                .computedAtMs(1_779_704_533_226L)
+                .items(List.of(buildBasicSummaryItem(UUID.randomUUID(), "timestamp-case")))
+                .build();
+        ResponseEntity<String> writeResponse =
+                restTemplate.postForEntity(apiUrl("/analytics/eval-summaries"), jsonEntity(writeRequest), String.class);
+        assertThat(writeResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        EvalSummaryExportRequestDto request = EvalSummaryExportRequestDto.builder()
+                .runId(run.getId())
+                .columns(List.of("createdAt", "computedAt", "execDurationMs"))
+                .build();
+        ResponseEntity<String> response = restTemplate.postForEntity(exportUrl(), jsonEntity(request), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().split("\\r?\\n"))
+                .containsExactly(
+                        "createdAt,computedAt,execDurationMs", "2026-05-25T10:22:12.226Z,2026-05-25T10:22:13.226Z,150");
+
+        ResponseEntity<List<List<Object>>> preview = restTemplate.exchange(
+                previewUrl(run.getId(), computationId.toString()),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<List<List<Object>>>() {});
+        assertThat(preview.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<List<Object>> rows = preview.getBody();
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(1).get(rows.get(0).indexOf("createdAt"))).isEqualTo(1_779_704_532_226L);
+        assertThat(rows.get(1).get(rows.get(0).indexOf("computedAt"))).isEqualTo(1_779_704_533_226L);
+    }
+
+    @Test
     @DisplayName("Export with an unknown column name returns HTTP 400 listing the offending column")
     void exportUnknownColumnReturns400() {
         TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);

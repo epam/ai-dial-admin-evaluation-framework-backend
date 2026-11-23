@@ -107,8 +107,11 @@ public class EvalSummaryController {
             description = "Streams a UTF-8 CSV of evaluation summaries for the requested run. "
                     + "When `columns` is omitted, returns the full manifest minus `requestBody` "
                     + "and `responseBody`. Listing either body column in `columns` turns on the "
-                    + "test_case_run_results JOIN projection. Use GET /export/preview to discover "
-                    + "the full column manifest.")
+                    + "test_case_run_results JOIN projection. CSV `createdAt` and `computedAt` values are "
+                    + "ISO 8601 UTC with exactly three fractional digits and a trailing `Z` "
+                    + "(for example `2026-05-25T10:22:12.226Z`); null values are empty. "
+                    + "Durations and other columns are unchanged. Use GET /export/preview to discover "
+                    + "the full column manifest; preview timestamps remain epoch-millisecond numbers.")
     @ApiResponse(responseCode = "200", description = "CSV stream")
     @ApiResponse(
             responseCode = "400",

@@ -54,14 +54,14 @@ class AdasCostQueryBuilderTest {
         return String.join(
                 "\n",
                 "WITH tagged AS (",
-                "  SELECT total_price, array_join(split_string(\"usage_request_baggage.baggage\", ',')) AS"
+                "  SELECT deployment_price, array_join(split_string(\"usage_request_baggage.baggage\", ',')) AS"
                         + " testcase_tag",
                 "  FROM dial_usage_log",
                 "  WHERE contains(\"usage_request_baggage.baggage\", 'eval.run.id=" + runId + "')",
                 "    AND contains(\"usage_request_baggage.baggage\", 'eval.phase=" + phase + "')",
                 "),",
                 "per_testcase AS (",
-                "  SELECT testcase_tag, sum(total_price) AS case_cost",
+                "  SELECT testcase_tag, sum(deployment_price) AS case_cost",
                 "  FROM tagged",
                 "  WHERE starts_with(testcase_tag, 'testcase.id=')",
                 "  GROUP BY testcase_tag",
@@ -104,7 +104,7 @@ class AdasCostQueryBuilderTest {
                 .containsExactly(
                         new OutputColumn(new FnExpr("count", false, List.of()), null),
                         new OutputColumn(
-                                new FnExpr("sum", false, List.of(new FieldExpr("total_price"))), "total_cost"));
+                                new FnExpr("sum", false, List.of(new FieldExpr("deployment_price"))), "total_cost"));
     }
 
     @Test
@@ -191,7 +191,7 @@ class AdasCostQueryBuilderTest {
               "group_by": [],
               "select": [
                 { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
-                { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" }
+                { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "deployment_price" } ] }, "as": "total_cost" }
               ]
             }
             """);
@@ -235,7 +235,8 @@ class AdasCostQueryBuilderTest {
                                         new ValueExpr(ValueType.STRING, "other")),
                                 "run_id"),
                         new OutputColumn(new FnExpr("count", false, List.of()), null),
-                        new OutputColumn(new FnExpr("sum", false, List.of(new FieldExpr("total_price"))), "total_cost"),
+                        new OutputColumn(
+                                new FnExpr("sum", false, List.of(new FieldExpr("deployment_price"))), "total_cost"),
                         phaseCostColumn(TracingConstants.PHASE_EXECUTION, "test_case_cost"),
                         phaseCostColumn(TracingConstants.PHASE_METRIC_EVALUATION, "metric_eval_cost"));
     }
@@ -316,7 +317,7 @@ class AdasCostQueryBuilderTest {
                   "as": "run_id"
                 },
                 { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
-                { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" },
+                { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "deployment_price" } ] }, "as": "total_cost" },
                 {
                   "expr": {
                     "type": "fn", "name": "sum", "distinct": false,
@@ -327,7 +328,7 @@ class AdasCostQueryBuilderTest {
                           { "type": "field", "name": "usage_request_baggage.baggage" },
                           { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
                         ]},
-                        "then": { "type": "field", "name": "total_price" }
+                        "then": { "type": "field", "name": "deployment_price" }
                       }],
                       "else": { "type": "value", "value_type": "decimal", "value": "0" }
                     }]
@@ -344,7 +345,7 @@ class AdasCostQueryBuilderTest {
                           { "type": "field", "name": "usage_request_baggage.baggage" },
                           { "type": "value", "value_type": "string", "value": "eval.phase=metric-evaluation" }
                         ]},
-                        "then": { "type": "field", "name": "total_price" }
+                        "then": { "type": "field", "name": "deployment_price" }
                       }],
                       "else": { "type": "value", "value_type": "decimal", "value": "0" }
                     }]
@@ -361,7 +362,7 @@ class AdasCostQueryBuilderTest {
     private static OutputColumn phaseCostColumn(String phase, String alias) {
         CaseExpr phasePrice = new CaseExpr(
                 List.of(new WhenClause(
-                        baggageContains(TracingConstants.EVAL_PHASE + "=" + phase), new FieldExpr("total_price"))),
+                        baggageContains(TracingConstants.EVAL_PHASE + "=" + phase), new FieldExpr("deployment_price"))),
                 new ValueExpr(ValueType.DECIMAL, "0"));
         return new OutputColumn(new FnExpr("sum", false, List.of(phasePrice)), alias);
     }

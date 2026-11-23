@@ -29,7 +29,7 @@ Status: **Implemented**
 - **WHEN** a client requests `POST /api/v1/costs/test-suite-runs` with body `{"runIds": ["R1", "R2"]}`
   where dial-adas has usage rows for both `R1` and `R2`
 - **THEN** the response contains one entry per run id, each with `totalCost` equal to the existing
-  unfiltered sum of `total_price`, `testCaseCost` equal to the sum for rows tagged
+  unfiltered sum of `deployment_price`, `testCaseCost` equal to the sum for rows tagged
   `eval.phase=execution`, and `metricEvalCost` equal to the sum for rows tagged
   `eval.phase=metric-evaluation`
 
@@ -69,7 +69,7 @@ Status: **Implemented**
 #### Scenario: Single dial-adas query regardless of run count
 - **WHEN** the system computes total costs for N requested run ids
 - **THEN** it issues exactly one `"mode": "aggregate"` dial-adas query, selecting a `case`-derived
-  `run_id` alias, `count()`, `sum(total_price)` aliased `total_cost`, and conditional sums aliased
+  `run_id` alias, `count()`, `sum(deployment_price)` aliased `total_cost`, and conditional sums aliased
   `test_case_cost` and `metric_eval_cost`, grouped by `run_id`
 
 #### Scenario: Total spans both cost phases
@@ -88,8 +88,8 @@ Status: **Implemented**
   builds the single aggregate `StructuredQuery` — an OR of per-run `baggageContains(baggageField(),
   "eval.run.id=" + id)` predicates (unwrapped to a single predicate for one run id), no `eval.phase`
   filter, a `run_id`-aliased `CaseExpr` (one `WhenClause` per run id, `else` a constant `"other"`
-  sentinel), plus `count()`, `sum(total_price)` aliased `total_cost`, and
-  `sum(case when baggage contains eval.phase=<phase> then total_price else 0 end)` aliased
+  sentinel), plus `count()`, `sum(deployment_price)` aliased `total_cost`, and
+  `sum(case when baggage contains eval.phase=<phase> then deployment_price else 0 end)` aliased
   `test_case_cost` / `metric_eval_cost`, grouped by the `run_id` alias.
   See `structured-query-model`'s `case` expression kind.
 - Response row shape: `client.dialadas.dto.AdasBatchRunCostRowDto` (`run_id`, `total_cost`,

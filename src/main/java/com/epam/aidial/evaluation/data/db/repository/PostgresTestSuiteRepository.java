@@ -18,6 +18,8 @@ import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -77,6 +79,45 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                 .fetch(recordMapper::map);
 
         return includeTotalCount ? Page.of(content, pageRequest, totalCount) : Page.withoutTotal(content, pageRequest);
+    }
+
+    @Override
+    public List<UUID> findIds(List<FilterCondition> filters) {
+        Condition condition = whereBuilder.build(filters, FilterWhitelists.TEST_SUITES);
+        return dsl.select(TEST_SUITES.ID)
+                .from(TEST_SUITES)
+                .where(condition)
+                .fetch(r -> UUID.fromString(r.get(TEST_SUITES.ID)));
+    }
+
+    @Override
+    public List<TestSuite> findByIds(Collection<UUID> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return dsl.select(
+                        TEST_SUITES.ID,
+                        TEST_SUITES.NAME,
+                        TEST_SUITES.SUITE_TYPE,
+                        TEST_SUITES.DEPLOYMENT_REF,
+                        TEST_SUITES.ROUTES_REF,
+                        TEST_SUITES.MCP_DEPLOYMENT_REF,
+                        TEST_SUITES.TOOL_REF)
+                .from(TEST_SUITES)
+                .where(TEST_SUITES.ID.in(ids.stream().map(UUID::toString).toList()))
+                .fetch(r -> TestSuite.builder()
+                        .id(UUID.fromString(r.get(TEST_SUITES.ID)))
+                        .name(r.get(TEST_SUITES.NAME))
+                        .suiteType(SuiteType.fromValue(r.get(TEST_SUITES.SUITE_TYPE)))
+                        .deploymentRef(jsonData(r.get(TEST_SUITES.DEPLOYMENT_REF)))
+                        .routesRef(jsonData(r.get(TEST_SUITES.ROUTES_REF)))
+                        .mcpDeploymentRef(jsonData(r.get(TEST_SUITES.MCP_DEPLOYMENT_REF)))
+                        .toolRef(jsonData(r.get(TEST_SUITES.TOOL_REF)))
+                        .build());
+    }
+
+    private static String jsonData(JSONB jsonb) {
+        return jsonb != null ? jsonb.data() : null;
     }
 
     @Override

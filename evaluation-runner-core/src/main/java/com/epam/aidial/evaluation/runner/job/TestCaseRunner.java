@@ -156,8 +156,8 @@ public class TestCaseRunner {
                         e.getMessage(),
                         e);
                 try {
-                    TestCaseRunResult synthetic =
-                            testCaseRunResultFactory.errorResult(capturedInput, ri, e, clock.millis());
+                    TestCaseRunResult synthetic = testCaseRunResultFactory.errorResult(
+                            capturedInput, ri, e, context.getSuiteId(), context.getCreatedAtMs(), clock.millis());
                     resultsWriter.addResults(List.of(synthetic));
                 } catch (Exception synthEx) {
                     log.error(

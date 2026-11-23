@@ -31,7 +31,7 @@ Status: **Implemented**
 - **THEN** `passRate` is 0.5, not the pooled value over all test cases
 
 ### Requirement: Eligible runs for a suite
-For each requested suite the system SHALL consider only runs whose status is `COMPLETED` (runs that are PENDING, RUNNING, CANCELLING, FAILED or CANCELLED SHALL never be selected, even when they already have score rows). Among them the latest run SHALL be the one with the greatest run `created_at_ms`, with ties broken by the larger run id, and the previous run SHALL be the completed run ranked immediately after it. A suite with exactly one completed run SHALL contribute to `passRate` only. Each selected run SHALL be read at its latest computation (see `latest-computation-resolution`). A selected run that is soft-deleted, or that has no eval summaries and no `test_case_eval_scores` rows at its latest computation, SHALL contribute nothing for its position; it SHALL NOT be replaced by an older run.
+For each requested suite the system SHALL consider only runs that have a pass-count record (see `run-pass-counts`); such records exist only for runs whose status is `COMPLETED`, so runs that are PENDING, RUNNING, CANCELLING, FAILED or CANCELLED SHALL never be selected, even when they already have score rows. Among them the latest run SHALL be the one with the greatest run `created_at_ms`, with ties broken by the larger run id, and the previous run SHALL be the one ranked immediately after it. A suite with exactly one such run SHALL contribute to `passRate` only. Each selected run SHALL be read at its latest computation. A selected run that is soft-deleted SHALL NOT be eligible. A selected run whose record has a total of 0 SHALL contribute nothing for its position; it SHALL NOT be replaced by an older run. A completed run whose pass counts are not recorded yet SHALL NOT be considered until they are.
 Status: **Implemented**
 
 #### Scenario: Failed or cancelled run is skipped
@@ -43,19 +43,23 @@ Status: **Implemented**
 - **THEN** it is not eligible and is not counted as latest or previous
 
 #### Scenario: Completed run without score rows contributes nothing
-- **WHEN** a suite's newest COMPLETED run has no score rows at its latest computation
+- **WHEN** a suite's newest COMPLETED run has no eval summaries and no score rows at its latest computation, so its pass-count record has a total of 0
 - **THEN** the suite contributes nothing to `passRate`, and the older completed run still counts as the previous run
 
 #### Scenario: Latest computation is used
-- **WHEN** an eligible run has been scored by two computations
-- **THEN** only the rows of its latest computation are counted
+- **WHEN** an eligible run has pass counts for two computations
+- **THEN** only the counts of its latest computation are used
 
 #### Scenario: Deleted run is excluded
 - **WHEN** a run has been deleted (deletion tombstone written, then the run row removed)
 - **THEN** it is not eligible and is not counted as latest or previous
 
+#### Scenario: Completed run not recorded yet
+- **WHEN** a suite's newest COMPLETED run has no pass-count record and its older completed run has one
+- **THEN** the older run is the latest run until the newest run's counts are recorded
+
 ### Requirement: Threshold-aware pass rate per run
-The system SHALL compute a run's pass rate as passed test cases divided by all test cases of its latest computation, where the threshold is the run's `overallScoreThreshold` captured in its suite snapshot. When the run has a threshold, a test case SHALL count as passed if `passed` is true, or if it is a SUCCESS test case with no `passed` value (unscored, including a SUCCESS test case that has no `test_case_eval_scores` row because the writer omits SUCCESS test cases without a numeric sample); a test case with `passed` false and any test case whose `execution_status` is not SUCCESS SHALL count as not passed. When the run has no threshold (including a run with no snapshot), every test case whose `execution_status` is SUCCESS SHALL count as passed and every other test case as not passed. The denominator SHALL include every test case of the run's latest computation, counted once however many eval-summary rows (repetitions, turns, requests) it has: the distinct test cases of `test_case_eval_summaries` full-joined with `test_case_eval_scores`, where a test case with no score row is an unscored SUCCESS test case.
+The system SHALL compute a run's pass rate as the passed count divided by the total count of the run's pass-count record at its latest computation, as defined by the pass rule of `run-pass-counts`: a test case counts once however many eval-summary rows it has; it counts as passed when all its eval-summary rows are SUCCESS and it is not scored below the threshold (`passed` false); a test case with `passed` false and any test case with a non-SUCCESS execution SHALL count as not passed, whether or not it has a `test_case_eval_scores` row. A run without a threshold (including a run with no snapshot) has no `passed` values, so every SUCCESS test case SHALL count as passed and every other test case as not passed.
 Status: **Implemented**
 
 #### Scenario: Threshold set, mixed outcomes
@@ -69,6 +73,14 @@ Status: **Implemented**
 #### Scenario: No threshold, FAILED and omitted SUCCESS
 - **WHEN** a run has no threshold, 1 FAILED test case and 1 SUCCESS test case without a score row
 - **THEN** its pass rate is 0.5
+
+#### Scenario: Failed test case without a score row
+- **WHEN** a suite has no per-test-case score definition and its run has 1 test case with a non-SUCCESS eval summary and 1 SUCCESS test case, neither with a score row
+- **THEN** its pass rate is 0.5
+
+#### Scenario: Metric error without a score row
+- **WHEN** a run's test case executed successfully but a metric failed, so its eval-summary row is not SUCCESS, and it has no score row
+- **THEN** it counts in the denominator and not as passed
 
 #### Scenario: Several summary rows per test case
 - **WHEN** a test case has several eval-summary rows (repetitions, turns or requests)
@@ -111,12 +123,12 @@ Status: **Implemented**
 - **THEN** the suite is counted once
 
 ### Requirement: Datasource separation
-The system SHALL select each suite's latest completed runs from the meta datasource (run status lives only there) through the owning domain service, then read analytics data (each run's latest computation, test-case counts) in one read-only analytics transaction, and SHALL read run thresholds from the meta datasource again, outside that transaction. A meta query SHALL NOT execute inside the analytics transaction.
+The system SHALL compute the summary from the analytics datasource alone: each suite's latest two recorded runs and their pass counts are read in one read-only analytics transaction. The summary SHALL NOT query the meta datasource.
 Status: **Implemented**
 
 #### Scenario: Meta read outside the analytics transaction
 - **WHEN** the summary is computed
-- **THEN** the completed runs are selected before, and the thresholds are fetched after, the analytics transaction
+- **THEN** only the analytics datasource is queried, so no meta query runs inside or around the analytics transaction
 
 ### Requirement: OpenAPI documentation
 The endpoint SHALL be documented with request and response examples (minimal and full) under `src/main/resources/openapi/examples/` named for the registered path `/api/v1/analytics/test-suites/pass-rate`, and those examples SHALL appear in `/v3/api-docs`.
@@ -126,4 +138,4 @@ Status: **Implemented**
 - **WHEN** `/v3/api-docs` is requested
 - **THEN** the operation `POST /api/v1/analytics/test-suites/pass-rate` carries the request and `200` response examples
 
-**Implementation notes:** `SuitePassRateController` (`web.controller`), `SuitePassRateService` and `PassRateCalculator` (`service.domain.analytics`); `TestSuiteRunService.getLatestCompletedRunIdsBySuite` (backed by `TestSuiteRunRepository.findLatestCompletedRunIds`, a per-suite `row_number()` over `status = 'COMPLETED'`) selects the runs; `EvalSummaryRepository.findLatestComputationIds` resolves each run's latest computation (`computed_at_ms DESC, computation_id ASC`, same as `ComputationResolver`); `TestCaseEvalScoreRepository.countByRunAndComputation` counts; `TestSuiteRunService.getThresholdsByRunIds` reads the thresholds.
+**Implementation notes:** `SuitePassRateController` (`web.controller`), `SuitePassRateService` and `PassRateCalculator` (`service.domain.analytics`); each suite's latest two recorded runs come from `RunPassCountService.getLatestRecordedRuns` (backed by `RunPassCountRepository.findLatestRanked`, tombstone-filtered, each run at its latest computation) inside one read-only analytics transaction; the pass rule and the stored counts are defined by `run-pass-counts`.

@@ -97,10 +97,12 @@ import com.epam.aidial.evaluation.functional.tests.RunComparisonFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunComparisonRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunDeletionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RunPassCountFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RunPassCountReconciliationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SkillFieldFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuitePassRateEndpointFunctionalTests;
-import com.epam.aidial.evaluation.functional.tests.SuitePassRateRepositoryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.SuiteRunTrendFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationBindingFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationFileRefFunctionalTests;
@@ -139,6 +141,7 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
 import com.epam.aidial.evaluation.runner.client.dialcore.dto.DialFileMetadataDto;
 import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.job.EvaluationWorker;
 import com.epam.aidial.evaluation.service.domain.MetricProviderSyncJob;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
@@ -168,6 +171,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.NestedTestConfiguration;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -182,7 +186,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
             "config.rest.security.mode=none",
             "spring.http.client.factory=jdk",
             "dial.api-key=test-api-key",
-            "revalidation.batch-size=2"
+            "revalidation.batch-size=2",
+            "analytics.run-pass-counts.reconciliation.enabled=false"
         })
 @Import(PostgresFunctionalTestConfiguration.class)
 @NestedTestConfiguration(NestedTestConfiguration.EnclosingConfiguration.INHERIT)
@@ -213,6 +218,10 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @MockitoBean
     private DialFileClient dialFileClient;
+
+    /** Spy (real behaviour unless stubbed) so a test can make the worker itself throw for one test case. */
+    @MockitoSpyBean
+    private EvaluationWorker evaluationWorker;
 
     private final Map<String, byte[]> dialFileStore = new ConcurrentHashMap<>();
     private final Map<String, DialFileMetadataDto> dialMetadataStore = new ConcurrentHashMap<>();
@@ -760,9 +769,6 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class PostgresTestCaseEvalScoreRepositoryTests extends PostgresTestCaseEvalScoreRepositoryFunctionalTests {}
 
     @Nested
-    class SuitePassRateRepositoryTests extends SuitePassRateRepositoryFunctionalTests {}
-
-    @Nested
     class SuitePassRateEndpointTests extends SuitePassRateEndpointFunctionalTests {}
 
     @Nested
@@ -940,4 +946,13 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class RunDeletionTests extends RunDeletionFunctionalTests {}
+
+    @Nested
+    class SuiteRunTrendTests extends SuiteRunTrendFunctionalTests {}
+
+    @Nested
+    class RunPassCountTests extends RunPassCountFunctionalTests {}
+
+    @Nested
+    class RunPassCountReconciliationTests extends RunPassCountReconciliationFunctionalTests {}
 }

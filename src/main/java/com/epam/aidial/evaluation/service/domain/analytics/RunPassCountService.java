@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.data.db.analytics.model.LatestComputation;
 import com.epam.aidial.evaluation.data.db.analytics.model.PassCountTotals;
 import com.epam.aidial.evaluation.data.db.analytics.model.RecordedComputation;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunPassCount;
+import com.epam.aidial.evaluation.data.db.analytics.model.WeeklySuiteHealth;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunPassCountRepository;
 import com.epam.aidial.evaluation.data.db.model.CompletedRunKey;
@@ -93,6 +94,16 @@ public class RunPassCountService {
      */
     public Page<RunPassCount> getLatestPage(Collection<UUID> suiteIds, PageRequest pageRequest) {
         return runPassCountRepository.findLatestPage(suiteIds, pageRequest);
+    }
+
+    /**
+     * Per week of {@code [startMs, endMs)}, the healthy and failing suite counts at the given pass-rate threshold
+     * (see {@link RunPassCountRepository#findWeeklySuiteHealth}); weeks without counted suites are absent. A null
+     * {@code suiteIds} means all suites; an empty collection means none. A single statement, no transaction.
+     */
+    public List<WeeklySuiteHealth> getWeeklySuiteHealth(
+            Collection<UUID> suiteIds, long startMs, long endMs, double threshold) {
+        return runPassCountRepository.findWeeklySuiteHealth(suiteIds, startMs, endMs, threshold);
     }
 
     /**

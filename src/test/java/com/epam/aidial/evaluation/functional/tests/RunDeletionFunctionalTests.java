@@ -2,9 +2,11 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.constants.AnalyticsConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseMetricScoreAggregated;
+import com.epam.aidial.evaluation.data.db.analytics.model.WeeklySuiteHealth;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunPassCountRepository;
@@ -132,6 +134,56 @@ public abstract class RunDeletionFunctionalTests {
         runDeletionService.markDeleted(run.getId());
 
         assertHidden(rows);
+    }
+
+    @Test
+    @DisplayName("Weekly suite health: after a run delete only the control run's suite is counted")
+    void weeklySuiteHealthExcludesDeletedRun() {
+        var deletedSuite = createSuite();
+        var controlSuite = createSuite();
+        var deletedRun = metaTestDataHelper.createTestSuiteRun(deletedSuite.getId(), RunStatus.COMPLETED, RUN_CONFIG);
+        var controlRun = metaTestDataHelper.createTestSuiteRun(controlSuite.getId(), RunStatus.COMPLETED, RUN_CONFIG);
+        seedPassCount(deletedRun.getId(), deletedSuite.getId());
+        seedPassCount(controlRun.getId(), controlSuite.getId());
+        var suiteIds = List.of(deletedSuite.getId(), controlSuite.getId());
+        assertThat(countedSuites(suiteIds)).isEqualTo(2);
+
+        testSuiteRunService.deleteRun(deletedRun.getId());
+
+        assertThat(countedSuites(suiteIds)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Weekly suite health: after a suite delete only the control run's suite is counted")
+    void weeklySuiteHealthExcludesDeletedSuite() {
+        var deletedSuite = createSuite();
+        var controlSuite = createSuite();
+        var deletedRun = metaTestDataHelper.createTestSuiteRun(deletedSuite.getId(), RunStatus.COMPLETED, RUN_CONFIG);
+        var controlRun = metaTestDataHelper.createTestSuiteRun(controlSuite.getId(), RunStatus.COMPLETED, RUN_CONFIG);
+        seedPassCount(deletedRun.getId(), deletedSuite.getId());
+        seedPassCount(controlRun.getId(), controlSuite.getId());
+        var suiteIds = List.of(deletedSuite.getId(), controlSuite.getId());
+        assertThat(countedSuites(suiteIds)).isEqualTo(2);
+
+        testSuiteService.delete(deletedSuite.getId());
+
+        assertThat(countedSuites(suiteIds)).isEqualTo(1);
+    }
+
+    /** Suites counted (healthy plus failing, all weeks) by the weekly health read over a range around now. */
+    private int countedSuites(List<UUID> suiteIds) {
+        final long now = System.currentTimeMillis();
+        return runPassCountRepository
+                .findWeeklySuiteHealth(
+                        suiteIds, now - AnalyticsConstants.WEEK_MS, now + AnalyticsConstants.WEEK_MS, 0.5)
+                .stream()
+                .mapToInt((WeeklySuiteHealth w) -> w.healthyCount() + w.failingCount())
+                .sum();
+    }
+
+    private void seedPassCount(UUID runId, UUID suiteId) {
+        final long now = System.currentTimeMillis();
+        analyticsTestDataHelper.createRunPassCount(runId, suiteId, UUID.randomUUID(), now, 1, 1, now);
     }
 
     /** Ids of the rows seeded for one run, so each read path can be probed for exactly those rows. */

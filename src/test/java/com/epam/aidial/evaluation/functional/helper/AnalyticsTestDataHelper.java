@@ -51,11 +51,6 @@ public class AnalyticsTestDataHelper {
                 .execute();
     }
 
-    public long countRunPassCounts() {
-        Long count = analyticsDsl.selectCount().from(RUN_PASS_COUNTS).fetchOne(0, Long.class);
-        return count != null ? count : 0L;
-    }
-
     @Transactional("analyticsTransactionManager")
     public void cleanupRunPassCounts() {
         analyticsDsl.deleteFrom(RUN_PASS_COUNTS).execute();

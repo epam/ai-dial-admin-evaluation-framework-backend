@@ -149,14 +149,15 @@ public abstract class RunPassCountReconciliationFunctionalTests extends BaseFunc
     @DisplayName("a second pass changes nothing")
     void secondPassChangesNothing() {
         final UUID runId = completedRun();
-        summary(runId, UUID.randomUUID(), ExecutionStatus.SUCCESS, OLD);
+        final UUID computationId = UUID.randomUUID();
+        summary(runId, computationId, ExecutionStatus.SUCCESS, OLD);
         job.reconcile();
-        final long rowsAfterFirst = analyticsTestDataHelper.countRunPassCounts();
+        assertThat(recorded(runId)).containsExactlyInAnyOrder(new RecordedComputation(runId, computationId));
 
         final int writtenBySecond = job.reconcile();
 
         assertThat(writtenBySecond).isZero();
-        assertThat(analyticsTestDataHelper.countRunPassCounts()).isEqualTo(rowsAfterFirst);
+        assertThat(recorded(runId)).containsExactlyInAnyOrder(new RecordedComputation(runId, computationId));
     }
 
     @Test

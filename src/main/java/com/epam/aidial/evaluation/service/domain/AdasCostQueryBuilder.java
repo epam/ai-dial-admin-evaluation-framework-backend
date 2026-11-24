@@ -40,7 +40,18 @@ public class AdasCostQueryBuilder {
 
     private static final String ENTITY = "dial_usage_log";
     private static final String BAGGAGE_FIELD = "usage_request_baggage.baggage";
+    /**
+     * Run-scoped queries match every usage row tagged with the run's baggage, so an application's own row
+     * and its nested model rows can both match; summing the leaf {@code deployment_price} avoids counting
+     * the same spend twice.
+     */
+    private static final String DEPLOYMENT_PRICE_FIELD = "deployment_price";
+    /**
+     * Deployment-scoped queries filter on {@code deployment}, so nested rows are never included. Applications
+     * have a {@code total_price} but no {@code deployment_price}, hence this field.
+     */
     private static final String TOTAL_PRICE_FIELD = "total_price";
+
     private static final String TOTAL_COST_ALIAS = "total_cost";
     private static final String TEST_CASE_COST_ALIAS = "test_case_cost";
     private static final String METRIC_EVAL_COST_ALIAS = "metric_eval_cost";
@@ -51,13 +62,13 @@ public class AdasCostQueryBuilder {
 
     private static final String AVG_COST_PER_TEST_CASE_SQL_TEMPLATE = """
         WITH tagged AS (
-          SELECT total_price, array_join(split_string("usage_request_baggage.baggage", ',')) AS testcase_tag
+          SELECT deployment_price, array_join(split_string("usage_request_baggage.baggage", ',')) AS testcase_tag
           FROM dial_usage_log
           WHERE contains("usage_request_baggage.baggage", '%s')
             AND contains("usage_request_baggage.baggage", '%s')
         ),
         per_testcase AS (
-          SELECT testcase_tag, sum(total_price) AS case_cost
+          SELECT testcase_tag, sum(deployment_price) AS case_cost
           FROM tagged
           WHERE starts_with(testcase_tag, '%s')
           GROUP BY testcase_tag
@@ -68,7 +79,7 @@ public class AdasCostQueryBuilder {
 
     /**
      * Builds the raw SQL query for {@link com.epam.aidial.evaluation.client.dialadas.DialAdasClient#executeSql}
-     * that sums each test case's {@code total_price} within the given run and phase, then averages those
+     * that sums each test case's {@code deployment_price} within the given run and phase, then averages those
      * per-test-case sums — a two-level aggregation dial-adas's structured JSON query DSL cannot express in
      * one call. Output columns are aliased {@code avg_cost}/{@code count} to match
      * {@link com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto} exactly, the same row DTO
@@ -125,7 +136,8 @@ public class AdasCostQueryBuilder {
         List<OutputColumn> select = List.of(
                 runIdColumn,
                 new OutputColumn(new FnExpr("count", false, List.of()), null),
-                new OutputColumn(new FnExpr("sum", false, List.of(new FieldExpr(TOTAL_PRICE_FIELD))), TOTAL_COST_ALIAS),
+                new OutputColumn(
+                        new FnExpr("sum", false, List.of(new FieldExpr(DEPLOYMENT_PRICE_FIELD))), TOTAL_COST_ALIAS),
                 phaseCostColumn(baggageValue, EvalPhase.EXECUTION, TEST_CASE_COST_ALIAS),
                 phaseCostColumn(baggageValue, EvalPhase.METRIC_EVALUATION, METRIC_EVAL_COST_ALIAS));
 
@@ -148,7 +160,7 @@ public class AdasCostQueryBuilder {
         CaseExpr phasePrice = new CaseExpr(
                 List.of(new WhenClause(
                         baggageContains(baggageValue, TracingConstants.EVAL_PHASE + "=" + phase.getValue()),
-                        new FieldExpr(TOTAL_PRICE_FIELD))),
+                        new FieldExpr(DEPLOYMENT_PRICE_FIELD))),
                 new ValueExpr(ValueType.DECIMAL, "0"));
         return new OutputColumn(new FnExpr("sum", false, List.of(phasePrice)), alias);
     }

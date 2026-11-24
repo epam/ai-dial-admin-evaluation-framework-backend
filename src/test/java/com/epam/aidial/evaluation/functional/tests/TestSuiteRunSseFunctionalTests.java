@@ -170,7 +170,9 @@ public abstract class TestSuiteRunSseFunctionalTests extends BaseFunctionalTest 
             } else if (line.startsWith("event:")) {
                 name = line.substring("event:".length()).trim();
             } else if (line.startsWith("data:")) {
-                data.append(line.substring("data:".length()));
+                // SSE permits one optional space after the colon; it is not part of the data.
+                final String value = line.substring("data:".length());
+                data.append(value.startsWith(" ") ? value.substring(1) : value);
             }
         }
     }

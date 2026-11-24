@@ -4,7 +4,7 @@ plugins {
     id 'java'
     id 'checkstyle'
     id 'io.freefair.lombok' version '9.8.2'
-    id 'org.springframework.boot' version '4.1.2' apply false
+    id 'org.springframework.boot' version '4.2.0' apply false
     id 'com.diffplug.spotless' version '8.10.4'
 }
 
@@ -36,13 +36,6 @@ configurations {
     configureEach {
         exclude group: 'commons-logging', module: 'commons-logging'
         exclude group: "org.springframework.boot", module: "spring-boot-starter-logging"
-    }
-    configureEach {
-        resolutionStrategy {
-            // Pin json-schema-validator to the Jackson 3-native line (3.x); MCP SDK pulls an
-            // older Jackson 2 build that is incompatible with the tools.jackson migration
-            force 'com.networknt:json-schema-validator:3.0.8'
-        }
     }
 }
 
@@ -80,12 +73,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-aspectj'
 
     // Logging
-    implementation('org.springframework.boot:spring-boot-starter-log4j2') {
-        exclude group: 'org.apache.logging.log4j'
-    }
-    implementation "org.apache.logging.log4j:log4j-slf4j2-impl:${log4j_version}"
-    implementation "org.apache.logging.log4j:log4j-core:${log4j_version}"
-    implementation "org.apache.logging.log4j:log4j-jul:${log4j_version}"
+    implementation 'org.springframework.boot:spring-boot-starter-log4j2'
     implementation 'org.slf4j:jcl-over-slf4j'
 
     // Metrics & Monitoring (OTel)
@@ -119,7 +107,7 @@ dependencies {
     implementation 'com.networknt:json-schema-validator:3.0.8'
 
     // Utilities
-    implementation 'org.apache.commons:commons-lang3:3.21.0'
+    implementation 'org.apache.commons:commons-lang3'
     implementation 'org.apache.commons:commons-text:1.15.0'
     implementation 'org.apache.commons:commons-collections4:4.6.0'
     compileOnly 'org.jetbrains:annotations:26.1.0'

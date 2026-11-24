@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.ResolvableType;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
@@ -56,13 +57,19 @@ public class JsonMapperConfiguration {
      * string"). Declining {@code String.class} lets {@code StringHttpMessageConverter} write it
      * verbatim. The {@code STREAMABLE} transport answers POSTs over SSE and never hit this path.
      * Verified by {@code McpServerStatelessFunctionalTests}.
+     *
+     * <p>Spring Framework 7.1 also puts custom converters before the default multipart part
+     * converters. Declining {@code Resource} values lets {@code ResourceHttpMessageConverter}
+     * stream file parts instead of attempting to serialize resource metadata as JSON.
      */
     @Bean
     public JacksonJsonHttpMessageConverter jacksonJsonHttpMessageConverter(JsonMapper objectMapper) {
         return new JacksonJsonHttpMessageConverter(objectMapper) {
             @Override
             public boolean canWrite(ResolvableType targetType, Class<?> valueType, MediaType mediaType) {
-                if (byte[].class.equals(valueType) || String.class.equals(valueType)) {
+                if (byte[].class.equals(valueType)
+                        || String.class.equals(valueType)
+                        || (valueType != null && Resource.class.isAssignableFrom(valueType))) {
                     return false;
                 }
                 return super.canWrite(targetType, valueType, mediaType);

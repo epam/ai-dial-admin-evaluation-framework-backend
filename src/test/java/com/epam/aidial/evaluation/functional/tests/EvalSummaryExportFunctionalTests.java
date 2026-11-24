@@ -111,8 +111,8 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName("Export formats timestamps as UTC ISO milliseconds while preview retains epoch numbers")
-    void exportFormatsTimestampsWhilePreviewRetainsEpochs() {
+    @DisplayName("Export and preview format timestamps as UTC ISO milliseconds while preserving numeric duration")
+    void exportAndPreviewFormatTimestamps() {
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(testSuiteId);
         metaTestDataHelper.forceRunCreatedAt(run.getId(), 1_779_704_532_226L);
         UUID computationId = UUID.randomUUID();
@@ -145,8 +145,9 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         assertThat(preview.getStatusCode()).isEqualTo(HttpStatus.OK);
         List<List<Object>> rows = preview.getBody();
         assertThat(rows).hasSize(2);
-        assertThat(rows.get(1).get(rows.get(0).indexOf("createdAt"))).isEqualTo(1_779_704_532_226L);
-        assertThat(rows.get(1).get(rows.get(0).indexOf("computedAt"))).isEqualTo(1_779_704_533_226L);
+        assertThat(rows.get(1).get(rows.get(0).indexOf("createdAt"))).isEqualTo("2026-05-25T10:22:12.226Z");
+        assertThat(rows.get(1).get(rows.get(0).indexOf("computedAt"))).isEqualTo("2026-05-25T10:22:13.226Z");
+        assertThat(rows.get(1).get(rows.get(0).indexOf("execDurationMs"))).isEqualTo(150);
     }
 
     @Test

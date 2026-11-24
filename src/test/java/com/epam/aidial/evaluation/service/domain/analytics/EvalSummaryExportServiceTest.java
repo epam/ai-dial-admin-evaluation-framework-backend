@@ -14,10 +14,12 @@ import com.epam.aidial.evaluation.configuration.properties.csv.CsvExportProperti
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.ResponseColumnUnionResolver;
@@ -54,9 +56,11 @@ class EvalSummaryExportServiceTest {
         ComputationResolver computationResolver = mock(ComputationResolver.class);
         FilterParser filterParser = mock(FilterParser.class);
         ObjectMapper mapper = new ObjectMapper();
-        SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
-                .testCaseSchema(
-                        List.of(FieldDefinitionDto.builder().name("timestamp").build()))
+        final SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                .testCaseSchema(List.of(
+                        FieldDefinitionDto.builder().name("timestamp").build(),
+                        FieldDefinitionDto.builder().name("enabled").build(),
+                        FieldDefinitionDto.builder().name("metadata").build()))
                 .build();
         TestSuiteRun run = TestSuiteRun.builder()
                 .id(runId)
@@ -65,7 +69,12 @@ class EvalSummaryExportServiceTest {
                 .suiteSnapshot(mapper.writeValueAsString(snapshot))
                 .build();
         when(runs.findById(runId)).thenReturn(Optional.of(run));
-        when(metrics.findByRunId(runId)).thenReturn(List.of());
+        when(metrics.findByRunId(runId))
+                .thenReturn(List.of(RunMetricSnapshot.builder()
+                        .computationId(computationId)
+                        .tsmdName("Accuracy")
+                        .outputSchema("schema")
+                        .build()));
         when(computationResolver.resolve(null, runId)).thenReturn(Optional.of(computationId));
         when(filterParser.parse(anyList())).thenReturn(List.of());
         CursorPage<EvalSummary> page = new CursorPage<>(
@@ -74,7 +83,13 @@ class EvalSummaryExportServiceTest {
                                 .createdAtMs(0L)
                                 .computedAtMs(-1L)
                                 .execDurationMs(42L)
-                                .testCaseData("{\"timestamp\":1779704532226}")
+                                .metricEvalDurationMs(43L)
+                                .responseStatusCode(200)
+                                .testCaseData("{\"timestamp\":1779704532226,\"enabled\":true,\"metadata\":{}}")
+                                .extractedColumns("{\"answer\":1779704532226}")
+                                .metricValues("{\"Accuracy\":{\"score\":1779704532226}}")
+                                .metricInfos("{\"Accuracy\":{\"score\":{\"reason\":\"matches\"}}}")
+                                .extractionWarnings("[]")
                                 .build(),
                         EvalSummary.builder()
                                 .createdAtMs(null)
@@ -92,8 +107,13 @@ class EvalSummaryExportServiceTest {
         when(tx.getTransaction(any())).thenAnswer(invocation -> new SimpleTransactionStatus());
         CsvExportProperties properties = new CsvExportProperties();
         properties.setPageSize(100);
-        EvalSummaryExportColumnPlanner planner = new EvalSummaryExportColumnPlanner(
-                mock(OutputSchemaFieldExtractor.class), mock(ResponseColumnUnionResolver.class));
+        final OutputSchemaFieldExtractor extractor = mock(OutputSchemaFieldExtractor.class);
+        when(extractor.extractFieldNames("schema")).thenReturn(List.of("score"));
+        final ResponseColumnUnionResolver unionResolver = mock(ResponseColumnUnionResolver.class);
+        when(unionResolver.unionFrom(any(SuiteSnapshotDto.class)))
+                .thenReturn(List.of(
+                        ResponseColumnDefinitionDto.builder().name("answer").build()));
+        final EvalSummaryExportColumnPlanner planner = new EvalSummaryExportColumnPlanner(extractor, unionResolver);
         service = new EvalSummaryExportService(
                 runs,
                 metrics,
@@ -135,16 +155,27 @@ class EvalSummaryExportServiceTest {
     }
 
     @Test
-    @DisplayName("JSON preview retains numeric timestamp and duration values")
-    void previewKeepsNumbers() {
-        List<List<Object>> preview = service.previewAsJson(runId, null, null);
-        List<Object> headers = preview.get(0);
-        List<Object> first = preview.get(1);
-        assertThat(first.get(headers.indexOf("createdAt"))).isEqualTo(0L);
-        assertThat(first.get(headers.indexOf("computedAt"))).isEqualTo(-1L);
+    @DisplayName("JSON preview formats only non-null timestamps and preserves typed values")
+    void previewFormatsOnlyTimestamps() {
+        final List<List<Object>> preview = service.previewAsJson(runId, null, null);
+        final List<Object> headers = preview.get(0);
+        final List<Object> first = preview.get(1);
+        final ObjectMapper mapper = new ObjectMapper();
+        assertThat(first.get(headers.indexOf("createdAt"))).isEqualTo("1970-01-01T00:00:00.000Z");
+        assertThat(first.get(headers.indexOf("computedAt"))).isEqualTo("1969-12-31T23:59:59.999Z");
         assertThat(first.get(headers.indexOf("execDurationMs"))).isEqualTo(42L);
+        assertThat(first.get(headers.indexOf("metricEvalDurationMs"))).isEqualTo(43L);
+        assertThat(first.get(headers.indexOf("responseStatusCode"))).isEqualTo(200);
+        assertThat(first.get(headers.indexOf("data::timestamp"))).isEqualTo(mapper.readTree("1779704532226"));
+        assertThat(first.get(headers.indexOf("data::enabled"))).isEqualTo(mapper.readTree("true"));
+        assertThat(first.get(headers.indexOf("data::metadata"))).isEqualTo(mapper.readTree("{}"));
+        assertThat(first.get(headers.indexOf("response::answer"))).isEqualTo(mapper.readTree("1779704532226"));
+        assertThat(first.get(headers.indexOf("metric::Accuracy::score"))).isEqualTo(mapper.readTree("1779704532226"));
+        assertThat(first.get(headers.indexOf("metricInfo::Accuracy::score")))
+                .isEqualTo(mapper.readTree("{\"reason\":\"matches\"}"));
+        assertThat(first.get(headers.indexOf("extractionWarnings"))).isEqualTo(mapper.readTree("[]"));
         assertThat(preview.get(2).get(headers.indexOf("createdAt"))).isNull();
-        assertThat(preview.get(2).get(headers.indexOf("computedAt"))).isEqualTo(1779704532226L);
+        assertThat(preview.get(2).get(headers.indexOf("computedAt"))).isEqualTo("2026-05-25T10:22:12.226Z");
     }
 
     private List<CSVRecord> export(List<String> columns) throws IOException {

@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.runner.job;
 
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.ANNOTATIONS;
+
 import java.util.Map;
 import java.util.Objects;
 import tools.jackson.databind.JsonNode;
@@ -30,7 +32,7 @@ final class JsonObjectDeltaAccumulator {
         for (final Map.Entry<String, JsonNode> entry : delta.properties()) {
             final String key = entry.getKey();
             final JsonNode value = entry.getValue();
-            if (arrayMode == ArrayMergeMode.APPEND && "annotations".equals(key) && value.isArray()) {
+            if (arrayMode == ArrayMergeMode.APPEND && ANNOTATIONS.equals(key) && value.isArray()) {
                 final ArrayNode annotations =
                         merged.get(key) instanceof ArrayNode array ? array : JsonNodeFactory.instance.arrayNode();
                 AnnotationDeltaAccumulator.merge(annotations, value);

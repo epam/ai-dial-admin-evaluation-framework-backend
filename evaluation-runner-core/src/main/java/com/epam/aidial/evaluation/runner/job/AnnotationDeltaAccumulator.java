@@ -1,5 +1,15 @@
 package com.epam.aidial.evaluation.runner.job;
 
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.BODY;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.HTML_TAG;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.ID;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.INDEX;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.QUOTE;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.SELECTOR;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.TARGET;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.TITLE;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.TYPE;
+
 import java.util.HashMap;
 import java.util.Map;
 import tools.jackson.databind.JsonNode;
@@ -29,7 +39,7 @@ final class AnnotationDeltaAccumulator {
             if (existing == null) {
                 final JsonNode copy = element.deepCopy();
                 if (identity != null && copy instanceof ObjectNode object) {
-                    removeEmptyBodyText(object.get("body"));
+                    removeEmptyBodyText(object.get(BODY));
                 }
                 target.add(copy);
                 if (identity != null) {
@@ -42,22 +52,22 @@ final class AnnotationDeltaAccumulator {
     }
 
     private static Identity identity(ObjectNode object) {
-        final JsonNode index = object.get("index");
+        final JsonNode index = object.get(INDEX);
         if (index != null && index.isIntegralNumber() && !index.asString().startsWith("-")) {
-            return new Identity("index", index.asString());
+            return new Identity(INDEX, index.asString());
         }
-        final JsonNode target = object.get("target");
-        final JsonNode selector = target != null && target.isObject() ? target.get("selector") : null;
+        final JsonNode target = object.get(TARGET);
+        final JsonNode selector = target != null && target.isObject() ? target.get(SELECTOR) : null;
         if (selector != null && selector.isObject()) {
-            final JsonNode type = selector.get("type");
-            final JsonNode id = selector.get("id");
+            final JsonNode type = selector.get(TYPE);
+            final JsonNode id = selector.get(ID);
             if (type != null
                     && type.isString()
-                    && "html_tag".equals(type.asString())
+                    && HTML_TAG.equals(type.asString())
                     && id != null
                     && id.isString()
                     && !id.asString().isEmpty()) {
-                return new Identity("selector", id.asString());
+                return new Identity(SELECTOR, id.asString());
             }
         }
         return null;
@@ -65,7 +75,7 @@ final class AnnotationDeltaAccumulator {
 
     private static void removeEmptyBodyText(JsonNode body) {
         if (body instanceof ObjectNode object) {
-            for (final String key : new String[] {"title", "quote"}) {
+            for (final String key : new String[] {TITLE, QUOTE}) {
                 final JsonNode value = object.get(key);
                 if (value != null && value.isString() && value.asString().isEmpty()) {
                     object.remove(key);
@@ -82,7 +92,7 @@ final class AnnotationDeltaAccumulator {
                 continue;
             }
             final JsonNode existing = target.get(key);
-            if (body && ("title".equals(key) || "quote".equals(key)) && value.isString()) {
+            if (body && (TITLE.equals(key) || QUOTE.equals(key)) && value.isString()) {
                 if (value.asString().isEmpty()) {
                     continue;
                 }
@@ -92,14 +102,14 @@ final class AnnotationDeltaAccumulator {
                 }
             }
             if (value.isObject() && existing instanceof ObjectNode existingObject) {
-                mergeObject(existingObject, value, false, root && "body".equals(key));
+                mergeObject(existingObject, value, false, root && BODY.equals(key));
             } else if (value.isArray() && existing instanceof ArrayNode existingArray) {
                 for (final JsonNode element : value) {
                     existingArray.add(element.deepCopy());
                 }
             } else {
                 final JsonNode copy = value.deepCopy();
-                if (root && "body".equals(key)) {
+                if (root && BODY.equals(key)) {
                     removeEmptyBodyText(copy);
                 }
                 target.set(key, copy);

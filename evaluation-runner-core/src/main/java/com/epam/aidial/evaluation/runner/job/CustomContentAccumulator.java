@@ -1,5 +1,16 @@
 package com.epam.aidial.evaluation.runner.job;
 
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.ANNOTATIONS;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.ATTACHMENTS;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.CONTENT;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.DATA;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.FORM_SCHEMA;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.INDEX;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.NAME;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.STAGES;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.STATE;
+import static com.epam.aidial.evaluation.runner.constants.StreamingExtensionFields.TITLE;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -12,10 +23,6 @@ import tools.jackson.databind.node.ObjectNode;
 /** Accumulates custom-content deltas using scoped policies for stages, annotations and snapshots. */
 final class CustomContentAccumulator {
 
-    private static final String ATTACHMENTS = "attachments";
-    private static final String STAGES = "stages";
-    private static final String ANNOTATIONS = "annotations";
-    private static final String INDEX = "index";
     private final ObjectNode merged = JsonNodeFactory.instance.objectNode();
 
     void accumulate(JsonNode customContent) {
@@ -35,7 +42,7 @@ final class CustomContentAccumulator {
                         merged.get(key) instanceof ArrayNode array ? array : JsonNodeFactory.instance.arrayNode();
                 AnnotationDeltaAccumulator.merge(annotations, value);
                 merged.set(key, annotations);
-            } else if (("state".equals(key) || "form_schema".equals(key)) && value.isObject()) {
+            } else if ((STATE.equals(key) || FORM_SCHEMA.equals(key)) && value.isObject()) {
                 merged.set(key, value.deepCopy());
             } else {
                 mergeGenericField(merged, key, value);
@@ -89,7 +96,7 @@ final class CustomContentAccumulator {
         }
         final ObjectNode copy = object.deepCopy();
         if (incoming && stage) {
-            removeEmptyText(copy, "name", "content");
+            removeEmptyText(copy, NAME, CONTENT);
             final JsonNode attachments = copy.get(ATTACHMENTS);
             if (attachments != null && attachments.isArray()) {
                 copy.remove(ATTACHMENTS);
@@ -110,7 +117,7 @@ final class CustomContentAccumulator {
         for (final Map.Entry<String, JsonNode> entry : source.properties()) {
             final String key = entry.getKey();
             final JsonNode value = entry.getValue();
-            if ("name".equals(key) || "content".equals(key)) {
+            if (NAME.equals(key) || CONTENT.equals(key)) {
                 mergeText(target, key, value);
             } else if (ATTACHMENTS.equals(key) && value != null && value.isArray()) {
                 mergeStageAttachments(target, value);
@@ -137,7 +144,7 @@ final class CustomContentAccumulator {
             final ObjectNode existing = index != null && index.isNumber() ? indexed.get(index.asInt()) : null;
             if (existing == null) {
                 final ObjectNode copy = object.deepCopy();
-                removeEmptyText(copy, "title", "data");
+                removeEmptyText(copy, TITLE, DATA);
                 if (index != null && index.isNumber()) {
                     indexed.put(index.asInt(), copy);
                 } else {
@@ -146,7 +153,7 @@ final class CustomContentAccumulator {
             } else {
                 for (final Map.Entry<String, JsonNode> entry : object.properties()) {
                     final String key = entry.getKey();
-                    if ("title".equals(key) || "data".equals(key)) {
+                    if (TITLE.equals(key) || DATA.equals(key)) {
                         mergeText(existing, key, entry.getValue());
                     } else {
                         mergeGenericField(existing, key, entry.getValue());

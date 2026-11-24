@@ -9,132 +9,190 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
-/**
- * Accumulates DIAL's {@code custom_content} extension field across incremental OpenAI-mode SSE delta
- * chunks ({@code choices[0].delta.custom_content}). Not a Spring bean — instantiate a fresh instance per
- * accumulation run alongside {@link StreamingResponseAccumulator}.
- *
- * <p>Merge semantics applied as each delta's {@code custom_content} object is fed in via {@link
- * #accumulate(JsonNode)}:
- *
- * <ul>
- *   <li><b>Scalar top-level fields</b> (and object-valued fields other than {@code attachments}/{@code
- *       stages}): last non-null value wins. A {@code null} (or absent) value never erases a previously
- *       accumulated value. An object value is deep-merged field-by-field into the previously accumulated
- *       object at that key, so a later partial cannot blank out fields the earlier partial supplied.
- *   <li><b>{@code attachments} and {@code stages} arrays</b>: never replaced wholesale. Each element is
- *       keyed by its {@code index} field; a later partial element carrying the same {@code index} is
- *       deep-merged into the previously accumulated element at that index (fields present only in the
- *       earlier partial are preserved; fields present in the later partial overwrite). Output order is
- *       ascending by {@code index}. An element with a missing or non-numeric {@code index} is never
- *       merged with anything — it is appended, in receipt order, after all indexed elements.
- * </ul>
- */
+/** Accumulates custom-content deltas using scoped policies for stages, annotations and snapshots. */
 final class CustomContentAccumulator {
 
-    private static final String ATTACHMENTS_FIELD = "attachments";
-    private static final String STAGES_FIELD = "stages";
-    private static final String INDEX_FIELD = "index";
+    private static final String ATTACHMENTS = "attachments";
+    private static final String STAGES = "stages";
+    private static final String ANNOTATIONS = "annotations";
+    private static final String INDEX = "index";
+    private final ObjectNode merged = JsonNodeFactory.instance.objectNode();
 
-    private final JsonNodeFactory nodeFactory = JsonNodeFactory.instance;
-
-    private ObjectNode scalarsAndObjects;
-    private final TreeMap<Integer, ObjectNode> attachmentsByIndex = new TreeMap<>();
-    private final List<ObjectNode> unindexedAttachments = new ArrayList<>();
-    private final TreeMap<Integer, ObjectNode> stagesByIndex = new TreeMap<>();
-    private final List<ObjectNode> unindexedStages = new ArrayList<>();
-
-    /**
-     * Feeds one delta's {@code custom_content} node. No-op when {@code customContent} is {@code null} or
-     * not a JSON object (most chunks carry no {@code custom_content} at all).
-     */
     void accumulate(JsonNode customContent) {
         if (customContent == null || !customContent.isObject()) {
             return;
         }
-        for (Map.Entry<String, JsonNode> entry : customContent.properties()) {
-            String key = entry.getKey();
-            JsonNode value = entry.getValue();
-            if (ATTACHMENTS_FIELD.equals(key)) {
-                mergeIndexedArray(value, attachmentsByIndex, unindexedAttachments);
-            } else if (STAGES_FIELD.equals(key)) {
-                mergeIndexedArray(value, stagesByIndex, unindexedStages);
+        for (final Map.Entry<String, JsonNode> entry : customContent.properties()) {
+            final String key = entry.getKey();
+            final JsonNode value = entry.getValue();
+            if (value == null || value.isNull()) {
+                continue;
+            }
+            if ((STAGES.equals(key) || ATTACHMENTS.equals(key)) && value.isArray()) {
+                mergeIndexedField(merged, key, value, STAGES.equals(key));
+            } else if (ANNOTATIONS.equals(key) && value.isArray()) {
+                final ArrayNode annotations =
+                        merged.get(key) instanceof ArrayNode array ? array : JsonNodeFactory.instance.arrayNode();
+                AnnotationDeltaAccumulator.merge(annotations, value);
+                merged.set(key, annotations);
+            } else if (("state".equals(key) || "form_schema".equals(key)) && value.isObject()) {
+                merged.set(key, value.deepCopy());
             } else {
-                mergeScalarOrObject(key, value);
+                mergeGenericField(merged, key, value);
             }
         }
     }
 
-    /**
-     * Returns the merged {@code custom_content} object, or {@code null} when nothing has been
-     * accumulated (so callers can skip attaching it entirely).
-     */
     ObjectNode getMerged() {
-        boolean hasScalarFields = scalarsAndObjects != null && !scalarsAndObjects.isEmpty();
-        boolean hasAttachments = !attachmentsByIndex.isEmpty() || !unindexedAttachments.isEmpty();
-        boolean hasStages = !stagesByIndex.isEmpty() || !unindexedStages.isEmpty();
-        if (!hasScalarFields && !hasAttachments && !hasStages) {
-            return null;
-        }
-
-        ObjectNode result = scalarsAndObjects != null ? scalarsAndObjects.deepCopy() : nodeFactory.objectNode();
-        if (hasAttachments) {
-            result.set(ATTACHMENTS_FIELD, buildArray(attachmentsByIndex, unindexedAttachments));
-        }
-        if (hasStages) {
-            result.set(STAGES_FIELD, buildArray(stagesByIndex, unindexedStages));
-        }
-        return result;
+        return merged.isEmpty() ? null : merged.deepCopy();
     }
 
-    private void mergeScalarOrObject(String key, JsonNode value) {
+    private static void mergeIndexedField(ObjectNode parent, String key, JsonNode incoming, boolean stage) {
+        final JsonNode previous = parent.get(key);
+        final TreeMap<Integer, ObjectNode> indexed = new TreeMap<>();
+        final List<ObjectNode> unindexed = new ArrayList<>();
+        if (previous instanceof ArrayNode array) {
+            for (final JsonNode element : array) {
+                addIndexed(element, indexed, unindexed, stage, false);
+            }
+        }
+        for (final JsonNode element : incoming) {
+            addIndexed(element, indexed, unindexed, stage, true);
+        }
+        if (indexed.isEmpty() && unindexed.isEmpty() && previous == null) {
+            return;
+        }
+        final ArrayNode result = JsonNodeFactory.instance.arrayNode();
+        indexed.values().forEach(result::add);
+        unindexed.forEach(result::add);
+        parent.set(key, result);
+    }
+
+    private static void addIndexed(
+            JsonNode element,
+            TreeMap<Integer, ObjectNode> indexed,
+            List<ObjectNode> unindexed,
+            boolean stage,
+            boolean incoming) {
+        if (!(element instanceof ObjectNode object)) {
+            return;
+        }
+        final JsonNode index = object.get(INDEX);
+        final ObjectNode existing = index != null && index.isNumber() ? indexed.get(index.asInt()) : null;
+        if (incoming && existing != null) {
+            if (stage) {
+                mergeStage(existing, object);
+            } else {
+                JsonObjectDeltaAccumulator.mergePreservingNewObjects(existing, object);
+            }
+            return;
+        }
+        final ObjectNode copy = object.deepCopy();
+        if (incoming && stage) {
+            removeEmptyText(copy, "name", "content");
+            final JsonNode attachments = copy.get(ATTACHMENTS);
+            if (attachments != null && attachments.isArray()) {
+                copy.remove(ATTACHMENTS);
+                mergeStageAttachments(copy, attachments);
+                if (!copy.has(ATTACHMENTS)) {
+                    copy.set(ATTACHMENTS, JsonNodeFactory.instance.arrayNode());
+                }
+            }
+        }
+        if (index == null || !index.isNumber()) {
+            unindexed.add(copy);
+        } else {
+            indexed.put(index.asInt(), copy);
+        }
+    }
+
+    private static void mergeStage(ObjectNode target, ObjectNode source) {
+        for (final Map.Entry<String, JsonNode> entry : source.properties()) {
+            final String key = entry.getKey();
+            final JsonNode value = entry.getValue();
+            if ("name".equals(key) || "content".equals(key)) {
+                mergeText(target, key, value);
+            } else if (ATTACHMENTS.equals(key) && value != null && value.isArray()) {
+                mergeStageAttachments(target, value);
+            } else {
+                mergeGenericField(target, key, value);
+            }
+        }
+    }
+
+    private static void mergeStageAttachments(ObjectNode stage, JsonNode incoming) {
+        final JsonNode previous = stage.get(ATTACHMENTS);
+        final TreeMap<Integer, ObjectNode> indexed = new TreeMap<>();
+        final List<ObjectNode> unindexed = new ArrayList<>();
+        if (previous instanceof ArrayNode array) {
+            for (final JsonNode element : array) {
+                addIndexed(element, indexed, unindexed, false, false);
+            }
+        }
+        for (final JsonNode element : incoming) {
+            if (!(element instanceof ObjectNode object)) {
+                continue;
+            }
+            final JsonNode index = object.get(INDEX);
+            final ObjectNode existing = index != null && index.isNumber() ? indexed.get(index.asInt()) : null;
+            if (existing == null) {
+                final ObjectNode copy = object.deepCopy();
+                removeEmptyText(copy, "title", "data");
+                if (index != null && index.isNumber()) {
+                    indexed.put(index.asInt(), copy);
+                } else {
+                    unindexed.add(copy);
+                }
+            } else {
+                for (final Map.Entry<String, JsonNode> entry : object.properties()) {
+                    final String key = entry.getKey();
+                    if ("title".equals(key) || "data".equals(key)) {
+                        mergeText(existing, key, entry.getValue());
+                    } else {
+                        mergeGenericField(existing, key, entry.getValue());
+                    }
+                }
+            }
+        }
+        if (indexed.isEmpty() && unindexed.isEmpty() && previous == null) {
+            return;
+        }
+        final ArrayNode result = JsonNodeFactory.instance.arrayNode();
+        indexed.values().forEach(result::add);
+        unindexed.forEach(result::add);
+        stage.set(ATTACHMENTS, result);
+    }
+
+    private static void removeEmptyText(ObjectNode object, String... keys) {
+        for (final String key : keys) {
+            final JsonNode value = object.get(key);
+            if (value != null
+                    && (value.isNull() || (value.isString() && value.asString().isEmpty()))) {
+                object.remove(key);
+            }
+        }
+    }
+
+    private static void mergeText(ObjectNode target, String key, JsonNode value) {
+        if (value == null
+                || value.isNull()
+                || (value.isString() && value.asString().isEmpty())) {
+            return;
+        }
+        final JsonNode existing = target.get(key);
+        if (value.isString() && existing != null && existing.isString()) {
+            target.put(key, existing.asString() + value.asString());
+        } else {
+            mergeGenericField(target, key, value);
+        }
+    }
+
+    private static void mergeGenericField(ObjectNode target, String key, JsonNode value) {
         if (value == null || value.isNull()) {
             return;
         }
-        if (scalarsAndObjects == null) {
-            scalarsAndObjects = nodeFactory.objectNode();
-        }
-        JsonNode existing = scalarsAndObjects.get(key);
-        if (value.isObject() && existing instanceof ObjectNode existingObject) {
-            JsonObjectDeltaAccumulator.mergePreservingNewObjects(existingObject, value);
-        } else {
-            scalarsAndObjects.set(key, value.deepCopy());
-        }
-    }
-
-    private void mergeIndexedArray(
-            JsonNode incomingArray, TreeMap<Integer, ObjectNode> byIndex, List<ObjectNode> unindexed) {
-        if (incomingArray == null || !incomingArray.isArray()) {
-            return;
-        }
-        for (JsonNode element : incomingArray) {
-            if (element == null || !element.isObject()) {
-                continue;
-            }
-            ObjectNode elementCopy = (ObjectNode) element.deepCopy();
-            JsonNode indexNode = element.get(INDEX_FIELD);
-            if (indexNode == null || !indexNode.isNumber()) {
-                unindexed.add(elementCopy);
-                continue;
-            }
-            int index = indexNode.asInt();
-            ObjectNode existing = byIndex.get(index);
-            if (existing == null) {
-                byIndex.put(index, elementCopy);
-            } else {
-                JsonObjectDeltaAccumulator.mergePreservingNewObjects(existing, element);
-            }
-        }
-    }
-
-    private ArrayNode buildArray(TreeMap<Integer, ObjectNode> byIndex, List<ObjectNode> unindexed) {
-        ArrayNode array = nodeFactory.arrayNode();
-        for (ObjectNode element : byIndex.values()) {
-            array.add(element.deepCopy());
-        }
-        for (ObjectNode element : unindexed) {
-            array.add(element.deepCopy());
-        }
-        return array;
+        final ObjectNode single = JsonNodeFactory.instance.objectNode();
+        single.set(key, value);
+        JsonObjectDeltaAccumulator.mergePreservingNewObjects(target, single);
     }
 }

@@ -167,6 +167,55 @@ class StreamingResponseAccumulatorTest {
         }
 
         @Test
+        @DisplayName("Should assemble stages, annotations and snapshots independently in a combined stream")
+        void assemble_combinedExtensions_preservesAllFieldPolicies() {
+            final StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.assemble(new SseParseResult(combinedEvents(), ExecutionStatus.SUCCESS, null));
+            final JsonNode message = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message");
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+            assertThat(message).isEqualTo(OBJECT_MAPPER.readTree("""
+                    {"role":"assistant","content":"Hello world",
+                     "custom_content":{"stages":[{"index":0,"name":"Searching","content":"Read this",
+                       "attachments":[{"index":0,"title":"report","data":"AABB","url":"files/report"}]}],
+                       "annotations":[{"index":0,"body":{"quote":"content ref"}}],
+                       "state":{"new":2,"optional":null},"form_schema":{"new":2,"optional":null}},
+                     "custom_fields":{"annotations":[{"index":0,"body":{"quote":"fields ref"}}],
+                       "state":{"old":1,"new":2}}}
+                    """));
+        }
+
+        @Test
+        @DisplayName("Should retain text-only fallback for the combined stream on unsuccessful parse")
+        void assemble_combinedExtensionsOnTimeout_retainsTextAndStatus() {
+            final StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.assemble(new SseParseResult(combinedEvents(), ExecutionStatus.TIMEOUT, "partial"));
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.TIMEOUT);
+            assertThat(accumulator.getTruncationWarning()).isEqualTo("partial");
+            assertThat(OBJECT_MAPPER.readTree(accumulator.getResponseBody()))
+                    .isEqualTo(OBJECT_MAPPER.readTree("\"Hello world\""));
+        }
+
+        private List<SseEvent> combinedEvents() {
+            return List.of(
+                    new SseEvent("message", OBJECT_MAPPER.readTree("""
+                            {"choices":[{"delta":{"content":"Hello","custom_content":{
+                              "stages":[{"index":0,"name":"Search","content":"Read ","attachments":[{"index":0,"title":"re","data":"AA","url":"files/report"}]}],
+                              "annotations":[{"index":0,"body":{"quote":"content "}}],"state":{"old":1},"form_schema":{"old":1}},
+                              "custom_fields":{"annotations":[{"index":0,"body":{"quote":"fields "}}],"state":{"old":1}}}}]}
+                            """)),
+                    new SseEvent("message", OBJECT_MAPPER.readTree("""
+                            {"choices":[{"delta":{"content":" world","custom_content":{
+                              "stages":[{"index":0,"name":"ing","content":"this","attachments":[{"index":0,"title":"port","data":"BB"}]}],
+                              "annotations":[{"index":0,"body":{"quote":"ref"}}],"state":{"new":2,"optional":null},"form_schema":{"new":2,"optional":null}},
+                              "custom_fields":{"annotations":[{"index":0,"body":{"quote":"ref"}}],"state":{"new":2}}}}]}
+                            """)));
+        }
+
+        @Test
         @DisplayName("Should omit custom fields when deltas contain no valid fields")
         void accumulate_missingOrInvalidCustomFields_omitsExtension() {
             final InputStream stream = buildSseStream(

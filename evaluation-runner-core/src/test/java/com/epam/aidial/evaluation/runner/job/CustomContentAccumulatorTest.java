@@ -239,6 +239,96 @@ class CustomContentAccumulatorTest {
                                 "{\"metadata\":{\"label\":\"first\",\"other\":\"second\"},\"attachments\":[{\"index\":0,\"name\":\"original\",\"url\":\"link\"}]}"));
     }
 
+    @Test
+    @DisplayName("Should concatenate stage-local text and attachments in indexed order without deduplication")
+    void accumulate_stageAndAttachmentFragments_preservesOrderAndIsolation() {
+        accumulator.accumulate(node("""
+                {"stages":[{"index":1,"name":"other","attachments":[{"index":0,"title":"other"}]},
+                  {"index":0,"name":"go ","content":"read ","attachments":[
+                    {"index":1,"title":"second"},{"index":0,"title":"re","data":"AA","url":"files/report"},
+                    {"title":"unindexed one"}]}]}
+                """));
+        accumulator.accumulate(node("""
+                {"stages":[{"index":0,"name":"go ","content":"read ","attachments":[
+                  {"index":0,"title":"port","data":"BB"},{"title":"unindexed two"}]},
+                  {"name":"unindexed stage"}],"attachments":[{"index":0,"title":"first"}]}
+                """));
+        accumulator.accumulate(node("""
+                {"stages":[{"index":0,"name":null,"content":"","status":"done"}],
+                 "attachments":[{"index":0,"title":"second"}]}
+                """));
+        assertThat(accumulator.getMerged()).isEqualTo(node("""
+                {"stages":[{"index":0,"name":"go go ","content":"read read ","status":"done",
+                  "attachments":[{"index":0,"title":"report","data":"AABB","url":"files/report"},
+                    {"index":1,"title":"second"},{"title":"unindexed one"},{"title":"unindexed two"}]},
+                  {"index":1,"name":"other","attachments":[{"index":0,"title":"other"}]},
+                  {"name":"unindexed stage"}],"attachments":[{"index":0,"title":"second"}]}
+                """));
+    }
+
+    @Test
+    @DisplayName("Should ignore empty text before replacing non-string stage and attachment values")
+    void accumulate_stageTextTypes_emptyNoOpAndNonEmptyReplaces() {
+        accumulator.accumulate(node("""
+                {"stages":[{"index":0,"name":7,"content":7,"attachments":[{"index":0,"title":7,"data":7}]}]}
+                """));
+        accumulator.accumulate(node("""
+                {"stages":[{"index":0,"name":"","content":"","attachments":[{"index":0,"title":"","data":""}]}]}
+                """));
+        assertThat(accumulator.getMerged()).isEqualTo(node("""
+                {"stages":[{"index":0,"name":7,"content":7,"attachments":[{"index":0,"title":7,"data":7}]}]}
+                """));
+        accumulator.accumulate(node("""
+                {"stages":[{"index":0,"name":"new","content":"new","attachments":[{"index":0,"title":"new","data":"new"}]}]}
+                """));
+        assertThat(accumulator.getMerged()).isEqualTo(node("""
+                {"stages":[{"index":0,"name":"new","content":"new","attachments":[{"index":0,"title":"new","data":"new"}]}]}
+                """));
+    }
+
+    @Test
+    @DisplayName("Should replace top-level snapshots while merging nested namesakes and generic objects")
+    void accumulate_snapshots_replaceAndPreserveNulls() {
+        final ObjectNode first = (ObjectNode) node("""
+                {"state":{"old":1,"keep":2},"form_schema":{"old":1,"keep":2},
+                 "nested":{"state":{"old":1,"keep":2},"form_schema":{"old":1}}}
+                """);
+        final ObjectNode second = (ObjectNode) node("""
+                {"state":{"keep":3,"optional":null},"form_schema":{"keep":3,"optional":null},
+                 "nested":{"state":{"keep":3},"form_schema":{"new":2}}}
+                """);
+        accumulator.accumulate(first);
+        accumulator.accumulate(second);
+        accumulator.accumulate(node("{\"state\":null,\"form_schema\":null}"));
+        ((ObjectNode) second.get("state")).put("keep", 99);
+        final ObjectNode result = accumulator.getMerged();
+        ((ObjectNode) result.get("form_schema")).put("keep", 99);
+        assertThat(accumulator.getMerged()).isEqualTo(node("""
+                {"state":{"keep":3,"optional":null},"form_schema":{"keep":3,"optional":null},
+                 "nested":{"state":{"old":1,"keep":3},"form_schema":{"old":1,"new":2}}}
+                """));
+    }
+
+    @Test
+    @DisplayName("Should replace indexed array fields on non-array type transitions")
+    void accumulate_indexedFields_typeTransitionsReplace() {
+        accumulator.accumulate(node("{\"stages\":[{\"index\":0}],\"attachments\":[{\"index\":0}]}"));
+        accumulator.accumulate(node("{\"stages\":\"old\",\"attachments\":42}"));
+        assertThat(accumulator.getMerged()).isEqualTo(node("{\"stages\":\"old\",\"attachments\":42}"));
+        accumulator.accumulate(node("{\"stages\":[{\"index\":1}],\"attachments\":[]}"));
+        assertThat(accumulator.getMerged()).isEqualTo(node("{\"stages\":[{\"index\":1}],\"attachments\":[]}"));
+    }
+
+    @Test
+    @DisplayName("Should replace stage attachment arrays and scalar values across type changes")
+    void accumulate_stageAttachmentTypes_replaceValues() {
+        accumulator.accumulate(node("{\"stages\":[{\"index\":0,\"attachments\":[{\"index\":0}]}]}"));
+        accumulator.accumulate(node("{\"stages\":[{\"index\":0,\"attachments\":\"old\"}]}"));
+        assertThat(accumulator.getMerged()).isEqualTo(node("{\"stages\":[{\"index\":0,\"attachments\":\"old\"}]}"));
+        accumulator.accumulate(node("{\"stages\":[{\"index\":0,\"attachments\":[]}]}"));
+        assertThat(accumulator.getMerged()).isEqualTo(node("{\"stages\":[{\"index\":0,\"attachments\":[]}]}"));
+    }
+
     private JsonNode node(String json) {
         return OBJECT_MAPPER.readTree(json);
     }

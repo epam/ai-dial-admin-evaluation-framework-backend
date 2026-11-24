@@ -26,6 +26,7 @@ import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.functional.support.StreamingExtensionFixture;
 import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
@@ -2179,6 +2180,26 @@ class TryItOutServiceTest {
             assertThat(realObjectMapper.readTree(document.getValue())).isEqualTo(expected);
             verify(sseEventParser, times(1)).parse(input, 30_000, 3_600_000L, 10 * 1024 * 1024L);
             verify(input, atLeastOnce()).close();
+        }
+
+        @Test
+        @DisplayName("combined extension stream matches runner assembly and preserves parsed events")
+        void shouldMatchRunnerCombinedExtensions() {
+            final InputStream input = stream("data: " + StreamingExtensionFixture.FIRST + "\n\ndata: "
+                    + StreamingExtensionFixture.SECOND + "\n\ndata: [DONE]\n\n");
+            setUpStream(input, FIXED_CLOCK);
+            when(responseColumnExtractor.extract(eq(columns), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
+
+            final TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            final JsonNode expected = realObjectMapper.readTree(StreamingExtensionFixture.ASSEMBLED);
+            assertThat(result.getResponse().getBody()).isEqualTo(expected);
+            assertThat(serializedResponse(result).get("body")).isEqualTo(expected);
+            assertThat(serializedResponse(result).get("events"))
+                    .isEqualTo(realObjectMapper.readTree(StreamingExtensionFixture.EVENTS));
+            final ArgumentCaptor<String> document = ArgumentCaptor.forClass(String.class);
+            verify(responseColumnExtractor).extract(eq(columns), document.capture(), anyString());
+            assertThat(realObjectMapper.readTree(document.getValue())).isEqualTo(expected);
         }
 
         @Test

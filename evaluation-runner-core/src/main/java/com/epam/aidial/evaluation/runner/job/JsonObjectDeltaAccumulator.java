@@ -23,6 +23,26 @@ final class JsonObjectDeltaAccumulator {
         }
     }
 
+    void accumulateWithAnnotations(JsonNode delta) {
+        if (delta == null || !delta.isObject()) {
+            return;
+        }
+        for (final Map.Entry<String, JsonNode> entry : delta.properties()) {
+            final String key = entry.getKey();
+            final JsonNode value = entry.getValue();
+            if (arrayMode == ArrayMergeMode.APPEND && "annotations".equals(key) && value.isArray()) {
+                final ArrayNode annotations =
+                        merged.get(key) instanceof ArrayNode array ? array : JsonNodeFactory.instance.arrayNode();
+                AnnotationDeltaAccumulator.merge(annotations, value);
+                merged.set(key, annotations);
+            } else {
+                final ObjectNode single = JsonNodeFactory.instance.objectNode();
+                single.set(key, value);
+                mergeInto(merged, single, arrayMode, false);
+            }
+        }
+    }
+
     ObjectNode getMerged() {
         return merged.isEmpty() ? null : merged.deepCopy();
     }

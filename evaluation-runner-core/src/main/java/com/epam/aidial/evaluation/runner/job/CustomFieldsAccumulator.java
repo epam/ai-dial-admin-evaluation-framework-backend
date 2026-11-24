@@ -17,7 +17,7 @@ final class CustomFieldsAccumulator {
     }
 
     void accumulate(JsonNode customFields) {
-        accumulator.accumulate(customFields);
+        accumulator.accumulateWithAnnotations(customFields);
     }
 
     ObjectNode getMerged() {

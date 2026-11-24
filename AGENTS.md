@@ -5,7 +5,7 @@
 | Aspect | Value |
 |--------|-------|
 | Language | Java 25 |
-| Framework | Spring Boot 4.1.2 |
+| Framework | Spring Boot 4.2.0 |
 | Build | Gradle 9.9.1 |
 | Database | PostgreSQL (JDBC only, NO JPA) |
 | Security | OIDC/JWT multi-issuer |

@@ -281,6 +281,8 @@ public abstract class MetricDeclarationFunctionalTests extends BaseFunctionalTes
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
+    // Boot 4.2 deprecates the TestRestTemplate harness and its auto-configuration; migrate together later.
+    @SuppressWarnings("removal")
     @Nested
     @DisplayName("GET .../latest")
     @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

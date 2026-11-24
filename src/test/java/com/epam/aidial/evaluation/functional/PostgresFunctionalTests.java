@@ -175,6 +175,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+// Boot 4.2 deprecates the TestRestTemplate harness and its auto-configuration; migrate together later.
+@SuppressWarnings("removal")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
 @TestPropertySource(

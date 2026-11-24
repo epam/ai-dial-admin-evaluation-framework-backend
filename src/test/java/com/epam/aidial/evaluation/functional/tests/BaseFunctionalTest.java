@@ -17,6 +17,8 @@ import org.springframework.http.MediaType;
  */
 public abstract class BaseFunctionalTest {
 
+    // Boot 4.2 deprecates TestRestTemplate; keep the existing harness until its RestTestClient migration.
+    @SuppressWarnings("removal")
     @Autowired
     protected TestRestTemplate restTemplate;
 

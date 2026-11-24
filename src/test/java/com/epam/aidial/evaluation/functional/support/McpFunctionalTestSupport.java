@@ -78,6 +78,8 @@ public class McpFunctionalTestSupport {
      * server) that the SDK's blocking transport would otherwise surface only as an opaque
      * client-side exception.
      */
+    // Boot 4.2 deprecates TestRestTemplate; this helper follows the existing functional-test harness.
+    @SuppressWarnings("removal")
     public ResponseEntity<String> rawPost(
             TestRestTemplate restTemplate, Map<String, String> headers, String jsonRpcBody) {
         HttpHeaders httpHeaders = new HttpHeaders();

@@ -33,6 +33,8 @@ public class TestRestTemplateConfiguration {
      * BeanPostProcessor that customizes {@link TestRestTemplate} beans to inject a
      * {@link StringHttpMessageConverter} that accepts {@code application/json}.
      */
+    // Boot 4.2 deprecates TestRestTemplate and RestTemplate; retain this legacy harness customizer.
+    @SuppressWarnings("removal")
     @Bean
     public BeanPostProcessor testRestTemplateCustomizer() {
         return new BeanPostProcessor() {

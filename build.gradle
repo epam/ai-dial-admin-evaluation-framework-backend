@@ -9,15 +9,6 @@ buildscript {
             classpath ('org.apache.commons:commons-lang3:3.21.0') {
                 because("previous versions have vulnerabilities")
             }
-            classpath ('org.apache.httpcomponents.core5:httpcore5:5.4.3') {
-                because("CVE-2026-54399: HTTP/1 header parsing memory-exhaustion denial of service")
-            }
-            classpath ('org.apache.httpcomponents.core5:httpcore5-h2:5.4.3') {
-                because("CVE-2026-54428: HPackDecoder unlimited header list size before SETTINGS ACK")
-            }
-            classpath ('org.apache.httpcomponents.client5:httpclient5:5.6.3') {
-                because("CVE-2026-64607: connection leak on Content-Encoding decode error exhausts the pool")
-            }
         }
         // Jackson 3 is pulled in transitively by jOOQ codegen; 3.2.1 and earlier are vulnerable to
         // CVE-2026-59889 (@JsonView bypass) and CVE-2026-68497 (unbounded numeric parsing DoS).
@@ -28,7 +19,8 @@ buildscript {
         classpath "io.zonky.test:embedded-postgres:${embedded_postgres_version}"
         classpath "org.flywaydb:flyway-core:${flyway_version}"
         classpath "org.flywaydb:flyway-database-postgresql:${flyway_version}"
-        classpath 'org.jooq:jooq-codegen:3.21.6'
+        // Match the jOOQ runtime version managed by Spring Boot 4.2.0.
+        classpath 'org.jooq:jooq-codegen:3.21.9'
         classpath "org.postgresql:postgresql:${pg_version}"
     }
 }
@@ -37,7 +29,7 @@ plugins {
     id 'java'
     id 'checkstyle'
     id 'io.freefair.lombok' version '9.8.2'
-    id 'org.springframework.boot' version '4.1.2'
+    id 'org.springframework.boot' version '4.2.0'
     id 'com.diffplug.spotless' version '8.10.4'
 }
 
@@ -78,13 +70,6 @@ configurations {
         exclude group: 'commons-logging', module: 'commons-logging'
         exclude group: "org.springframework.boot", module: "spring-boot-starter-logging"
     }
-    configureEach {
-        resolutionStrategy {
-            // Pin json-schema-validator to the Jackson 3-native line (3.x); MCP SDK pulls an
-            // older Jackson 2 build that is incompatible with the tools.jackson migration
-            force 'com.networknt:json-schema-validator:3.0.8'
-        }
-    }
 }
 
 checkstyle {
@@ -114,8 +99,8 @@ repositories {
 
 dependencies {
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
-    // CVE-2026-68497 (jackson-databind unbounded numeric parsing CPU DoS): Boot 4.1.2 manages
-    // Jackson 2.21.5 / 3.1.5; override both families via their BOMs until Boot catches up.
+    // Boot 4.2.0 manages Jackson 2.21.8 / 3.1.8; retain the patched 2.22.x / 3.2.x
+    // BOMs for CVE-2026-68497 (unbounded numeric parsing CPU DoS) and the fixes below.
     // 2.22.2 is vulnerable to CVE-2026-89407 (regex backtracking DoS) and CVE-2026-89425 (unbounded StringBuilder).
     // 2.22.x line CVE-2026-91776/91777 (cache growth, forward-reference completion) in databind.
     implementation platform('com.fasterxml.jackson:jackson-bom:2.22.4')
@@ -141,7 +126,7 @@ dependencies {
     implementation 'com.azure:azure-identity:1.18.7'
 
     // Database
-    implementation "org.postgresql:postgresql:${pg_version}"
+    implementation 'org.postgresql:postgresql'
 
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation "org.flywaydb:flyway-core:${flyway_version}"
@@ -151,12 +136,7 @@ dependencies {
     implementation 'org.jooq:jooq'
 
     // Logging
-    implementation('org.springframework.boot:spring-boot-starter-log4j2') {
-        exclude group: 'org.apache.logging.log4j'
-    }
-    implementation "org.apache.logging.log4j:log4j-slf4j2-impl:${log4j_version}"
-    implementation "org.apache.logging.log4j:log4j-core:${log4j_version}"
-    implementation "org.apache.logging.log4j:log4j-jul:${log4j_version}"
+    implementation 'org.springframework.boot:spring-boot-starter-log4j2'
     // Commons Logging (JCL) -> SLF4J bridge. Spring Framework 7 dropped the repackaged spring-jcl
     // and uses the org.apache.commons.logging API directly; without this bridge, Spring Boot's
     // Log4J2LoggingSystem fails with NoClassDefFoundError: org/apache/commons/logging/Log.
@@ -166,15 +146,15 @@ dependencies {
     // Metrics & Monitoring
     implementation 'io.micrometer:micrometer-registry-prometheus'
     implementation 'io.micrometer:context-propagation'
-    // CVE-2026-118259: this BOM aligns instrumentation with OTel API/SDK 1.67.0 and imports
-    // both stable BOMs. implementation also covers tests, so no separate overrides are needed.
+    // Retain the instrumentation BOM for CVE-2026-118259 and incubating artifact alignment;
+    // Boot manages the stable API/SDK at 1.68.0. implementation also covers tests.
     implementation platform("io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:${otel_instrumentation_version}-alpha")
     implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
     implementation 'io.opentelemetry.instrumentation:opentelemetry-log4j-appender-2.17'
     runtimeOnly 'io.grpc:grpc-netty-shaded'  // gRPC transport for OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 
     // Utilities
-    implementation 'org.apache.commons:commons-lang3:3.21.0'
+    implementation 'org.apache.commons:commons-lang3'
     implementation 'org.apache.commons:commons-text:1.15.0'
     implementation 'org.apache.commons:commons-collections4:4.6.0'
     implementation 'commons-io:commons-io:2.22.0'
@@ -185,7 +165,7 @@ dependencies {
 
     // Schema & OpenAPI utilities
     implementation 'com.networknt:json-schema-validator:3.0.8'
-    implementation 'com.github.ben-manes.caffeine:caffeine:3.3.1'
+    implementation 'com.github.ben-manes.caffeine:caffeine'
 
     // MCP SDK (Model Context Protocol client)
     implementation platform("io.modelcontextprotocol.sdk:mcp-bom:${mcp_sdk_version}")
@@ -224,10 +204,7 @@ dependencies {
 
     constraints {
         implementation ('com.nimbusds:nimbus-jose-jwt:10.10') {
-            because("previous versions have vulnerabilities")
-        }
-        implementation ('org.apache.tomcat.embed:tomcat-embed-core:11.0.27') {
-            because("11.0.24 contains vulnerabilities")
+            because("Spring Security 7.2.0 still pulls 10.9.1; previous versions have vulnerabilities")
         }
         implementation ('com.google.guava:guava:33.7.2-jre') {
             because("CVE-2026-102554: CompactHashMap/CompactHashSet/MapMakerInternalMap deserialization uncontrolled memory allocation")

@@ -246,7 +246,9 @@ public abstract class RunPassCountFunctionalTests extends AbstractMcpFunctionalT
             assertThat(r.getComputedAtMs()).isZero();
             assertThat(r.getRunCreatedAtMs()).isEqualTo(RUN_CREATED_AT);
         });
-        assertThat(analyticsTestDataHelper.countRunPassCounts()).isEqualTo(2);
+        assertThat(runPassCountRepository.findRecordedComputations(List.of(runId, otherRun)))
+                .containsExactlyInAnyOrder(
+                        new RecordedComputation(runId, null), new RecordedComputation(otherRun, null));
     }
 
     @Test
@@ -272,7 +274,8 @@ public abstract class RunPassCountFunctionalTests extends AbstractMcpFunctionalT
         final boolean second = runPassCountService.record(runId, suiteId, computationId, RUN_CREATED_AT);
 
         assertThat(second).isFalse();
-        assertThat(analyticsTestDataHelper.countRunPassCounts()).isEqualTo(1);
+        assertThat(runPassCountRepository.findRecordedComputations(List.of(runId)))
+                .containsExactlyInAnyOrder(new RecordedComputation(runId, computationId));
         assertCounts(1, 1);
     }
 
@@ -314,7 +317,9 @@ public abstract class RunPassCountFunctionalTests extends AbstractMcpFunctionalT
 
         runPassCountService.record(runId, suiteId, computationId, RUN_CREATED_AT);
 
-        assertThat(analyticsTestDataHelper.countRunPassCounts()).isEqualTo(2);
+        assertThat(runPassCountRepository.findRecordedComputations(List.of(runId)))
+                .containsExactlyInAnyOrder(
+                        new RecordedComputation(runId, null), new RecordedComputation(runId, computationId));
         assertThat(latestRow().getComputationId()).isEqualTo(computationId);
         assertCounts(1, 1);
     }

@@ -84,6 +84,9 @@ public class OpenApiQueryParamCustomizer implements OpenApiCustomizer {
                     "/api/v1/analytics/test-suites/run-trends",
                     new EndpointParamConfig(FilterWhitelists.TEST_SUITES, null, PaginationType.OFFSET)),
             Map.entry(
+                    "/api/v1/analytics/test-suites/health-distribution",
+                    new EndpointParamConfig(FilterWhitelists.TEST_SUITES, null, PaginationType.NONE)),
+            Map.entry(
                     "/api/v1/analytics/test-case-results",
                     new EndpointParamConfig(FilterWhitelists.ANALYTICS_RESULTS, null, PaginationType.CURSOR)),
             Map.entry(

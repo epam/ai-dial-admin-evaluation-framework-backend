@@ -18,7 +18,6 @@ import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -105,19 +104,7 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                         TEST_SUITES.TOOL_REF)
                 .from(TEST_SUITES)
                 .where(TEST_SUITES.ID.in(ids.stream().map(UUID::toString).toList()))
-                .fetch(r -> TestSuite.builder()
-                        .id(UUID.fromString(r.get(TEST_SUITES.ID)))
-                        .name(r.get(TEST_SUITES.NAME))
-                        .suiteType(SuiteType.fromValue(r.get(TEST_SUITES.SUITE_TYPE)))
-                        .deploymentRef(jsonData(r.get(TEST_SUITES.DEPLOYMENT_REF)))
-                        .routesRef(jsonData(r.get(TEST_SUITES.ROUTES_REF)))
-                        .mcpDeploymentRef(jsonData(r.get(TEST_SUITES.MCP_DEPLOYMENT_REF)))
-                        .toolRef(jsonData(r.get(TEST_SUITES.TOOL_REF)))
-                        .build());
-    }
-
-    private static String jsonData(JSONB jsonb) {
-        return jsonb != null ? jsonb.data() : null;
+                .fetch(recordMapper::mapProjection);
     }
 
     @Override

@@ -19,13 +19,13 @@ Implemented.
   evaluation
 - **THEN** the system returns 200 with a body containing `avgTestCaseCost` (the average, across test cases
   that had at least one usage-log row tagged `eval.phase=execution` for this run, of that test case's
-  `total_price` values summed across all its execution-phase requests) and `avgMetricEvalCost` (the same
+  `deployment_price` values summed across all its execution-phase requests) and `avgMetricEvalCost` (the same
   computation over rows tagged `eval.phase=metric-evaluation`)
 
 #### Scenario: A test case issuing multiple requests within a phase counts once
 - **WHEN** a test case issues multiple requests within the same phase — e.g. a multi-request suite chain,
   a multi-turn case, or multiple test-suite metric definitions evaluated for one test case
-- **THEN** those requests' `total_price` values are summed into a single per-test-case cost before that
+- **THEN** those requests' `deployment_price` values are summed into a single per-test-case cost before that
   cost is included in the phase's average, so the test case contributes exactly one value to
   `avgTestCaseCost`/`avgMetricEvalCost` regardless of how many requests it issued in that phase
 
@@ -52,7 +52,7 @@ The system SHALL compute each phase's average via dial-adas's raw-SQL execution 
 `eval.run.id=<runId>` and the relevant phase as `eval.phase=execution` or `eval.phase=metric-evaluation`,
 using the same OTel baggage phase values already emitted by the evaluation engine
 (`TracingConstants.PHASE_EXECUTION` / `PHASE_METRIC_EVALUATION`); (b) groups the filtered rows by their
-`testcase.id=<id>` baggage tag and sums `total_price` per test case; and (c) averages those per-test-case
+`testcase.id=<id>` baggage tag and sums `deployment_price` per test case; and (c) averages those per-test-case
 sums and counts the number of contributing test cases. This two-level aggregation (sum per test case, then
 average across test cases) cannot be expressed by dial-adas's structured JSON query DSL
 (`POST {dial-adas-base-url}/v1/queries/execute`, `"mode": "aggregate"`), which supports only a single
@@ -81,7 +81,7 @@ service, per the project's layering rule that controllers do not call other cont
 `CostService.fetchAvgCost` computes each phase's average via `AdasCostQueryBuilder.buildAvgCostPerTestCaseSql`
 + `DialAdasClient.executeSql` — a raw SQL string sent to dial-adas's `POST /v1/queries/execute-sql`, rather
 than a `StructuredQuery` sent to `/v1/queries/execute`, because the correct per-test-case average requires
-a two-level aggregation (sum `total_price` per `testcase.id`, then average those sums) that
+a two-level aggregation (sum `deployment_price` per `testcase.id`, then average those sums) that
 `StructuredQuery`'s single `GROUP BY` + aggregate `select` shape cannot express. The SQL's output columns
 are aliased `avg_cost`/`count` to match `AdasRunAvgCostRowDto` — the same row DTO used for
 `buildDeploymentAggregateQuery`'s and `buildPageTotalCostQuery`'s `StructuredQuery`-based calls, which are

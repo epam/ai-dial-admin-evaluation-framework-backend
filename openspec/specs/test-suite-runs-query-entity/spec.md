@@ -235,7 +235,7 @@ Status: **Implemented**
 - **THEN** the score for the whole page is resolved in a bounded number of statements, not one per row
 
 ### Requirement: Run-level total cost on a row result page
-When `query-dsl.extension.test-suite-run.cost.enabled` is enabled, a `row`-mode `test_suite_runs` result page SHALL carry the extension-derived key `total_cost` for each eligible run with matching dial-adas usage data. The value SHALL be the total `total_price` for that run across all matching usage rows. The lookup SHALL apply no `eval.phase` filter; therefore it includes the currently recorded `execution` and `metric-evaluation` usage rows without treating those values as an exclusive whitelist.
+When `query-dsl.extension.test-suite-run.cost.enabled` is enabled, a `row`-mode `test_suite_runs` result page SHALL carry the extension-derived key `total_cost` for each eligible run with matching dial-adas usage data. The value SHALL be the total `deployment_price` for that run across all matching usage rows. The lookup SHALL apply no `eval.phase` filter; therefore it includes the currently recorded `execution` and `metric-evaluation` usage rows without treating those values as an exclusive whitelist.
 
 The key SHALL be result-only: it SHALL NOT be accepted in `filter`, `select`, `sort` or `group_by`, and SHALL NOT appear in the published entity schema. It SHALL be omitted, rather than set to null, when no usage group exists or the group's total is null. Existing row keys SHALL win over the derived key; row and key order and the page total count SHALL remain unchanged.
 
@@ -247,7 +247,7 @@ Status: **Implemented**
 
 #### Scenario: Enabled row query returns total cost
 - **WHEN** cost extension is enabled and a row-mode `test_suite_runs` query returns a run with matching dial-adas usage rows
-- **THEN** that row carries `total_cost` equal to the sum of `total_price` across all matching usage rows
+- **THEN** that row carries `total_cost` equal to the sum of `deployment_price` across all matching usage rows
 
 #### Scenario: Disabled extension adds no derived key
 - **WHEN** `query-dsl.extension.test-suite-run.cost.enabled` is false or absent

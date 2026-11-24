@@ -16,11 +16,13 @@ import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasBatchRunCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasDeploymentCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasTotalCostRowDto;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -277,6 +279,122 @@ class CostServiceTest {
             assertThatThrownBy(() -> service.getTotalRunCosts(tooMany)).isInstanceOf(ValidationException.class);
 
             verifyNoInteractions(batchRunTotalCostLookup);
+        }
+    }
+
+    @Nested
+    @DisplayName("getTotalCosts")
+    class GetTotalCosts {
+
+        private final long fromMs = 1_000L;
+        private final long toMs = 2_000L;
+        private final List<String> deploymentIds = List.of("gpt-4o", "applications/public/my-app");
+
+        private final StructuredQuery totalQuery =
+                new StructuredQuery("total-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
+
+        private void stubQuery() {
+            when(adasCostQueryBuilder.buildTotalAggregateQuery(fromMs, toMs, deploymentIds))
+                    .thenReturn(totalQuery);
+        }
+
+        private AdasAggregateResponseDto<AdasTotalCostRowDto> totalResponse(
+                Long count, Double total, Double testCase, Double metricEval) {
+            return AdasAggregateResponseDto.<AdasTotalCostRowDto>builder()
+                    .rows(List.of(AdasTotalCostRowDto.builder()
+                            .count(count)
+                            .totalCost(total)
+                            .testCaseCost(testCase)
+                            .metricEvalCost(metricEval)
+                            .build()))
+                    .build();
+        }
+
+        @Test
+        @DisplayName("makes one dial-adas call and returns the total with its phase split")
+        void returnsTotalAndPhaseSplit() {
+            stubQuery();
+            when(dialAdasClient.executeAggregate(totalQuery, AdasTotalCostRowDto.class))
+                    .thenReturn(totalResponse(180L, 0.0123, 0.0100, 0.0023));
+
+            TotalCostResponseDto result = service.getTotalCosts(fromMs, toMs, deploymentIds);
+
+            assertThat(result.getTotalCost()).isEqualTo(0.0123);
+            assertThat(result.getTestCaseCost()).isEqualTo(0.0100);
+            assertThat(result.getMetricEvalCost()).isEqualTo(0.0023);
+            verify(dialAdasClient).executeAggregate(any(StructuredQuery.class), any());
+        }
+
+        @Test
+        @DisplayName("returns 0 for a phase without usage when the period has rows for the other phase")
+        void returnsZeroForPhaseWithoutUsage() {
+            stubQuery();
+            when(dialAdasClient.executeAggregate(totalQuery, AdasTotalCostRowDto.class))
+                    .thenReturn(totalResponse(10L, 0.004, 0.004, 0.0));
+
+            TotalCostResponseDto result = service.getTotalCosts(fromMs, toMs, deploymentIds);
+
+            assertThat(result.getTotalCost()).isEqualTo(0.004);
+            assertThat(result.getTestCaseCost()).isEqualTo(0.004);
+            assertThat(result.getMetricEvalCost()).isZero();
+        }
+
+        @Test
+        @DisplayName("returns all-null costs when dial-adas returns a null response")
+        void returnsNullCostsForNullResponse() {
+            stubQuery();
+            when(dialAdasClient.executeAggregate(totalQuery, AdasTotalCostRowDto.class))
+                    .thenReturn(null);
+
+            TotalCostResponseDto result = service.getTotalCosts(fromMs, toMs, deploymentIds);
+
+            assertThat(result).isEqualTo(TotalCostResponseDto.builder().build());
+        }
+
+        @Test
+        @DisplayName("returns all-null costs when dial-adas returns no rows")
+        void returnsNullCostsForEmptyRows() {
+            stubQuery();
+            when(dialAdasClient.executeAggregate(totalQuery, AdasTotalCostRowDto.class))
+                    .thenReturn(AdasAggregateResponseDto.<AdasTotalCostRowDto>builder()
+                            .rows(List.of())
+                            .build());
+
+            TotalCostResponseDto result = service.getTotalCosts(fromMs, toMs, deploymentIds);
+
+            assertThat(result).isEqualTo(TotalCostResponseDto.builder().build());
+        }
+
+        @Test
+        @DisplayName("returns all-null costs when the aggregate row has count 0")
+        void returnsNullCostsForZeroCount() {
+            stubQuery();
+            when(dialAdasClient.executeAggregate(totalQuery, AdasTotalCostRowDto.class))
+                    .thenReturn(totalResponse(0L, null, null, null));
+
+            TotalCostResponseDto result = service.getTotalCosts(fromMs, toMs, deploymentIds);
+
+            assertThat(result).isEqualTo(TotalCostResponseDto.builder().build());
+        }
+
+        @Test
+        @DisplayName("throws ValidationException when from is after to, without calling dial-adas")
+        void throwsWhenFromAfterTo() {
+            assertThatThrownBy(() -> service.getTotalCosts(toMs, fromMs, deploymentIds))
+                    .isInstanceOf(ValidationException.class);
+
+            verifyNoInteractions(dialAdasClient);
+        }
+
+        @Test
+        @DisplayName("propagates DialAdasClientException unchanged")
+        void propagatesDialAdasClientException() {
+            stubQuery();
+            when(dialAdasClient.executeAggregate(totalQuery, AdasTotalCostRowDto.class))
+                    .thenThrow(new DialAdasClientException(502, "boom"));
+
+            assertThatThrownBy(() -> service.getTotalCosts(fromMs, toMs, deploymentIds))
+                    .isInstanceOf(DialAdasClientException.class);
         }
     }
 }

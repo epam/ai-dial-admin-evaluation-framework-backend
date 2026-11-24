@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.configuration.OpenApiExampleCustomizer;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -86,6 +87,86 @@ public abstract class OpenApiExamplesFunctionalTests extends BaseFunctionalTest 
                         "raw string",
                         "not byte-verbatim transport data",
                         "Omitted for non-SSE HTTP and MCP");
+    }
+
+    @Test
+    @DisplayName("export preview example follows the manifest and documents ISO timestamps and typed cells")
+    void exportPreviewExampleDocumentsTimestampsAndManifest() {
+        final JsonNode paths = fetchApiDocs().path("paths");
+        final JsonNode previewOperation =
+                paths.path("/api/v1/analytics/eval-summaries/export/preview").path("get");
+        final JsonNode exportOperation =
+                paths.path("/api/v1/analytics/eval-summaries/export.csv").path("post");
+        assertThat(previewOperation.path("description").asString())
+                .contains(
+                        "`createdAt` and `computedAt`",
+                        "ISO 8601 UTC strings",
+                        "exactly three fractional digits",
+                        "null timestamps stay `null`");
+        assertThat(exportOperation.path("description").asString())
+                .contains("preview timestamps use the same ISO 8601 UTC format");
+
+        final JsonNode example = previewOperation
+                .path("responses")
+                .path("200")
+                .path("content")
+                .path(JSON)
+                .path("examples")
+                .path("minimal")
+                .path("value");
+        assertThat(example.isArray()).isTrue();
+        assertThat(example.size()).isEqualTo(3);
+        final JsonNode headers = example.get(0);
+        final List<String> expectedHeaders = List.of(
+                "id",
+                "testSuiteId",
+                "testSuiteRunId",
+                "testCaseRunResultId",
+                "testCaseId",
+                "testCaseName",
+                "runIndex",
+                "requestIndex",
+                "turnIndex",
+                "computationId",
+                "createdAt",
+                "computedAt",
+                "executionStatus",
+                "execDurationMs",
+                "metricEvalDurationMs",
+                "responseStatusCode",
+                "data::prompt",
+                "response::answer",
+                "metric::Accuracy::score",
+                "metric::Accuracy::explanation",
+                "metricInfo::Accuracy::score",
+                "metricInfo::Accuracy::explanation",
+                "metricError::Accuracy",
+                "extractionWarnings",
+                "requestBody",
+                "responseBody");
+        assertThat(headers.isArray()).isTrue();
+        assertThat(headers.size()).isEqualTo(expectedHeaders.size());
+        for (int i = 0; i < expectedHeaders.size(); i++) {
+            assertThat(headers.get(i).asString()).isEqualTo(expectedHeaders.get(i));
+        }
+        for (int i = 1; i < example.size(); i++) {
+            final JsonNode row = example.get(i);
+            assertThat(row.isArray()).isTrue();
+            assertThat(row.size()).isEqualTo(headers.size());
+            assertThat(row.get(10).isString()).isTrue();
+            assertThat(row.get(10).asString()).isEqualTo("2026-05-25T10:22:12.226Z");
+            assertThat(row.get(11).isString()).isTrue();
+            assertThat(row.get(11).asString()).isEqualTo("2026-05-25T10:22:13.226Z");
+            assertThat(row.get(15).isNumber()).isTrue();
+        }
+        final JsonNode first = example.get(1);
+        assertThat(first.get(13).asInt()).isEqualTo(482);
+        assertThat(first.get(14).asInt()).isEqualTo(125);
+        assertThat(first.get(18).isNumber()).isTrue();
+        assertThat(first.get(18).asDouble()).isEqualTo(0.95);
+        assertThat(first.get(20).isObject()).isTrue();
+        assertThat(example.get(2).get(22).isObject()).isTrue();
+        assertThat(example.get(2).get(23).isArray()).isTrue();
     }
 
     private static void assertSseExample(JsonNode apiDocs, String path, String firstChunk, String secondChunk) {

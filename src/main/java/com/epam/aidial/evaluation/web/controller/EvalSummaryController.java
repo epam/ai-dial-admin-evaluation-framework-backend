@@ -111,7 +111,7 @@ public class EvalSummaryController {
                     + "ISO 8601 UTC with exactly three fractional digits and a trailing `Z` "
                     + "(for example `2026-05-25T10:22:12.226Z`); null values are empty. "
                     + "Durations and other columns are unchanged. Use GET /export/preview to discover "
-                    + "the full column manifest; preview timestamps remain epoch-millisecond numbers.")
+                    + "the full column manifest; preview timestamps use the same ISO 8601 UTC format.")
     @ApiResponse(responseCode = "200", description = "CSV stream")
     @ApiResponse(
             responseCode = "400",
@@ -132,8 +132,10 @@ public class EvalSummaryController {
             summary = "Preview the export's column manifest and first ≤10 rows as JSON",
             description = "Returns an array whose first element is the full headers manifest "
                     + "(including `requestBody` and `responseBody` at the tail) and whose subsequent "
-                    + "elements are up to 10 data rows with typed JSON cells (nested objects stay as "
-                    + "JSON objects, numbers stay numeric, `null` stays `null`). Sole purpose: column "
+                    + "elements are up to 10 data rows with typed JSON cells. `createdAt` and `computedAt` "
+                    + "are ISO 8601 UTC strings with exactly three fractional digits and a trailing `Z`; "
+                    + "null timestamps stay `null`. Other cells retain their JSON types (nested objects stay "
+                    + "as JSON objects, numbers stay numeric, `null` stays `null`). Sole purpose: column "
                     + "discovery for the export endpoint.")
     @ApiResponse(responseCode = "200", description = "Preview rows")
     @ApiResponse(

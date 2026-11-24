@@ -211,7 +211,11 @@ public class EvalSummaryExportService {
             EvalSummaryExportRow row = new EvalSummaryExportRow(summary, objectMapper);
             List<Object> cells = new ArrayList<>(fullManifest.size());
             for (ColumnDescriptor descriptor : fullManifest) {
-                cells.add(descriptor.valueExtractor().apply(row));
+                final Object value = descriptor.valueExtractor().apply(row);
+                cells.add(
+                        value != null && TIMESTAMP_COLUMNS.contains(descriptor.name())
+                                ? csvTimestampCodec.format((Long) value)
+                                : value);
             }
             result.add(cells);
         }

@@ -8,4 +8,4 @@ context: fork
 agent: general-purpose
 ---
 
-Provide an extreemely succint summary of the changes in the branch: two paragraphs - problem statement, solution. put md file into tmp directory. file name should be <git-branch>-PR-summary.
+Provide an extremely succinct summary of the changes in the branch in exactly two paragraphs: the first starts with `**Problem:**` and states the problem; the second starts with `**Solution:**` and describes the solution. Put the md file into the tmp directory. File name should be <git-branch>-PR-summary.

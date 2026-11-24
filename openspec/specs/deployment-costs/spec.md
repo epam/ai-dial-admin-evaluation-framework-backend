@@ -10,7 +10,9 @@ The system SHALL expose `GET /api/v1/costs/deployment/**`, treating everything a
 segment as the deployment ID (so IDs containing slashes are supported as-is), accepting `from` and `to`
 (epoch-millisecond `Long`, required, inclusive bounds) as query parameters, and returning the total price
 of test-case execution calls and the total price of metric-evaluation calls for that deployment within
-`[from, to]`, sourced from dial-adas usage-log data correlated by the `deployment` field, the
+`[from, to]` (summing `total_price`, not `deployment_price`: application deployments have a
+`total_price` but no `deployment_price`, and the `deployment` filter excludes nested rows so nothing is
+double counted), sourced from dial-adas usage-log data correlated by the `deployment` field, the
 `request_time` range, and the OTel baggage execution-phase tag. Status: Implemented.
 
 #### Scenario: Deployment has both execution and metric-evaluation usage data in range

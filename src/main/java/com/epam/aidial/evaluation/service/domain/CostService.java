@@ -5,10 +5,12 @@ import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasBatchRunCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasDeploymentCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasTotalCostRowDto;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
@@ -86,6 +88,31 @@ public class CostService {
                 .totalTestCaseCost(totalTestCaseCost)
                 .totalMetricEvalCost(totalMetricEvalCost)
                 .build();
+    }
+
+    public TotalCostResponseDto getTotalCosts(long fromMs, long toMs, List<String> deploymentIds) {
+        if (fromMs > toMs) {
+            throw new ValidationException("from must be <= to");
+        }
+
+        final AdasAggregateResponseDto<AdasTotalCostRowDto> response = dialAdasClient.executeAggregate(
+                adasCostQueryBuilder.buildTotalAggregateQuery(fromMs, toMs, deploymentIds), AdasTotalCostRowDto.class);
+        if (response == null || response.getRows() == null || response.getRows().isEmpty()) {
+            return emptyTotalCosts();
+        }
+        final AdasTotalCostRowDto row = response.getRows().get(0);
+        if (row.getCount() == null || row.getCount() == 0) {
+            return emptyTotalCosts();
+        }
+        return TotalCostResponseDto.builder()
+                .totalCost(row.getTotalCost())
+                .testCaseCost(row.getTestCaseCost())
+                .metricEvalCost(row.getMetricEvalCost())
+                .build();
+    }
+
+    private static TotalCostResponseDto emptyTotalCosts() {
+        return TotalCostResponseDto.builder().build();
     }
 
     private Double fetchTotalCost(String deploymentId, long fromMs, long toMs, EvalPhase phase) {

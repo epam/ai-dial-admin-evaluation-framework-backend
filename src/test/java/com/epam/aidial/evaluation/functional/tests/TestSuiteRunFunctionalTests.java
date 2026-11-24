@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
@@ -13,6 +16,7 @@ import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasBatchRunCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasDeploymentCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasTotalCostRowDto;
 import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationRequestDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
@@ -58,6 +62,8 @@ import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunUpdateDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalCostRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import java.math.BigDecimal;
@@ -414,6 +420,79 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                 URI.create(apiUrl("/costs/deployment/applications/public/my-app?from=2000&to=1000")), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should get total evaluation costs for a period filtered by deployments in one dial-adas call")
+    void shouldGetTotalCostsForPeriodAndDeployments() {
+        when(dialAdasClient.<AdasTotalCostRowDto>executeAggregate(any(StructuredQuery.class), any()))
+                .thenReturn(AdasAggregateResponseDto.<AdasTotalCostRowDto>builder()
+                        .rows(List.of(AdasTotalCostRowDto.builder()
+                                .count(180L)
+                                .totalCost(0.0123)
+                                .testCaseCost(0.01)
+                                .metricEvalCost(0.0023)
+                                .build()))
+                        .build());
+
+        ResponseEntity<TotalCostResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/costs/total"),
+                TotalCostRequestDto.builder()
+                        .from(1000L)
+                        .to(2000L)
+                        .deploymentIds(List.of("gpt-4o", "my%20app"))
+                        .build(),
+                TotalCostResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getTotalCost()).isEqualTo(0.0123);
+        assertThat(response.getBody().getTestCaseCost()).isEqualTo(0.01);
+        assertThat(response.getBody().getMetricEvalCost()).isEqualTo(0.0023);
+        verify(dialAdasClient, times(1)).executeAggregate(any(StructuredQuery.class), any());
+    }
+
+    @Test
+    @DisplayName("Should return null total costs when dial-adas has no usage rows for the period")
+    void shouldReturnNullTotalCostsWhenNoUsage() {
+        when(dialAdasClient.<AdasTotalCostRowDto>executeAggregate(any(StructuredQuery.class), any()))
+                .thenReturn(AdasAggregateResponseDto.<AdasTotalCostRowDto>builder()
+                        .rows(List.of(AdasTotalCostRowDto.builder().count(0L).build()))
+                        .build());
+
+        ResponseEntity<TotalCostResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/costs/total"),
+                TotalCostRequestDto.builder().from(1000L).to(2000L).build(),
+                TotalCostResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo(TotalCostResponseDto.builder().build());
+    }
+
+    @Test
+    @DisplayName("Should return 400 for total costs with from > to without calling dial-adas")
+    void shouldReturn400WhenTotalCostsFromAfterTo() {
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/costs/total"),
+                TotalCostRequestDto.builder().from(2000L).to(1000L).build(),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(dialAdasClient, never()).executeAggregate(any(StructuredQuery.class), any());
+    }
+
+    @Test
+    @DisplayName("Should return 502 for total costs when the dial-adas call fails")
+    void shouldReturn502WhenTotalCostsDialAdasFails() {
+        when(dialAdasClient.executeAggregate(any(StructuredQuery.class), any()))
+                .thenThrow(new DialAdasClientException(502, "boom"));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/costs/total"),
+                TotalCostRequestDto.builder().from(1000L).to(2000L).build(),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
     }
 
     @Test

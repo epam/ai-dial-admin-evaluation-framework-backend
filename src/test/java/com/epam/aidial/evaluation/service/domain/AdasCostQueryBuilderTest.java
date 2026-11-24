@@ -237,8 +237,9 @@ class AdasCostQueryBuilderTest {
                         new OutputColumn(new FnExpr("count", false, List.of()), null),
                         new OutputColumn(
                                 new FnExpr("sum", false, List.of(new FieldExpr("deployment_price"))), "total_cost"),
-                        phaseCostColumn(TracingConstants.PHASE_EXECUTION, "test_case_cost"),
-                        phaseCostColumn(TracingConstants.PHASE_METRIC_EVALUATION, "metric_eval_cost"));
+                        phaseCostColumn(TracingConstants.PHASE_EXECUTION, "test_case_cost", "deployment_price"),
+                        phaseCostColumn(
+                                TracingConstants.PHASE_METRIC_EVALUATION, "metric_eval_cost", "deployment_price"));
     }
 
     @Test
@@ -359,10 +360,207 @@ class AdasCostQueryBuilderTest {
         assertThat(actual).isEqualTo(expected);
     }
 
-    private static OutputColumn phaseCostColumn(String phase, String alias) {
+    @Test
+    @DisplayName("builds the total aggregate query with an OR of deployment eq predicates for several ids")
+    void buildsTotalAggregateQueryForSeveralDeployments() {
+        StructuredQuery query = builder.buildTotalAggregateQuery(FROM_MS, TO_MS, List.of("gpt-4o", "my%20app"));
+
+        assertThat(query.entity()).isEqualTo("dial_usage_log");
+        assertThat(query.mode()).isEqualTo(QueryMode.AGGREGATE);
+        assertThat(query.groupBy()).isEmpty();
+        assertThat(query.filter())
+                .isEqualTo(new LogicalNode(
+                        LogicalOp.AND,
+                        List.of(
+                                timeBound(ComparisonOp.GE, FROM_MS),
+                                timeBound(ComparisonOp.LE, TO_MS),
+                                baggageContains(TracingConstants.EVAL_PHASE + "="),
+                                new LogicalNode(
+                                        LogicalOp.OR, List.of(deploymentEq("gpt-4o"), deploymentEq("my%20app"))))));
+        assertThat(query.select())
+                .containsExactly(
+                        new OutputColumn(new FnExpr("count", false, List.of()), null),
+                        new OutputColumn(new FnExpr("sum", false, List.of(new FieldExpr("total_price"))), "total_cost"),
+                        phaseCostColumn(TracingConstants.PHASE_EXECUTION, "test_case_cost", "total_price"),
+                        phaseCostColumn(TracingConstants.PHASE_METRIC_EVALUATION, "metric_eval_cost", "total_price"));
+    }
+
+    @Test
+    @DisplayName("unwraps the OR node into a bare deployment eq predicate when exactly one id is given")
+    void buildsTotalAggregateQueryForSingleDeployment() {
+        StructuredQuery query = builder.buildTotalAggregateQuery(FROM_MS, TO_MS, List.of(DEPLOYMENT_ID));
+
+        assertThat(query.filter())
+                .isEqualTo(new LogicalNode(
+                        LogicalOp.AND,
+                        List.of(
+                                timeBound(ComparisonOp.GE, FROM_MS),
+                                timeBound(ComparisonOp.LE, TO_MS),
+                                baggageContains(TracingConstants.EVAL_PHASE + "="),
+                                deploymentEq(DEPLOYMENT_ID))));
+    }
+
+    @Test
+    @DisplayName("adds no deployment predicate when the id list is null or empty")
+    void buildsTotalAggregateQueryWithoutDeploymentFilter() {
+        StructuredQuery withNull = builder.buildTotalAggregateQuery(FROM_MS, TO_MS, null);
+        StructuredQuery withEmpty = builder.buildTotalAggregateQuery(FROM_MS, TO_MS, List.of());
+
+        LogicalNode expectedFilter = new LogicalNode(
+                LogicalOp.AND,
+                List.of(
+                        timeBound(ComparisonOp.GE, FROM_MS),
+                        timeBound(ComparisonOp.LE, TO_MS),
+                        baggageContains(TracingConstants.EVAL_PHASE + "=")));
+        assertThat(withNull.filter()).isEqualTo(expectedFilter);
+        assertThat(withEmpty.filter()).isEqualTo(expectedFilter);
+    }
+
+    @Test
+    @DisplayName("sums the leaf deployment_price without a deployment filter to avoid counting nested requests twice")
+    void sumsLeafDeploymentPriceWhenNoDeploymentFilter() {
+        List<OutputColumn> expectedSelect = List.of(
+                new OutputColumn(new FnExpr("count", false, List.of()), null),
+                new OutputColumn(new FnExpr("sum", false, List.of(new FieldExpr("deployment_price"))), "total_cost"),
+                phaseCostColumn(TracingConstants.PHASE_EXECUTION, "test_case_cost", "deployment_price"),
+                phaseCostColumn(TracingConstants.PHASE_METRIC_EVALUATION, "metric_eval_cost", "deployment_price"));
+
+        assertThat(builder.buildTotalAggregateQuery(FROM_MS, TO_MS, null).select())
+                .isEqualTo(expectedSelect);
+        assertThat(builder.buildTotalAggregateQuery(FROM_MS, TO_MS, List.of()).select())
+                .isEqualTo(expectedSelect);
+    }
+
+    @Test
+    @DisplayName("sums total_price for a single deployment id so application costs are not lost")
+    void sumsTotalPriceForSingleDeploymentFilter() {
+        StructuredQuery query = builder.buildTotalAggregateQuery(FROM_MS, TO_MS, List.of(DEPLOYMENT_ID));
+
+        assertThat(query.select())
+                .containsExactly(
+                        new OutputColumn(new FnExpr("count", false, List.of()), null),
+                        new OutputColumn(new FnExpr("sum", false, List.of(new FieldExpr("total_price"))), "total_cost"),
+                        phaseCostColumn(TracingConstants.PHASE_EXECUTION, "test_case_cost", "total_price"),
+                        phaseCostColumn(TracingConstants.PHASE_METRIC_EVALUATION, "metric_eval_cost", "total_price"));
+    }
+
+    @Test
+    @DisplayName("total aggregate query serializes to the exact JSON dial-adas expects on the wire")
+    void serializesTotalAggregateQueryToDialAdasWireShape() {
+        JsonMapper objectMapper = JsonMapper.builder()
+                .changeDefaultPropertyInclusion(
+                        v -> JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.NON_NULL))
+                .build();
+
+        StructuredQuery query = builder.buildTotalAggregateQuery(FROM_MS, TO_MS, List.of("gpt-4o", "my%20app"));
+        JsonNode actual = objectMapper.valueToTree(query);
+
+        JsonNode expected = objectMapper.readTree("""
+            {
+              "entity": "dial_usage_log",
+              "mode": "aggregate",
+              "distinct": false,
+              "filter": {
+                "op": "and",
+                "args": [
+                  {
+                    "op": "ge",
+                    "args": [
+                      { "type": "field", "name": "request_time" },
+                      { "type": "value", "value_type": "timestamp", "value": "1735689600000" }
+                    ]
+                  },
+                  {
+                    "op": "le",
+                    "args": [
+                      { "type": "field", "name": "request_time" },
+                      { "type": "value", "value_type": "timestamp", "value": "1738368000000" }
+                    ]
+                  },
+                  {
+                    "op": "co",
+                    "args": [
+                      { "type": "field", "name": "usage_request_baggage.baggage" },
+                      { "type": "value", "value_type": "string", "value": "eval.phase=" }
+                    ]
+                  },
+                  {
+                    "op": "or",
+                    "args": [
+                      { "op": "eq", "args": [
+                        { "type": "field", "name": "deployment" },
+                        { "type": "value", "value_type": "string", "value": "gpt-4o" }
+                      ]},
+                      { "op": "eq", "args": [
+                        { "type": "field", "name": "deployment" },
+                        { "type": "value", "value_type": "string", "value": "my%20app" }
+                      ]}
+                    ]
+                  }
+                ]
+              },
+              "group_by": [],
+              "select": [
+                { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
+                { "expr": { "type": "fn", "name": "sum", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "total_cost" },
+                {
+                  "expr": {
+                    "type": "fn", "name": "sum", "distinct": false,
+                    "args": [{
+                      "type": "case",
+                      "when": [{
+                        "when": { "op": "co", "args": [
+                          { "type": "field", "name": "usage_request_baggage.baggage" },
+                          { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
+                        ]},
+                        "then": { "type": "field", "name": "total_price" }
+                      }],
+                      "else": { "type": "value", "value_type": "decimal", "value": "0" }
+                    }]
+                  },
+                  "as": "test_case_cost"
+                },
+                {
+                  "expr": {
+                    "type": "fn", "name": "sum", "distinct": false,
+                    "args": [{
+                      "type": "case",
+                      "when": [{
+                        "when": { "op": "co", "args": [
+                          { "type": "field", "name": "usage_request_baggage.baggage" },
+                          { "type": "value", "value_type": "string", "value": "eval.phase=metric-evaluation" }
+                        ]},
+                        "then": { "type": "field", "name": "total_price" }
+                      }],
+                      "else": { "type": "value", "value_type": "decimal", "value": "0" }
+                    }]
+                  },
+                  "as": "metric_eval_cost"
+                }
+              ]
+            }
+            """);
+
+        assertThat(actual).isEqualTo(expected);
+    }
+
+    private static ComparisonNode timeBound(ComparisonOp op, long epochMillis) {
+        return new ComparisonNode(
+                op,
+                List.of(
+                        new FieldExpr("request_time"),
+                        new ValueExpr(ValueType.TIMESTAMP, String.valueOf(epochMillis))));
+    }
+
+    private static ComparisonNode deploymentEq(String deploymentId) {
+        return new ComparisonNode(
+                ComparisonOp.EQ, List.of(new FieldExpr("deployment"), new ValueExpr(ValueType.STRING, deploymentId)));
+    }
+
+    private static OutputColumn phaseCostColumn(String phase, String alias, String priceField) {
         CaseExpr phasePrice = new CaseExpr(
                 List.of(new WhenClause(
-                        baggageContains(TracingConstants.EVAL_PHASE + "=" + phase), new FieldExpr("deployment_price"))),
+                        baggageContains(TracingConstants.EVAL_PHASE + "=" + phase), new FieldExpr(priceField))),
                 new ValueExpr(ValueType.DECIMAL, "0"));
         return new OutputColumn(new FnExpr("sum", false, List.of(phasePrice)), alias);
     }

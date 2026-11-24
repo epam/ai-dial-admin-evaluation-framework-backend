@@ -1,6 +1,8 @@
 package com.epam.aidial.evaluation.web.controller;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -16,6 +18,7 @@ import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.service.domain.CostService;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.web.handler.DefaultExceptionHandler;
@@ -199,5 +202,132 @@ class CostControllerTest {
                 .andExpect(content().json("{\"avgTestCaseCost\":0.0007125,\"avgMetricEvalCost\":0.000231}"));
 
         verify(costService).getRunCosts(eq(runId));
+    }
+
+    @Test
+    @DisplayName("getTotalCost delegates to CostService with the body values and returns the costs")
+    void getTotalCostDelegatesToCostService() throws Exception {
+        when(costService.getTotalCosts(1_000L, 2_000L, List.of("gpt-4o", "my%20app")))
+                .thenReturn(TotalCostResponseDto.builder()
+                        .totalCost(0.0123)
+                        .testCaseCost(0.01)
+                        .metricEvalCost(0.0023)
+                        .build());
+
+        mockMvc.perform(post("/api/v1/costs/total")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":1000,\"to\":2000,\"deploymentIds\":[\"gpt-4o\",\"my%20app\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{\"totalCost\":0.0123,\"testCaseCost\":0.01,\"metricEvalCost\":0.0023}"));
+
+        verify(costService).getTotalCosts(1_000L, 2_000L, List.of("gpt-4o", "my%20app"));
+    }
+
+    @Test
+    @DisplayName("getTotalCost passes null deploymentIds to CostService when the field is omitted")
+    void getTotalCostPassesNullDeploymentIdsWhenOmitted() throws Exception {
+        when(costService.getTotalCosts(1_000L, 2_000L, null))
+                .thenReturn(TotalCostResponseDto.builder().build());
+
+        mockMvc.perform(post("/api/v1/costs/total")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":1000,\"to\":2000}"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{}"));
+
+        verify(costService).getTotalCosts(1_000L, 2_000L, null);
+    }
+
+    @Test
+    @DisplayName("getTotalCost passes an empty deploymentIds list through to CostService")
+    void getTotalCostPassesEmptyDeploymentIds() throws Exception {
+        when(costService.getTotalCosts(1_000L, 2_000L, List.of()))
+                .thenReturn(TotalCostResponseDto.builder().build());
+
+        mockMvc.perform(post("/api/v1/costs/total")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":1000,\"to\":2000,\"deploymentIds\":[]}"))
+                .andExpect(status().isOk());
+
+        verify(costService).getTotalCosts(1_000L, 2_000L, List.of());
+    }
+
+    @Test
+    @DisplayName("getTotalCost returns 400 when from is missing")
+    void getTotalCostReturns400WhenFromMissing() throws Exception {
+        mockMvc.perform(post("/api/v1/costs/total")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"to\":2000}"))
+                .andExpect(status().isBadRequest());
+
+        verify(costService, never()).getTotalCosts(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("getTotalCost returns 400 when to is missing")
+    void getTotalCostReturns400WhenToMissing() throws Exception {
+        mockMvc.perform(post("/api/v1/costs/total")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":1000}"))
+                .andExpect(status().isBadRequest());
+
+        verify(costService, never()).getTotalCosts(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("getTotalCost returns 400 when the request body is missing")
+    void getTotalCostReturns400WhenBodyMissing() throws Exception {
+        mockMvc.perform(post("/api/v1/costs/total").contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest());
+
+        verify(costService, never()).getTotalCosts(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("getTotalCost returns 400 when deploymentIds exceeds MAX_COST_DEPLOYMENT_IDS")
+    void getTotalCostReturns400WhenTooManyDeploymentIds() throws Exception {
+        String tooMany = IntStream.range(0, ValidationConstants.MAX_COST_DEPLOYMENT_IDS + 1)
+                .mapToObj(i -> "\"dep-" + i + "\"")
+                .collect(Collectors.joining(","));
+
+        mockMvc.perform(post("/api/v1/costs/total")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":1000,\"to\":2000,\"deploymentIds\":[" + tooMany + "]}"))
+                .andExpect(status().isBadRequest());
+
+        verify(costService, never()).getTotalCosts(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("getTotalCost returns 400 when deploymentIds contains a blank entry")
+    void getTotalCostReturns400WhenBlankDeploymentId() throws Exception {
+        mockMvc.perform(post("/api/v1/costs/total")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":1000,\"to\":2000,\"deploymentIds\":[\"gpt-4o\",\"  \"]}"))
+                .andExpect(status().isBadRequest());
+
+        verify(costService, never()).getTotalCosts(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("getTotalCost maps a ValidationException from the service (from > to) to 400")
+    void getTotalCostReturns400WhenServiceRejectsRange() throws Exception {
+        when(costService.getTotalCosts(2_000L, 1_000L, null)).thenThrow(new ValidationException("from must be <= to"));
+
+        mockMvc.perform(post("/api/v1/costs/total")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":2000,\"to\":1000}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("getTotalCost maps a DialAdasClientException from the service to 502")
+    void getTotalCostReturns502OnDialAdasFailure() throws Exception {
+        when(costService.getTotalCosts(1_000L, 2_000L, null)).thenThrow(new DialAdasClientException(502, "boom"));
+
+        mockMvc.perform(post("/api/v1/costs/total")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":1000,\"to\":2000}"))
+                .andExpect(status().isBadGateway());
     }
 }

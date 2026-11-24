@@ -46,6 +46,33 @@ public abstract class OpenApiExamplesFunctionalTests extends BaseFunctionalTest 
     }
 
     @Test
+    @DisplayName("POST /api/v1/costs/total exposes request examples and 200 minimal and no-usage examples")
+    void totalCostEndpointExposesRequestAndResponseExamples() {
+        final JsonNode operation =
+                fetchApiDocs().path("paths").path("/api/v1/costs/total").path("post");
+
+        // request examples are attached as raw JSON text (see OpenApiExampleCustomizer), not parsed objects
+        assertThat(operation
+                        .path("requestBody")
+                        .path("content")
+                        .path(JSON)
+                        .path("examples")
+                        .path("full")
+                        .path("value")
+                        .asString())
+                .contains("deploymentIds", "applications/public/my-app__0.0.1");
+
+        final JsonNode responseExamples = operation
+                .path("responses")
+                .path("200")
+                .path("content")
+                .path(JSON)
+                .path("examples");
+        assertThat(responseExamples.has("minimal")).as("200 minimal example").isTrue();
+        assertThat(responseExamples.has("no-usage")).as("200 no-usage example").isTrue();
+    }
+
+    @Test
     @DisplayName("both try-it-out SSE examples show assembled chat responses and their parsed chunks")
     void tryItOutSseExamplesShowAssembledBodyAndEvents() {
         final JsonNode apiDocs = fetchApiDocs();

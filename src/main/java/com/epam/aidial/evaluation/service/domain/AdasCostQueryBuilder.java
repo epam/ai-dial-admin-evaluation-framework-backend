@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.query.model.ValueType;
 import com.epam.aidial.evaluation.query.model.WhenClause;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -30,7 +31,8 @@ import org.springframework.stereotype.Component;
  * ({@link #buildDeploymentAggregateQuery}, filtering on the real {@code deployment}/{@code request_time}
  * columns plus an {@code eval.phase} baggage match), or one scoped to a page of runs at once
  * ({@link #buildPageTotalCostQuery}, one {@code or}-filtered/{@code case}-grouped call for many run ids,
- * no {@code eval.phase} predicate). The two {@link StructuredQuery}-based builders reuse the internal
+ * no {@code eval.phase} predicate), or one system-wide for a time range and an optional deployment set
+ * ({@link #buildTotalAggregateQuery}). The {@link StructuredQuery}-based builders reuse the internal
  * {@link StructuredQuery} model — dial-adas's own query DSL is the same wire contract, so this is the
  * canonical shape, not a lookalike we're guessing at.
  */
@@ -110,6 +112,57 @@ public class AdasCostQueryBuilder {
     }
 
     /**
+     * Builds a single aggregate query totaling cost for the {@code [fromMs, toMs]} window across both
+     * {@code eval.phase} values: {@code count}, the total and the execution/metric-evaluation split. The
+     * {@code eval.phase=} baggage match restricts the rows to evaluation traffic.
+     *
+     * <p>The summed price field depends on the scope. Without {@code deploymentIds} every tagged row matches, so an
+     * application's row and the nested rows it initiated both match; the leaf {@code deployment_price} (a request's
+     * own cost) is summed so each request is counted once. With {@code deploymentIds} the rows are restricted to
+     * those deployments (a bare {@code eq} predicate for one id, an {@code or} of {@code eq} predicates for several,
+     * the shape {@link #buildPageTotalCostQuery} already sends to dial-adas) and {@code total_price} (the request
+     * plus everything it initiated) is summed, because applications have no {@code deployment_price}. Listing an
+     * application together with a deployment it calls therefore counts the shared cost twice.
+     */
+    public StructuredQuery buildTotalAggregateQuery(long fromMs, long toMs, Collection<String> deploymentIds) {
+        Expr baggageValue = baggageField();
+        final boolean deploymentScoped = deploymentIds != null && !deploymentIds.isEmpty();
+        final String priceField = deploymentScoped ? TOTAL_PRICE_FIELD : DEPLOYMENT_PRICE_FIELD;
+
+        List<FilterNode> predicates = new ArrayList<>();
+        predicates.add(ge(REQUEST_TIME_FIELD, timestampValue(fromMs)));
+        predicates.add(le(REQUEST_TIME_FIELD, timestampValue(toMs)));
+        predicates.add(baggageContains(baggageValue, TracingConstants.EVAL_PHASE + "="));
+        if (deploymentScoped) {
+            predicates.add(deploymentPredicate(deploymentIds));
+        }
+
+        List<OutputColumn> select = List.of(
+                new OutputColumn(new FnExpr("count", false, List.of()), null),
+                new OutputColumn(new FnExpr("sum", false, List.of(new FieldExpr(priceField))), TOTAL_COST_ALIAS),
+                phaseCostColumn(baggageValue, EvalPhase.EXECUTION, TEST_CASE_COST_ALIAS, priceField),
+                phaseCostColumn(baggageValue, EvalPhase.METRIC_EVALUATION, METRIC_EVAL_COST_ALIAS, priceField));
+
+        return new StructuredQuery(
+                ENTITY,
+                new LogicalNode(LogicalOp.AND, predicates),
+                QueryMode.AGGREGATE,
+                false,
+                select,
+                List.of(),
+                null,
+                null,
+                null);
+    }
+
+    private static FilterNode deploymentPredicate(Collection<String> deploymentIds) {
+        List<FilterNode> perDeployment = deploymentIds.stream()
+                .map(id -> eq(DEPLOYMENT_FIELD, stringValue(id)))
+                .toList();
+        return perDeployment.size() == 1 ? perDeployment.getFirst() : new LogicalNode(LogicalOp.OR, perDeployment);
+    }
+
+    /**
      * Builds a single aggregate query totaling cost across {@code runIds}, spanning both {@code
      * eval.phase} values (unlike every other query this builder produces). Filters on an {@code or} of
      * per-run baggage-contains predicates (unwrapped to the bare predicate when {@code runIds} has
@@ -138,8 +191,9 @@ public class AdasCostQueryBuilder {
                 new OutputColumn(new FnExpr("count", false, List.of()), null),
                 new OutputColumn(
                         new FnExpr("sum", false, List.of(new FieldExpr(DEPLOYMENT_PRICE_FIELD))), TOTAL_COST_ALIAS),
-                phaseCostColumn(baggageValue, EvalPhase.EXECUTION, TEST_CASE_COST_ALIAS),
-                phaseCostColumn(baggageValue, EvalPhase.METRIC_EVALUATION, METRIC_EVAL_COST_ALIAS));
+                phaseCostColumn(baggageValue, EvalPhase.EXECUTION, TEST_CASE_COST_ALIAS, DEPLOYMENT_PRICE_FIELD),
+                phaseCostColumn(
+                        baggageValue, EvalPhase.METRIC_EVALUATION, METRIC_EVAL_COST_ALIAS, DEPLOYMENT_PRICE_FIELD));
 
         return new StructuredQuery(
                 ENTITY, filter, QueryMode.AGGREGATE, false, select, List.of(RUN_ID_ALIAS), null, null, null);
@@ -156,11 +210,11 @@ public class AdasCostQueryBuilder {
                         new FnExpr("sum", false, List.of(new FieldExpr(TOTAL_PRICE_FIELD))), TOTAL_COST_ALIAS));
     }
 
-    private static OutputColumn phaseCostColumn(Expr baggageValue, EvalPhase phase, String alias) {
+    private static OutputColumn phaseCostColumn(Expr baggageValue, EvalPhase phase, String alias, String priceField) {
         CaseExpr phasePrice = new CaseExpr(
                 List.of(new WhenClause(
                         baggageContains(baggageValue, TracingConstants.EVAL_PHASE + "=" + phase.getValue()),
-                        new FieldExpr(DEPLOYMENT_PRICE_FIELD))),
+                        new FieldExpr(priceField))),
                 new ValueExpr(ValueType.DECIMAL, "0"));
         return new OutputColumn(new FnExpr("sum", false, List.of(phasePrice)), alias);
     }

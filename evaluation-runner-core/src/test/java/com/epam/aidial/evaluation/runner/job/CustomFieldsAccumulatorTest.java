@@ -146,6 +146,28 @@ class CustomFieldsAccumulatorTest {
                 .isEqualTo(node("{\"annotations\":[],\"metadata\":{\"label\":\"retained\",\"tags\":[]}}"));
     }
 
+    @Test
+    @DisplayName("Should replace matching annotations without specialized merging in replacement mode")
+    void accumulate_replaceMode_matchingAnnotationsRemainGeneric() {
+        final CustomFieldsAccumulator accumulator = new CustomFieldsAccumulator(ArrayMergeMode.REPLACE);
+        accumulator.accumulate(node("{\"annotations\":[{\"index\":0,\"body\":{\"quote\":\"first\"}}]}"));
+        accumulator.accumulate(node("{\"annotations\":[{\"index\":0,\"body\":{\"quote\":\"second\"}}]}"));
+        assertThat(accumulator.getMerged())
+                .isEqualTo(node("{\"annotations\":[{\"index\":0,\"body\":{\"quote\":\"second\"}}]}"));
+        accumulator.accumulate(node("{\"annotations\":[]}"));
+        assertThat(accumulator.getMerged()).isEqualTo(node("{\"annotations\":[]}"));
+    }
+
+    @Test
+    @DisplayName("Should merge snapshot namesakes generically in custom fields")
+    void accumulate_snapshotNamesakes_mergeNormally() {
+        final CustomFieldsAccumulator accumulator = new CustomFieldsAccumulator();
+        accumulator.accumulate(node("{\"state\":{\"old\":1},\"form_schema\":{\"old\":1}}"));
+        accumulator.accumulate(node("{\"state\":{\"new\":2,\"ignored\":null},\"form_schema\":{\"new\":2}}"));
+        assertThat(accumulator.getMerged())
+                .isEqualTo(node("{\"state\":{\"old\":1,\"new\":2},\"form_schema\":{\"old\":1,\"new\":2}}"));
+    }
+
     private JsonNode node(String json) {
         return OBJECT_MAPPER.readTree(json);
     }

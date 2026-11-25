@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
+import com.epam.aidial.evaluation.functional.support.StreamingExtensionFixture;
 import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
@@ -83,6 +84,28 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         assertThat(result.get("events")).isEqualTo(objectMapper.readTree("""
                 [{"event":"message","data":%s},{"event":"message","data":%s}]
                 """.formatted(first, second)));
+        assertThat(result.has("streamingStatus")).isFalse();
+    }
+
+    @ParameterizedTest(name = "route={0}, variables={1}")
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    @DisplayName("Both targets and endpoints preserve combined extensions and original SSE events")
+    void shouldExposeCombinedExtensionsOnWire(boolean route, boolean variables) {
+        final TestSuiteResponseDto suite = route ? createStreamingRouteSuite() : createSuiteWithTemplate();
+        final TestCaseResponseDto testCase = variables
+                ? null
+                : createTestCase(suite.getId(), "extension case", route ? Map.of() : Map.of("promptField", "hello"));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(sseReply(StreamingExtensionFixture.FIRST, StreamingExtensionFixture.SECOND));
+
+        final ResponseEntity<String> response = postTryOut(suite, testCase, variables);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        final JsonNode result = objectMapper.readTree(response.getBody()).get("response");
+        assertThat(result.get("statusCode").asInt()).isEqualTo(200);
+        assertThat(result.get("streaming").asBoolean()).isTrue();
+        assertThat(result.get("body")).isEqualTo(objectMapper.readTree(StreamingExtensionFixture.ASSEMBLED));
+        assertThat(result.get("events")).isEqualTo(objectMapper.readTree(StreamingExtensionFixture.EVENTS));
         assertThat(result.has("streamingStatus")).isFalse();
     }
 

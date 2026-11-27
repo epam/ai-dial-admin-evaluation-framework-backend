@@ -32,6 +32,7 @@ class PostgresTestSuiteRunEntityResolverTest {
             "started_at_ms",
             "completed_at_ms",
             "error_message",
+            "schedule_id",
             "created_at_ms",
             "updated_at_ms",
             "number_of_runs",
@@ -58,7 +59,7 @@ class PostgresTestSuiteRunEntityResolverTest {
     }
 
     @Test
-    @DisplayName("bindings contain exactly the 23 spec'd field names and none of the excluded columns")
+    @DisplayName("bindings contain exactly the 24 spec'd field names and none of the excluded columns")
     void shouldExposeExactlyTheSpecFieldSet() {
         final Map<String, QueryFieldBinding> bindings = resolver.bindings(mock(StructuredQuery.class));
 
@@ -101,6 +102,7 @@ class PostgresTestSuiteRunEntityResolverTest {
         assertThat(bindings.get("started_at_ms").type()).isEqualTo(QueryFieldType.LONG);
         assertThat(bindings.get("completed_at_ms").type()).isEqualTo(QueryFieldType.LONG);
         assertThat(bindings.get("error_message").type()).isEqualTo(QueryFieldType.STRING);
+        assertThat(bindings.get("schedule_id").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("created_at_ms").type()).isEqualTo(QueryFieldType.LONG);
         assertThat(bindings.get("updated_at_ms").type()).isEqualTo(QueryFieldType.LONG);
         assertThat(bindings.get("number_of_runs").type()).isEqualTo(QueryFieldType.INTEGER);
@@ -119,7 +121,7 @@ class PostgresTestSuiteRunEntityResolverTest {
     }
 
     @Test
-    @DisplayName("derived table projects exactly the 23 spec'd field names")
+    @DisplayName("derived table projects exactly the 24 spec'd field names")
     void shouldProjectExactlyTheSpecFieldSet() {
         final List<String> fieldNames =
                 List.of(resolver.table().fields()).stream().map(Field::getName).toList();

@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteMetricDefinitions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteRuns;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteSchedules;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuites;
 
 import org.jooq.Index;
@@ -39,8 +40,10 @@ public class Indexes {
     public static final Index IDX_TEST_CASES_CREATED_AT_MS = Internal.createIndex(DSL.name("idx_test_cases_created_at_ms"), TestCases.TEST_CASES, new OrderField[] { TestCases.TEST_CASES.CREATED_AT_MS.desc() }, false);
     public static final Index IDX_TEST_CASES_DATASET_ID = Internal.createIndex(DSL.name("idx_test_cases_dataset_id"), TestCases.TEST_CASES, new OrderField[] { TestCases.TEST_CASES.DATASET_ID }, false);
     public static final Index IDX_TEST_SUITE_RUNS_CREATED_AT_MS = Internal.createIndex(DSL.name("idx_test_suite_runs_created_at_ms"), TestSuiteRuns.TEST_SUITE_RUNS, new OrderField[] { TestSuiteRuns.TEST_SUITE_RUNS.CREATED_AT_MS.desc() }, false);
+    public static final Index IDX_TEST_SUITE_RUNS_SCHEDULE = Internal.createIndex(DSL.name("idx_test_suite_runs_schedule"), TestSuiteRuns.TEST_SUITE_RUNS, new OrderField[] { TestSuiteRuns.TEST_SUITE_RUNS.SCHEDULE_ID, TestSuiteRuns.TEST_SUITE_RUNS.CREATED_AT_MS.desc() }, false);
     public static final Index IDX_TEST_SUITE_RUNS_STATUS = Internal.createIndex(DSL.name("idx_test_suite_runs_status"), TestSuiteRuns.TEST_SUITE_RUNS, new OrderField[] { TestSuiteRuns.TEST_SUITE_RUNS.STATUS }, false);
     public static final Index IDX_TEST_SUITE_RUNS_TEST_SUITE_ID = Internal.createIndex(DSL.name("idx_test_suite_runs_test_suite_id"), TestSuiteRuns.TEST_SUITE_RUNS, new OrderField[] { TestSuiteRuns.TEST_SUITE_RUNS.TEST_SUITE_ID }, false);
+    public static final Index IDX_TEST_SUITE_SCHEDULES_SUITE = Internal.createIndex(DSL.name("idx_test_suite_schedules_suite"), TestSuiteSchedules.TEST_SUITE_SCHEDULES, new OrderField[] { TestSuiteSchedules.TEST_SUITE_SCHEDULES.TEST_SUITE_ID, TestSuiteSchedules.TEST_SUITE_SCHEDULES.CREATED_AT.desc() }, false);
     public static final Index IDX_TEST_SUITES_CREATED_AT_MS = Internal.createIndex(DSL.name("idx_test_suites_created_at_ms"), TestSuites.TEST_SUITES, new OrderField[] { TestSuites.TEST_SUITES.CREATED_AT_MS.desc() }, false);
     public static final Index IDX_TEST_SUITES_DATASET_ID = Internal.createIndex(DSL.name("idx_test_suites_dataset_id"), TestSuites.TEST_SUITES, new OrderField[] { TestSuites.TEST_SUITES.DATASET_ID }, false);
     public static final Index IDX_TSMD_METRIC_DECLARATION_ID = Internal.createIndex(DSL.name("idx_tsmd_metric_declaration_id"), TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS, new OrderField[] { TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS.METRIC_DECLARATION_ID }, false);
@@ -48,4 +51,5 @@ public class Indexes {
     public static final Index UQ_METRIC_DECLARATION_VERSIONS_DECLARATION_VERSION = Internal.createIndex(DSL.name("uq_metric_declaration_versions_declaration_version"), MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS, new OrderField[] { MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS.METRIC_DECLARATION_ID, MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS.SCHEMA_VERSION.desc() }, true);
     public static final Index UQ_METRIC_DECLARATIONS_PROVIDER_ID_NAME = Internal.createIndex(DSL.name("uq_metric_declarations_provider_id_name"), MetricDeclarations.METRIC_DECLARATIONS, new OrderField[] { MetricDeclarations.METRIC_DECLARATIONS.PROVIDER_ID, MetricDeclarations.METRIC_DECLARATIONS.NAME }, true);
     public static final Index UQ_RUN_METRIC_SNAPSHOTS_COMPUTATION_TSMD = Internal.createIndex(DSL.name("uq_run_metric_snapshots_computation_tsmd"), RunMetricSnapshots.RUN_METRIC_SNAPSHOTS, new OrderField[] { RunMetricSnapshots.RUN_METRIC_SNAPSHOTS.COMPUTATION_ID, RunMetricSnapshots.RUN_METRIC_SNAPSHOTS.TSMD_ID }, true);
+    public static final Index UQ_TEST_SUITE_SCHEDULES_REF = Internal.createIndex(DSL.name("uq_test_suite_schedules_ref"), TestSuiteSchedules.TEST_SUITE_SCHEDULES, new OrderField[] { TestSuiteSchedules.TEST_SUITE_SCHEDULES.SCHEDULE_REF }, true);
 }

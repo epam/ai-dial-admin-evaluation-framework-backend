@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-11-12 (meta V1.38, analytics V1.23)
+> **Last sync**: 2026-11-27 (meta V1.40, analytics V1.23)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -24,6 +24,7 @@ This document describes the current database schema as implemented by Flyway mig
 | `metric_declaration_versions` | Schema versions per metric declaration | `id` (VARCHAR(36)) |
 | `test_suite_metric_definitions` | Metric applications within a test suite | `id` (VARCHAR(36)) |
 | `run_metric_snapshots` | Metric definition snapshots per computation batch; FK to `test_suite_runs` with CASCADE | `id` (VARCHAR(36)) |
+| `test_suite_schedules` | Link from a test suite to a schedule stored in the DIAL Core scheduler application; FK to `test_suites` with CASCADE | `schedule_id` (VARCHAR(255)) |
 
 ### Analytics Database
 
@@ -399,6 +400,7 @@ Tracks async test suite evaluation runs.
 | `completed_at_ms` | BIGINT | NULL | - | Run completion timestamp (epoch ms) |
 | `error_message` | TEXT | NULL | - | Error message if failed |
 | `error_details` | JSONB | NULL | - | Structured error details (RunErrorDetailsDto) |
+| `schedule_id` | VARCHAR(255) | NULL | - | Id of the DIAL Core scheduler schedule that started the run; NULL for manually started runs. **No foreign key**, so the value outlives the schedule and stays usable for audit. Set only when the callback's `scheduleRef` resolved to a schedule of the run's own suite (V1.40) |
 | `created_at_ms` | BIGINT | NOT NULL | - | Creation timestamp (epoch ms) |
 | `updated_at_ms` | BIGINT | NOT NULL | - | Last update timestamp (epoch ms) |
 
@@ -410,6 +412,7 @@ Tracks async test suite evaluation runs.
 | `idx_test_suite_runs_status` | `status` | BTREE | |
 | `idx_test_suite_runs_created_at_ms` | `created_at_ms DESC` | BTREE | |
 | `uq_test_suite_runs_suite_name` | `test_suite_id`, `test_run_name` | UNIQUE (BTREE) | One name per suite |
+| `idx_test_suite_runs_schedule` | `schedule_id`, `created_at_ms DESC` | BTREE, partial (`WHERE schedule_id IS NOT NULL`) | Serves "runs of schedule X" and skips the manual runs |
 
 ### Foreign Keys
 
@@ -721,6 +724,39 @@ Deleting a run — directly, or via the CASCADE from deleting its suite — ther
   }
 }
 ```
+
+---
+
+## Table: `test_suite_schedules`
+
+Mapping between a test suite and a schedule that lives in the DIAL Core scheduler application (see [DIAL scheduler](patterns/dial-scheduler.md)). The scheduler's list response carries no target URL and cannot be filtered by suite, so EF keeps this link plus audit columns. Cron, run configuration, state and fire history are **not** stored here; the scheduler is their source of truth. Created by V1.39.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `schedule_id` | VARCHAR(255) | NOT NULL | - | Primary key; opaque schedule id assigned by the scheduler |
+| `test_suite_id` | VARCHAR(36) | NOT NULL | - | FK to `test_suites.id` (CASCADE DELETE); the suite the schedule runs |
+| `created_by` | VARCHAR(255) | NOT NULL | - | Author resolved from the caller at creation time |
+| `created_at` | BIGINT | NOT NULL | - | Creation timestamp (epoch milliseconds) |
+| `schedule_ref` | VARCHAR(36) | NULL | - | EF-generated reference carried in the schedule's callback URL (`?scheduleRef=...`) and resolved back to this schedule when the scheduler fires. NULL for schedules created before V1.40; they get one the first time they are edited |
+
+### Primary Key
+
+`schedule_id`
+
+### Foreign Keys
+
+| Column | References | On Delete |
+|--------|------------|-----------|
+| `test_suite_id` | `test_suites(id)` | CASCADE |
+
+Deleting a suite deletes its mapping rows. It does **not** delete the schedule in the scheduler, which keeps firing (and fails with 404 on the suite) until it is removed there.
+
+### Indexes
+
+| Index Name | Columns | Type | Notes |
+|------------|---------|------|-------|
+| `idx_test_suite_schedules_suite` | `(test_suite_id, created_at DESC)` | BTREE | Serves the paged per-suite list (newest first) |
+| `uq_test_suite_schedules_ref` | `schedule_ref` | UNIQUE, partial (`WHERE schedule_ref IS NOT NULL`) | Resolves a callback reference to its schedule; any number of rows may have no reference |
 
 ---
 
@@ -1141,6 +1177,8 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 | V1.36 | `V1.36__AddIdsToDatasetSchemaFields.sql` | Data-only backfill: adds a server-assigned string `id` (UUID) to every field of `datasets.test_case_schema` that lacks one or has `"id": null`. Preserves array order; leaves existing ids and non-array values untouched; idempotent; does not bump `version`/`updated_at_ms`. |
 | V1.37 | `V1.37__AddRoutesRefToTestSuites.sql` | Added nullable `routes_ref` JSONB to `test_suites` for canonical global DIAL Core Route identity metadata on ROUTE suites. |
 | V1.38 | `V1.38__BackfillStartedAtForNeverStartedRuns.sql` | Data-only backfill: sets `started_at_ms = completed_at_ms` (zero duration) on FAILED/CANCELLED `test_suite_runs` rows with NULL `started_at_ms` and non-NULL `completed_at_ms` — runs that ended while still PENDING (restart reconciliation, snapshot or DIAL route-trigger failure, cancel while PENDING), matching what the repository now writes for such runs. |
+| V1.39 | `V1.39__CreateTestSuiteSchedulesTable.sql` | Created `test_suite_schedules` (`schedule_id` PK, `test_suite_id` FK to `test_suites(id)` ON DELETE CASCADE, `created_by`, `created_at`) with index `idx_test_suite_schedules_suite` on `(test_suite_id, created_at DESC)`: the suite-to-schedule link for schedules stored in the DIAL Core scheduler. |
+| V1.40 | `V1.40__AddScheduleTagging.sql` | Added nullable `test_suite_runs.schedule_id` (no FK; partial index `idx_test_suite_runs_schedule` on `(schedule_id, created_at_ms DESC)`) so runs started by a schedule are tagged and filterable, and nullable `test_suite_schedules.schedule_ref` (unique partial index `uq_test_suite_schedules_ref`) carrying the callback reference that is resolved to the schedule id when the scheduler fires. |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

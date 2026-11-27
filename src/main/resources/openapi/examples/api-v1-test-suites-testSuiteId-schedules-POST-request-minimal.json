@@ -1,0 +1,10 @@
+{
+  "name": "Nightly regression run",
+  "cron": {
+    "hour": "2",
+    "minute": "0"
+  },
+  "runConfig": {
+    "numberOfRuns": 1
+  }
+}

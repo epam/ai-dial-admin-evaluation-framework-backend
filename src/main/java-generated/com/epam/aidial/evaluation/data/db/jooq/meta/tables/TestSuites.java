@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.Meta;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.Datasets.DatasetsPath;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteMetricDefinitions.TestSuiteMetricDefinitionsPath;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteRuns.TestSuiteRunsPath;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteSchedules.TestSuiteSchedulesPath;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuitesRecord;
 
 import java.util.Arrays;
@@ -294,6 +295,19 @@ public class TestSuites extends TableImpl<TestSuitesRecord> {
             _datasets = new DatasetsPath(this, Keys.TEST_SUITES__FK_TEST_SUITES_DATASET_ID, null);
 
         return _datasets;
+    }
+
+    private transient TestSuiteSchedulesPath _testSuiteSchedules;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>meta.test_suite_schedules</code> table
+     */
+    public TestSuiteSchedulesPath testSuiteSchedules() {
+        if (_testSuiteSchedules == null)
+            _testSuiteSchedules = new TestSuiteSchedulesPath(this, null, Keys.TEST_SUITE_SCHEDULES__FK_TEST_SUITE_SCHEDULES_SUITE.getInverseKey());
+
+        return _testSuiteSchedules;
     }
 
     private transient TestSuiteMetricDefinitionsPath _testSuiteMetricDefinitions;

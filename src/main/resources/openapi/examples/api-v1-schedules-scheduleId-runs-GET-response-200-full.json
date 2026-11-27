@@ -1,0 +1,21 @@
+{
+  "content": [
+    {
+      "id": "0b9a1c6e-3d0f-4f64-8f0e-3d3f2d7f9a11",
+      "status": "success",
+      "startTime": 1764122400000,
+      "endTime": 1764122403000,
+      "testSuiteRunId": "3f0c6d3e-6a43-4a4f-9f0e-0c2b0d6a0001",
+      "testSuiteRunStatus": "COMPLETED"
+    },
+    {
+      "id": "5e1f7d02-8a6b-4c1e-9b1a-2f7f3c0d4e22",
+      "status": "in_progress",
+      "startTime": 1764208800000
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 2,
+  "totalPages": 1
+}

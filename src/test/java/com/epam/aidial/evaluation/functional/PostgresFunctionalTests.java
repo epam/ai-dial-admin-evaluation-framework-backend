@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.functional.config.PostgresFunctionalTestConfig
 import com.epam.aidial.evaluation.functional.config.TracingFunctionalTestConfiguration;
 import com.epam.aidial.evaluation.functional.support.CallerIdentityProbeTools;
 import com.epam.aidial.evaluation.functional.support.CoreRouteTestServer;
+import com.epam.aidial.evaluation.functional.support.SchedulerTestServer;
 import com.epam.aidial.evaluation.functional.support.StaticJwtTestConfiguration;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultBatchWriteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultCountFunctionalTests;
@@ -99,6 +100,7 @@ import com.epam.aidial.evaluation.functional.tests.RunDeletionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunPassCountFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunPassCountReconciliationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.SchedulerDisabledFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SkillFieldFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteHealthDistributionFunctionalTests;
@@ -132,6 +134,8 @@ import com.epam.aidial.evaluation.functional.tests.TestSuiteRunCostExtensionFunc
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteScheduleFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteScheduleRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.ZipRoundTripFunctionalTests;
@@ -667,6 +671,43 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class RunMetricSnapshotTests extends RunMetricSnapshotFunctionalTests {}
 
     @Nested
+    class TestSuiteScheduleRepositoryTests extends TestSuiteScheduleRepositoryFunctionalTests {}
+
+    // Default context, scheduling off: proves the application boots without it and the routes are absent.
+    @Nested
+    class SchedulerDisabledTests extends SchedulerDisabledFunctionalTests {}
+
+    // Scheduling on, with DIAL Core's base URL pointing at an in-memory fake of the scheduler application.
+    @Nested
+    @TestPropertySource(
+            properties = {"dial.scheduler.enabled=true", "dial.scheduler.callback-base-url=http://ef-backend.test:8080"
+            })
+    @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+    class TestSuiteScheduleTests extends TestSuiteScheduleFunctionalTests {
+        private static final SchedulerTestServer SCHEDULER = new SchedulerTestServer();
+
+        @DynamicPropertySource
+        static void schedulerUrl(DynamicPropertyRegistry properties) {
+            properties.add("dial.components.core.base-url", SCHEDULER::baseUrl);
+        }
+
+        @Override
+        protected SchedulerTestServer scheduler() {
+            return SCHEDULER;
+        }
+
+        @AfterAll
+        static void closeScheduler() {
+            SCHEDULER.close();
+        }
+    }
+
+    // Scheduling is feature-flagged off by default; its endpoints and example files only exist in the OpenAPI document
+    // when it is enabled, so this context enables it (which also boots the scheduler client, service and controller).
+    @Nested
+    @TestPropertySource(
+            properties = {"dial.scheduler.enabled=true", "dial.scheduler.callback-base-url=http://ef-backend.test:8080"
+            })
     class OpenApiExamplesTests extends OpenApiExamplesFunctionalTests {}
 
     @Nested

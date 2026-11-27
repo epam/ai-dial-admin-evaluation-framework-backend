@@ -284,6 +284,58 @@ public abstract class OpenApiExamplesFunctionalTests extends BaseFunctionalTest 
         }
     }
 
+    @Test
+    @DisplayName("schedule endpoints expose create and edit examples, response examples and page parameter docs")
+    void scheduleEndpointsExposeExamplesAndPageParameterDocs() {
+        final JsonNode paths = fetchApiDocs().path("paths");
+        final JsonNode create = paths.path("/api/v1/test-suites/{testSuiteId}/schedules");
+        final JsonNode createPost = create.path("post");
+        final JsonNode edit = paths.path("/api/v1/schedules/{scheduleId}").path("put");
+
+        assertThat(exampleNames(createPost.path("requestBody").path("content").path(JSON)))
+                .as("create request examples")
+                .containsExactlyInAnyOrder("minimal", "full");
+        assertThat(exampleNames(
+                        createPost.path("responses").path("201").path("content").path(JSON)))
+                .as("create 201 response examples")
+                .containsExactlyInAnyOrder("minimal", "full");
+        assertThat(exampleNames(edit.path("requestBody").path("content").path(JSON)))
+                .as("edit request examples")
+                .containsExactly("full");
+        assertThat(paths.path("/api/v1/schedules/{scheduleId}/runs")
+                        .path("get")
+                        .path("responses")
+                        .path("200")
+                        .path("content")
+                        .path(JSON)
+                        .path("examples")
+                        .has("full"))
+                .as("fire history 200 example")
+                .isTrue();
+        assertThat(parameterDescription(create.path("get"), "page"))
+                .as("suite schedule list page parameter is documented by the query-param customizer")
+                .startsWith("0-indexed page number");
+        assertThat(parameterDescription(
+                        paths.path("/api/v1/schedules/{scheduleId}/runs").path("get"), "size"))
+                .as("fire history size parameter is documented by the query-param customizer")
+                .startsWith("Page size. Default:");
+    }
+
+    private static Set<String> exampleNames(JsonNode mediaType) {
+        final Set<String> names = new TreeSet<>();
+        mediaType.path("examples").propertyNames().forEach(names::add);
+        return names;
+    }
+
+    private static String parameterDescription(JsonNode operation, String parameterName) {
+        for (JsonNode parameter : operation.path("parameters")) {
+            if (parameterName.equals(parameter.path("name").asString())) {
+                return parameter.path("description").asString();
+            }
+        }
+        return "";
+    }
+
     private JsonNode fetchApiDocs() {
         final ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
         assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);

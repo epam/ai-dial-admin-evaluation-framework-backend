@@ -33,16 +33,15 @@ import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundExcepti
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.exception.TooManyRunsException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationDetector;
-import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ActiveRunRegistry;
-import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import com.epam.aidial.evaluation.utils.CorrelationIdContext;
 import io.opentelemetry.context.Context;
 import java.io.InputStream;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -75,7 +74,7 @@ public class TestSuiteRunService {
     private final TestSuiteRunProperties properties;
     private final TestSuiteEvaluationJob evaluationJob;
     private final ActiveRunRegistry registry;
-    private final ExecutionSettingsValidator executionSettingsValidator;
+    private final RunConfigValidator runConfigValidator;
     private final TestSuiteRunSseService sseService;
     private final TestSuiteRunMapper mapper;
     private final FilterParser filterParser;
@@ -86,12 +85,25 @@ public class TestSuiteRunService {
     private final Optional<DialRouteTriggerClient> dialRouteTriggerClient;
     private final Optional<DialAppProperties> dialAppProperties;
     private final RunDeletionService runDeletionService;
+    private final ScheduleRefResolver scheduleRefResolver;
+    private final ScheduledRunNameFormatter scheduledRunNameFormatter;
 
     @Qualifier("metaTransactionManager")
     private final PlatformTransactionManager metaTransactionManager;
 
     @Transactional("metaTransactionManager")
     public TestSuiteRunResponseDto createRun(UUID testSuiteId, RunConfigDto config) {
+        return createRun(testSuiteId, config, null);
+    }
+
+    /**
+     * Creates and dispatches a run. A run started by a schedule carries that schedule's {@code scheduleRef}; it is
+     * resolved to the schedule id and stored on the run, and the run is named uniquely (see
+     * {@link ScheduledRunNameFormatter}). An unknown or foreign reference is ignored and the run stays untagged, so
+     * tagging can never block a run.
+     */
+    @Transactional("metaTransactionManager")
+    public TestSuiteRunResponseDto createRun(UUID testSuiteId, RunConfigDto config, String scheduleRef) {
         TestSuite testSuite = testSuiteRepository
                 .findById(testSuiteId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuite not found with id: " + testSuiteId));
@@ -123,12 +135,7 @@ public class TestSuiteRunService {
             throw new InvalidOperationException("Suite has no valid and enabled test cases");
         }
 
-        int maxRuns = properties.getRunConfig().getMaxNumberOfRuns();
-        if (config.getNumberOfRuns() > maxRuns) {
-            throw new ValidationException("numberOfRuns must not exceed " + maxRuns);
-        }
-
-        executionSettingsValidator.validate(config.getExecution(), config.getRetry());
+        runConfigValidator.validate(config);
 
         enforceConcurrencyLimits(testSuiteId);
 
@@ -139,8 +146,10 @@ public class TestSuiteRunService {
             throw new IllegalStateException("Failed to serialize runConfig", ex);
         }
 
-        TestSuiteRun run =
-                createAndSaveRun(testSuiteId, config.getTestRunName(), (int) numberOfTestCases, runConfigJson);
+        final String scheduleId =
+                scheduleRefResolver.resolveScheduleId(scheduleRef, testSuiteId).orElse(null);
+        TestSuiteRun run = createAndSaveRun(
+                testSuiteId, config.getTestRunName(), (int) numberOfTestCases, runConfigJson, scheduleId);
 
         UUID runId = run.getId();
         CallerCredential credential = AuthorizationTokenHolder.getCredential();
@@ -200,7 +209,7 @@ public class TestSuiteRunService {
 
         enforceConcurrencyLimits(testSuiteId);
 
-        TestSuiteRun run = createAndSaveRun(testSuiteId, testRunName, results.size(), "{}");
+        TestSuiteRun run = createAndSaveRun(testSuiteId, testRunName, results.size(), "{}", null);
 
         UUID runId = run.getId();
 
@@ -262,13 +271,24 @@ public class TestSuiteRunService {
      * violation to {@link com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationException}.
      * Shared, byte-identical modulo {@code runConfigJson}, by {@link #createRun} (its serialized
      * {@link RunConfigDto}) and {@link #importResultsAndEvaluate} (a fixed {@code "{}"}).
+     *
+     * <p>For a run started by a schedule ({@code scheduleId} non-null) a provided name is suffixed with the next
+     * sequence value, because the schedule fires with the same configured name every time and names are unique per
+     * suite. Manually started runs keep the name exactly as requested.
      */
     private TestSuiteRun createAndSaveRun(
-            UUID testSuiteId, String requestedTestRunName, int numberOfTestCases, String runConfigJson) {
+            UUID testSuiteId,
+            String requestedTestRunName,
+            int numberOfTestCases,
+            String runConfigJson,
+            String scheduleId) {
         String testRunName = requestedTestRunName;
         if (testRunName == null || testRunName.isBlank()) {
             long seqVal = testSuiteRunRepository.nextRunNameSequenceValue();
             testRunName = "Run #" + seqVal;
+        } else if (scheduleId != null) {
+            testRunName = scheduledRunNameFormatter.format(
+                    requestedTestRunName, testSuiteRunRepository.nextRunNameSequenceValue());
         }
 
         TestSuiteRun run = TestSuiteRun.builder()
@@ -277,6 +297,7 @@ public class TestSuiteRunService {
                 .status(RunStatus.PENDING.name())
                 .runConfig(runConfigJson)
                 .numberOfTestCases(numberOfTestCases)
+                .scheduleId(scheduleId)
                 .build();
 
         try {
@@ -348,6 +369,12 @@ public class TestSuiteRunService {
                 onRejected.run();
             }
         }
+    }
+
+    /** Statuses of the given runs in one query; ids without a run are absent from the map. */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public Map<UUID, String> findStatusesByIds(Collection<UUID> runIds) {
+        return testSuiteRunRepository.findStatusesByIds(runIds);
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)

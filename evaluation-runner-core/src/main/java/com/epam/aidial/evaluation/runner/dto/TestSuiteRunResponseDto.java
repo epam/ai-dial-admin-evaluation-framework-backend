@@ -49,6 +49,14 @@ public class TestSuiteRunResponseDto {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @Schema(
+            description = "Id of the schedule that started the run. Absent for manually started runs. It is kept"
+                    + " after the schedule is deleted. To list the runs of a schedule, query the `test_suite_runs`"
+                    + " entity of the Query API with a filter on `schedule_id`.",
+            example = "7c9d1a52-5d4e-4a52-9d0e-0a1f6a3b2c10")
+    private String scheduleId;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
             description = "Grafana Explore URL for all traces in this run "
                     + "(present only when Grafana integration is configured and run has started)",
             example = "http://grafana:3000/explore?...")

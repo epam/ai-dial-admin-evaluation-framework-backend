@@ -23,6 +23,10 @@ public class TestSuiteRun {
     private String errorMessage;
     private String errorDetails;
     private String suiteSnapshot;
+
+    /** Id of the schedule that started the run; null for manual runs. Has no foreign key, so it outlives the schedule. */
+    private String scheduleId;
+
     private Long createdAt;
     private Long updatedAt;
 }

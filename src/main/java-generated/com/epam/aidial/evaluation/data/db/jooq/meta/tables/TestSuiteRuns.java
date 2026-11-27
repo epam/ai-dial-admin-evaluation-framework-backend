@@ -127,6 +127,11 @@ public class TestSuiteRuns extends TableImpl<TestSuiteRunsRecord> {
      */
     public final TableField<TestSuiteRunsRecord, JSONB> SUITE_SNAPSHOT = createField(DSL.name("suite_snapshot"), SQLDataType.JSONB, this, "");
 
+    /**
+     * The column <code>meta.test_suite_runs.schedule_id</code>.
+     */
+    public final TableField<TestSuiteRunsRecord, String> SCHEDULE_ID = createField(DSL.name("schedule_id"), SQLDataType.VARCHAR(255), this, "");
+
     private TestSuiteRuns(Name alias, Table<TestSuiteRunsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -196,7 +201,7 @@ public class TestSuiteRuns extends TableImpl<TestSuiteRunsRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_TEST_SUITE_RUNS_CREATED_AT_MS, Indexes.IDX_TEST_SUITE_RUNS_STATUS, Indexes.IDX_TEST_SUITE_RUNS_TEST_SUITE_ID);
+        return Arrays.asList(Indexes.IDX_TEST_SUITE_RUNS_CREATED_AT_MS, Indexes.IDX_TEST_SUITE_RUNS_SCHEDULE, Indexes.IDX_TEST_SUITE_RUNS_STATUS, Indexes.IDX_TEST_SUITE_RUNS_TEST_SUITE_ID);
     }
 
     @Override

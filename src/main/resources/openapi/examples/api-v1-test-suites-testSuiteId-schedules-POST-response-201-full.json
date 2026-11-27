@@ -1,0 +1,27 @@
+{
+  "id": "7c9d1a52-5d4e-4a52-9d0e-0a1f6a3b2c10",
+  "name": "Nightly regression run",
+  "testSuiteId": "eab8072b-1168-4e18-9dcc-32deba20d30c",
+  "cron": {
+    "hour": "2",
+    "minute": "0",
+    "dayOfWeek": "mon-fri"
+  },
+  "timezone": "Europe/Berlin",
+  "runConfig": {
+    "numberOfRuns": 3,
+    "testRunName": "Nightly regression",
+    "execution": {
+      "concurrencyLevel": 4
+    },
+    "retry": {
+      "maxRetries": 2
+    }
+  },
+  "paused": false,
+  "nextRunTime": 1764122400000,
+  "createdBy": "alice",
+  "createdAt": 1764072000000,
+  "updatedAt": 1764072000000,
+  "description": "Runs the regression suite every weekday night"
+}

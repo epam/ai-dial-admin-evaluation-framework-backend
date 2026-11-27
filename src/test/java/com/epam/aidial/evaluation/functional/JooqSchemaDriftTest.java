@@ -78,6 +78,7 @@ class JooqSchemaDriftTest {
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASES,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASE_RUN_INPUTS,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_METRIC_DEFINITIONS,
+                com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_SCHEDULES,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITES,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS);
 

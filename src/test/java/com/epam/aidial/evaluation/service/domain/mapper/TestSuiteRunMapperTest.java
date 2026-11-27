@@ -132,6 +132,52 @@ class TestSuiteRunMapperTest {
     }
 
     @Test
+    @DisplayName("maps the schedule id of a scheduled run and serializes it")
+    void mapsScheduleIdOfScheduledRun() throws Exception {
+        TestSuiteRun entity = TestSuiteRun.builder()
+                .id(UUID.randomUUID())
+                .testSuiteId(UUID.randomUUID())
+                .testRunName("Nightly #3")
+                .status("COMPLETED")
+                .runConfig("{\"numberOfRuns\":1}")
+                .numberOfTestCases(1)
+                .scheduleId("sch-1")
+                .createdAt(100L)
+                .updatedAt(200L)
+                .build();
+
+        TestSuiteRunResponseDto dto = mapper.toDto(entity);
+
+        assertThat(dto.getScheduleId()).isEqualTo("sch-1");
+        assertThat(objectMapper
+                        .readTree(objectMapper.writeValueAsString(dto))
+                        .path("scheduleId")
+                        .asString())
+                .isEqualTo("sch-1");
+    }
+
+    @Test
+    @DisplayName("leaves scheduleId null and omits it from the JSON for a manually started run")
+    void omitsScheduleIdForManualRun() throws Exception {
+        TestSuiteRun entity = TestSuiteRun.builder()
+                .id(UUID.randomUUID())
+                .testSuiteId(UUID.randomUUID())
+                .testRunName("Run #1")
+                .status("COMPLETED")
+                .runConfig("{\"numberOfRuns\":1}")
+                .numberOfTestCases(1)
+                .createdAt(100L)
+                .updatedAt(200L)
+                .build();
+
+        TestSuiteRunResponseDto dto = mapper.toDto(entity);
+
+        assertThat(dto.getScheduleId()).isNull();
+        assertThat(objectMapper.readTree(objectMapper.writeValueAsString(dto)).has("scheduleId"))
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("returns null when entity is null")
     void returnsNullWhenEntityIsNull() {
         assertThat(mapper.toDto(null)).isNull();

@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteMetricDefinitions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteRuns;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteSchedules;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuites;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.DatasetsRecord;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.MetricDeclarationVersionsRecord;
@@ -23,6 +24,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestCaseRunIn
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestCasesRecord;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuiteMetricDefinitionsRecord;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuiteRunsRecord;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuiteSchedulesRecord;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuitesRecord;
 
 import org.jooq.ForeignKey;
@@ -54,6 +56,7 @@ public class Keys {
     public static final UniqueKey<TestSuiteMetricDefinitionsRecord> TEST_SUITE_METRIC_DEFINITIONS_PKEY = Internal.createUniqueKey(TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS, DSL.name("test_suite_metric_definitions_pkey"), new TableField[] { TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS.ID }, true);
     public static final UniqueKey<TestSuiteRunsRecord> TEST_SUITE_RUNS_PKEY = Internal.createUniqueKey(TestSuiteRuns.TEST_SUITE_RUNS, DSL.name("test_suite_runs_pkey"), new TableField[] { TestSuiteRuns.TEST_SUITE_RUNS.ID }, true);
     public static final UniqueKey<TestSuiteRunsRecord> UQ_TEST_SUITE_RUNS_SUITE_NAME = Internal.createUniqueKey(TestSuiteRuns.TEST_SUITE_RUNS, DSL.name("uq_test_suite_runs_suite_name"), new TableField[] { TestSuiteRuns.TEST_SUITE_RUNS.TEST_SUITE_ID, TestSuiteRuns.TEST_SUITE_RUNS.TEST_RUN_NAME }, true);
+    public static final UniqueKey<TestSuiteSchedulesRecord> TEST_SUITE_SCHEDULES_PKEY = Internal.createUniqueKey(TestSuiteSchedules.TEST_SUITE_SCHEDULES, DSL.name("test_suite_schedules_pkey"), new TableField[] { TestSuiteSchedules.TEST_SUITE_SCHEDULES.SCHEDULE_ID }, true);
     public static final UniqueKey<TestSuitesRecord> TEST_SUITES_PKEY = Internal.createUniqueKey(TestSuites.TEST_SUITES, DSL.name("test_suites_pkey"), new TableField[] { TestSuites.TEST_SUITES.ID }, true);
 
     // -------------------------------------------------------------------------
@@ -69,5 +72,6 @@ public class Keys {
     public static final ForeignKey<TestSuiteMetricDefinitionsRecord, MetricDeclarationVersionsRecord> TEST_SUITE_METRIC_DEFINITIONS__FK_TSMD_METRIC_DECLARATION_VERSION = Internal.createForeignKey(TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS, DSL.name("fk_tsmd_metric_declaration_version"), new TableField[] { TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS.METRIC_DECLARATION_VERSION_ID }, Keys.METRIC_DECLARATION_VERSIONS_PKEY, new TableField[] { MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<TestSuiteMetricDefinitionsRecord, TestSuitesRecord> TEST_SUITE_METRIC_DEFINITIONS__FK_TSMD_TEST_SUITE = Internal.createForeignKey(TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS, DSL.name("fk_tsmd_test_suite"), new TableField[] { TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS.TEST_SUITE_ID }, Keys.TEST_SUITES_PKEY, new TableField[] { TestSuites.TEST_SUITES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<TestSuiteRunsRecord, TestSuitesRecord> TEST_SUITE_RUNS__TEST_SUITE_RUNS_TEST_SUITE_ID_FKEY = Internal.createForeignKey(TestSuiteRuns.TEST_SUITE_RUNS, DSL.name("test_suite_runs_test_suite_id_fkey"), new TableField[] { TestSuiteRuns.TEST_SUITE_RUNS.TEST_SUITE_ID }, Keys.TEST_SUITES_PKEY, new TableField[] { TestSuites.TEST_SUITES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<TestSuiteSchedulesRecord, TestSuitesRecord> TEST_SUITE_SCHEDULES__FK_TEST_SUITE_SCHEDULES_SUITE = Internal.createForeignKey(TestSuiteSchedules.TEST_SUITE_SCHEDULES, DSL.name("fk_test_suite_schedules_suite"), new TableField[] { TestSuiteSchedules.TEST_SUITE_SCHEDULES.TEST_SUITE_ID }, Keys.TEST_SUITES_PKEY, new TableField[] { TestSuites.TEST_SUITES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<TestSuitesRecord, DatasetsRecord> TEST_SUITES__FK_TEST_SUITES_DATASET_ID = Internal.createForeignKey(TestSuites.TEST_SUITES, DSL.name("fk_test_suites_dataset_id"), new TableField[] { TestSuites.TEST_SUITES.DATASET_ID }, Keys.DATASETS_PKEY, new TableField[] { Datasets.DATASETS.ID }, true, ForeignKeyRule.RESTRICT, ForeignKeyRule.NO_ACTION);
 }

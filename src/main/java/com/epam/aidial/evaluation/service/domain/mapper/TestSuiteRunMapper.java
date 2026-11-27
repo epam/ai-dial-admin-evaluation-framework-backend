@@ -36,6 +36,7 @@ public class TestSuiteRunMapper {
                 .completedAt(entity.getCompletedAt())
                 .errorMessage(entity.getErrorMessage())
                 .errorDetails(deserializeErrorDetails(entity.getErrorDetails()))
+                .scheduleId(entity.getScheduleId())
                 .grafanaExploreUrl(grafanaLinkBuilder.runExploreUrl(
                         entity.getId(), entity.getStartedAt(), entity.getCompletedAt()))
                 .createdAt(entity.getCreatedAt())

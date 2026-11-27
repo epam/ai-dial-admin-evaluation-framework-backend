@@ -18,7 +18,9 @@ import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +62,7 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
         TEST_SUITE_RUNS.COMPLETED_AT_MS,
         TEST_SUITE_RUNS.ERROR_MESSAGE,
         TEST_SUITE_RUNS.ERROR_DETAILS,
+        TEST_SUITE_RUNS.SCHEDULE_ID,
         TEST_SUITE_RUNS.CREATED_AT_MS,
         TEST_SUITE_RUNS.UPDATED_AT_MS
     };
@@ -85,6 +88,7 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
                 .set(TEST_SUITE_RUNS.ERROR_MESSAGE, run.getErrorMessage())
                 .set(TEST_SUITE_RUNS.ERROR_DETAILS, toJsonb(run.getErrorDetails()))
                 .set(TEST_SUITE_RUNS.SUITE_SNAPSHOT, toJsonb(run.getSuiteSnapshot()))
+                .set(TEST_SUITE_RUNS.SCHEDULE_ID, run.getScheduleId())
                 .set(TEST_SUITE_RUNS.CREATED_AT_MS, run.getCreatedAt())
                 .set(TEST_SUITE_RUNS.UPDATED_AT_MS, run.getUpdatedAt())
                 .execute();
@@ -97,6 +101,20 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
         return dsl.selectFrom(TEST_SUITE_RUNS)
                 .where(TEST_SUITE_RUNS.ID.eq(id.toString()))
                 .fetchOptional(recordMapper::map);
+    }
+
+    @Override
+    public Map<UUID, String> findStatusesByIds(Collection<UUID> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        final List<String> idStrings = ids.stream().map(UUID::toString).toList();
+        return dsl.select(TEST_SUITE_RUNS.ID, TEST_SUITE_RUNS.STATUS)
+                .from(TEST_SUITE_RUNS)
+                .where(TEST_SUITE_RUNS.ID.in(idStrings))
+                .fetchMap(
+                        record -> UUID.fromString(record.get(TEST_SUITE_RUNS.ID)),
+                        record -> record.get(TEST_SUITE_RUNS.STATUS));
     }
 
     @Override

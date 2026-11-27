@@ -5,7 +5,9 @@ import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,6 +16,12 @@ public interface TestSuiteRunRepository {
     TestSuiteRun save(TestSuiteRun run);
 
     Optional<TestSuiteRun> findById(UUID id);
+
+    /**
+     * Statuses of the given runs in one query, keyed by run id. Ids without a run are absent from the result, and an
+     * empty input returns an empty map without querying.
+     */
+    Map<UUID, String> findStatusesByIds(Collection<UUID> ids);
 
     Optional<TestSuiteRun> findLatestByTestSuiteId(UUID testSuiteId);
 

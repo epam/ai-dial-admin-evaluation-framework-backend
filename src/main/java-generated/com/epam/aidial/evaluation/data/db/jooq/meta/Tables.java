@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteMetricDefinitions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteRuns;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteSchedules;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuites;
 
 
@@ -66,6 +67,11 @@ public class Tables {
      * The table <code>meta.test_suite_runs</code>.
      */
     public static final TestSuiteRuns TEST_SUITE_RUNS = TestSuiteRuns.TEST_SUITE_RUNS;
+
+    /**
+     * The table <code>meta.test_suite_schedules</code>.
+     */
+    public static final TestSuiteSchedules TEST_SUITE_SCHEDULES = TestSuiteSchedules.TEST_SUITE_SCHEDULES;
 
     /**
      * The table <code>meta.test_suites</code>.

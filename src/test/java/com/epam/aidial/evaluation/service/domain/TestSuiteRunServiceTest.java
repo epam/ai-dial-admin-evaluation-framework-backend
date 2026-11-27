@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -27,8 +28,10 @@ import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
+import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
@@ -41,7 +44,6 @@ import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundExcepti
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ActiveRunRegistry;
-import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
@@ -98,7 +100,7 @@ class TestSuiteRunServiceTest {
     private ActiveRunRegistry registry;
 
     @Mock
-    private ExecutionSettingsValidator executionSettingsValidator;
+    private RunConfigValidator runConfigValidator;
 
     @Mock
     private TestSuiteRunSseService sseService;
@@ -128,6 +130,9 @@ class TestSuiteRunServiceTest {
     private DialAppProperties dialAppProperties;
 
     @Mock
+    private ScheduleRefResolver scheduleRefResolver;
+
+    @Mock
     private PlatformTransactionManager metaTransactionManager;
 
     private TestSuiteRunService service;
@@ -151,7 +156,7 @@ class TestSuiteRunServiceTest {
                 properties,
                 evaluationJob,
                 registry,
-                executionSettingsValidator,
+                runConfigValidator,
                 sseService,
                 mapper,
                 filterParser,
@@ -162,6 +167,8 @@ class TestSuiteRunServiceTest {
                 Optional.of(dialRouteTriggerClient),
                 Optional.of(dialAppProperties),
                 runDeletionService,
+                scheduleRefResolver,
+                new ScheduledRunNameFormatter(),
                 metaTransactionManager);
 
         testSuiteId = UUID.randomUUID();
@@ -201,6 +208,97 @@ class TestSuiteRunServiceTest {
                 .execStartedAtMs(1000L)
                 .execCompletedAtMs(1500L)
                 .build());
+    }
+
+    @Nested
+    @DisplayName("createRun schedule tagging and naming")
+    class CreateRunTagging {
+
+        @BeforeEach
+        void setUpRunnableSuite() {
+            TestSuite suite = validBoundSuite();
+            suite.setSuiteType(SuiteType.DEPLOYMENT);
+            when(testSuiteRepository.findById(testSuiteId)).thenReturn(Optional.of(suite));
+            when(runnableTestCaseSelector.countRunnable(any(), any())).thenReturn(1L);
+            // Lenient: only the tests that generate or suffix a name consume the sequence value.
+            lenient().when(testSuiteRunRepository.nextRunNameSequenceValue()).thenReturn(7L);
+            when(testSuiteRunRepository.save(any(TestSuiteRun.class))).thenAnswer(invocation -> {
+                TestSuiteRun run = invocation.getArgument(0);
+                run.setId(UUID.randomUUID());
+                return run;
+            });
+            when(mapper.toDto(any(TestSuiteRun.class)))
+                    .thenReturn(TestSuiteRunResponseDto.builder().build());
+            TransactionSynchronizationManager.initSynchronization();
+        }
+
+        private TestSuiteRun savedRun() {
+            ArgumentCaptor<TestSuiteRun> captor = ArgumentCaptor.forClass(TestSuiteRun.class);
+            verify(testSuiteRunRepository).save(captor.capture());
+            return captor.getValue();
+        }
+
+        @Test
+        @DisplayName("tags the run with the resolved schedule id and suffixes a provided run name with the sequence")
+        void tagsRunAndSuffixesProvidedName() {
+            when(scheduleRefResolver.resolveScheduleId("ref-1", testSuiteId)).thenReturn(Optional.of("sch-1"));
+
+            service.createRun(
+                    testSuiteId,
+                    RunConfigDto.builder()
+                            .numberOfRuns(1)
+                            .testRunName("Nightly")
+                            .build(),
+                    "ref-1");
+
+            TestSuiteRun saved = savedRun();
+            assertThat(saved.getScheduleId()).isEqualTo("sch-1");
+            assertThat(saved.getTestRunName()).isEqualTo("Nightly #7");
+        }
+
+        @Test
+        @DisplayName("generates 'Run #<seq>' for a scheduled run that has no run name")
+        void generatesNameForScheduledRunWithoutName() {
+            when(scheduleRefResolver.resolveScheduleId("ref-1", testSuiteId)).thenReturn(Optional.of("sch-1"));
+
+            service.createRun(
+                    testSuiteId, RunConfigDto.builder().numberOfRuns(1).build(), "ref-1");
+
+            TestSuiteRun saved = savedRun();
+            assertThat(saved.getScheduleId()).isEqualTo("sch-1");
+            assertThat(saved.getTestRunName()).isEqualTo("Run #7");
+        }
+
+        @Test
+        @DisplayName("leaves a manually started run untagged and keeps its run name exactly as requested")
+        void manualRunKeepsNameAndIsUntagged() {
+            service.createRun(
+                    testSuiteId,
+                    RunConfigDto.builder().numberOfRuns(1).testRunName("My Run").build());
+
+            TestSuiteRun saved = savedRun();
+            assertThat(saved.getScheduleId()).isNull();
+            assertThat(saved.getTestRunName()).isEqualTo("My Run");
+            verify(scheduleRefResolver).resolveScheduleId(null, testSuiteId);
+        }
+
+        @Test
+        @DisplayName("ignores a reference that resolves to no schedule: the run is untagged and keeps its name")
+        void unresolvableReferenceLeavesRunUntagged() {
+            when(scheduleRefResolver.resolveScheduleId("bad-ref", testSuiteId)).thenReturn(Optional.empty());
+
+            service.createRun(
+                    testSuiteId,
+                    RunConfigDto.builder()
+                            .numberOfRuns(1)
+                            .testRunName("Nightly")
+                            .build(),
+                    "bad-ref");
+
+            TestSuiteRun saved = savedRun();
+            assertThat(saved.getScheduleId()).isNull();
+            assertThat(saved.getTestRunName()).isEqualTo("Nightly");
+        }
     }
 
     @Nested

@@ -31,7 +31,8 @@ This document is the operator-facing reference for every configurable property o
    - [DIAL MCP Client](#54-dial-mcp-client)
    - [DIAL ADAS Client](#55-dial-adas-client)
    - [DIAL ADAS Client — Query Result Extension](#56-dial-adas-client--query-result-extension)
-   - [DIAL Application Route Registration](#57-dial-application-route-registration)
+   - [DIAL Scheduler](#57-dial-scheduler-scheduled-suite-runs)
+   - [DIAL Application Route Registration](#58-dial-application-route-registration)
 6. [Evaluation Engine](#6-evaluation-engine)
    - [Test Suite Run — SSE](#61-test-suite-run--sse)
    - [Test Suite Run — Execution Settings](#62-test-suite-run--execution-settings)
@@ -421,7 +422,19 @@ Opt-in extension that attaches a derived `total_cost` key to each row of a `row`
 | `query-dsl.extension.test-suite-run.cost.enabled` | `QUERY_DSL_EXTENSION_TEST_SUITE_RUN_COST_ENABLED` | `false` | No | - | Enables the `total_cost` result-page extension for row-mode `test_suite_runs` structured queries. When `false` (default), no dial-adas lookup is performed for the query and no `total_cost` key is added to any row. |
 | `query-dsl.extension.test-suite-run.cost.timeout-sec` | `QUERY_DSL_EXTENSION_TEST_SUITE_RUN_COST_TIMEOUT_SEC` | `2` | Conditional | `query-dsl.extension.test-suite-run.cost.enabled=true` | Authoritative end-to-end deadline, in seconds, for the request thread's wait on the per-page cost lookup; also sets both the connect and read timeout of the dedicated extension dial-adas client as a best-effort cleanup backstop, never a second deadline. Minimum `1`. |
 
-### 5.7 DIAL Application Route Registration
+### 5.7 DIAL Scheduler (scheduled suite runs)
+
+Scheduled test suite runs are delegated to the DIAL Core scheduler application. EF stores no schedules locally; it creates and manages them in the scheduler using the caller's credential. When a schedule fires, the scheduler calls `POST {callback-base-url}/api/v1/test-suites/{suiteId}/runs` with the credential it holds for `service-id`.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `dial.scheduler.enabled` | `DIAL_SCHEDULER_ENABLED` | `false` | No | - | Enables the schedule endpoints and the scheduler client. When `false`, no schedule endpoint is registered. |
+| `dial.scheduler.app-id` | `SCHEDULER_APP_ID` | `public/dial_scheduler__1.0.0` | No | `dial.scheduler.enabled=true` | DIAL application id of the scheduler. Used in `{DIAL_URL}/v1/deployments/applications/{app-id}/route/v1/schedules/`. The `/` in the id is kept as a path separator. |
+| `dial.scheduler.callback-base-url` | `SCHEDULER_CALLBACK_BASE_URL` | - | Conditional | `dial.scheduler.enabled=true` | Base URL, reachable from the scheduler, of this backend (for example `http://dial-admin-evaluation-backend.dial-admin.svc.cluster.local:80`). The scheduler calls `{base}/api/v1/test-suites/{suiteId}/runs`. Startup fails when blank and the feature is enabled. |
+| `dial.scheduler.service-id` | `SCHEDULER_SERVICE_ID` | `dial-native` | No | `dial.scheduler.enabled=true` | Scheduler `service_id` that selects the credential the scheduler uses when calling EF. |
+| `dial.scheduler.timeout-seconds` | `SCHEDULER_TIMEOUT_SECONDS` | `120` | No | `dial.scheduler.enabled=true` | Timeout, in seconds, the scheduler applies to each run-trigger call. Minimum `1`. |
+
+### 5.8 DIAL Application Route Registration
 
 When `dial-app-proxy.enabled=true`, EF must be registered as a DIAL Application via a DIAL Application Route so that DIAL Core can trigger eval runs and issue per-request keys (PRKs). The following DIAL Core deployment/application configuration is required (exact format depends on your DIAL Core version; this is a reference):
 

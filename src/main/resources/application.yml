@@ -96,6 +96,12 @@ dial:
     base-url: ${DIAL_ADAS_URL:http://localhost:8087}
     connect-timeout-ms: ${DIAL_ADAS_CONNECT_TIMEOUT_MS:5000}
     read-timeout-ms: ${DIAL_ADAS_READ_TIMEOUT_MS:30000}
+  scheduler:
+    enabled: ${DIAL_SCHEDULER_ENABLED:false}
+    app-id: ${SCHEDULER_APP_ID:public/dial_scheduler__1.0.0}
+    callback-base-url: ${SCHEDULER_CALLBACK_BASE_URL:}
+    service-id: ${SCHEDULER_SERVICE_ID:dial-native}
+    timeout-seconds: ${SCHEDULER_TIMEOUT_SECONDS:120}
 
 # DIAL Application mode configuration (proxy mode)
 dial-app-proxy:

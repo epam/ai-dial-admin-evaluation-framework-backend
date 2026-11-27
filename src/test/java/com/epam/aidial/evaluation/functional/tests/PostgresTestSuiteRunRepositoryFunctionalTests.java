@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunReconciliation;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -47,6 +48,30 @@ public abstract class PostgresTestSuiteRunRepositoryFunctionalTests extends Base
         assertThat(found).isPresent();
         // List tier must NOT include suite_snapshot
         assertThat(found.get().getSuiteSnapshot()).isNull();
+    }
+
+    @Test
+    @DisplayName("findStatusesByIds returns the status of each known run and omits unknown ids")
+    void findStatusesByIdsReturnsKnownRunsOnly() {
+        UUID suiteId =
+                metaTestDataHelper.createTestSuite("Repo Test Suite Statuses").getId();
+        TestSuiteRun completed = metaTestDataHelper.createTestSuiteRun(suiteId, RunStatus.COMPLETED);
+        TestSuiteRun failed = metaTestDataHelper.createTestSuiteRun(suiteId, RunStatus.FAILED);
+        UUID unknown = UUID.randomUUID();
+
+        Map<UUID, String> statuses =
+                runRepository.findStatusesByIds(List.of(completed.getId(), failed.getId(), unknown));
+
+        assertThat(statuses)
+                .containsOnly(
+                        Map.entry(completed.getId(), RunStatus.COMPLETED.name()),
+                        Map.entry(failed.getId(), RunStatus.FAILED.name()));
+    }
+
+    @Test
+    @DisplayName("findStatusesByIds returns an empty map for empty input")
+    void findStatusesByIdsReturnsEmptyForEmptyInput() {
+        assertThat(runRepository.findStatusesByIds(List.of())).isEmpty();
     }
 
     @Test

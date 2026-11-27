@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.web.controller;
 
+import com.epam.aidial.evaluation.constants.ScheduleConstants;
 import com.epam.aidial.evaluation.constants.TestSuiteRunConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
@@ -67,8 +68,17 @@ public class TestSuiteRunController {
     @ApiResponse(responseCode = "429", description = "Concurrent run limit exceeded")
     public ResponseEntity<TestSuiteRunResponseDto> createRun(
             @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId,
-            @Valid @RequestBody TestSuiteRunRequestDto request) {
-        TestSuiteRunResponseDto response = testSuiteRunService.createRun(testSuiteId, request.getRunConfig());
+            @Valid @RequestBody TestSuiteRunRequestDto request,
+            @Parameter(
+                            description =
+                                    "Set by the DIAL Core scheduler (it is part of every schedule's callback URL):"
+                                            + " reference of the schedule that starts this run. A known reference of a schedule"
+                                            + " of this suite tags the run with the schedule id and makes its name unique;"
+                                            + " anything else is ignored. Do not set it manually.")
+                    @RequestParam(name = ScheduleConstants.SCHEDULE_REF_PARAM, required = false)
+                    String scheduleRef) {
+        TestSuiteRunResponseDto response =
+                testSuiteRunService.createRun(testSuiteId, request.getRunConfig(), scheduleRef);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 

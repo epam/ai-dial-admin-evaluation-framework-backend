@@ -7,7 +7,7 @@
 Row-mode with an empty `select` projects `table().fields()`. `TEST_SUITE_RUNS` carries three heavy/opaque columns — `suite_snapshot`, `run_config`, `error_details` — that must never appear in that projection and must 400 as unknown fields if referenced directly. (A scalar derived *from* one of them may still be published under its own name without putting the column itself back in the projection — see `number_of_runs` below.) Filtering them out in `StructuredQueryBuilder` would be a builder change (a Non-Goal). Instead `table()` returns
 
 ```java
-DSL.select(<10 plain columns>, <number_of_runs run_config extraction>, <9 snapshot extractions>, <metric_names subquery>)
+DSL.select(<11 plain columns>, <number_of_runs run_config extraction>, <9 snapshot extractions>, <metric_names subquery>)
    .from(TEST_SUITE_RUNS)
    .asTable("tsr")
 ```
@@ -20,7 +20,7 @@ Postgres pulls this derived table up into the outer query — no aggregate/`LIMI
 
 `bindings()` is built by hand, field by field, against the alias `tsr`. It deliberately does **not** call `schemaResolver.bindings(tsr)` the way `eval_summaries` infers its LEFT-JOINed columns: a computed field has no DDL default to infer from, so wholesale inference over `tsr` yields `OBJECT` for `metric_names` and silently disables JSONB containment (`co`/`nc`) in `FilterTranslator`. Instead:
 
-- the 10 plain columns take their type from `schemaResolver.bindings(TEST_SUITE_RUNS)` (the **base** generated table, not `tsr`) — same inference as ever, just re-pointed to `tsr.field(name)`;
+- the 11 plain columns take their type from `schemaResolver.bindings(TEST_SUITE_RUNS)` (the **base** generated table, not `tsr`) — same inference as ever, just re-pointed to `tsr.field(name)`;
 - `suite_type` and the 8 `deployment_ref::*`/`mcp_deployment_ref::*` fields are typed `STRING` explicitly;
 - `metric_names` is typed `ARRAY` explicitly — this is what unlocks whole-element containment (`co`/`nc`) unchanged in `FilterTranslator`.
 

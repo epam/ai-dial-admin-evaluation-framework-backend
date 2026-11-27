@@ -1,0 +1,20 @@
+{
+  "name": "Nightly regression run",
+  "description": "Runs the regression suite every weekday night",
+  "cron": {
+    "hour": "2",
+    "minute": "0",
+    "dayOfWeek": "mon-fri"
+  },
+  "timezone": "Europe/Berlin",
+  "runConfig": {
+    "numberOfRuns": 3,
+    "testRunName": "Nightly regression",
+    "execution": {
+      "concurrencyLevel": 4
+    },
+    "retry": {
+      "maxRetries": 2
+    }
+  }
+}

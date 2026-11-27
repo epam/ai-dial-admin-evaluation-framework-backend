@@ -201,6 +201,20 @@ public class TestSuiteRunsRecord extends UpdatableRecordImpl<TestSuiteRunsRecord
         return (JSONB) get(12);
     }
 
+    /**
+     * Setter for <code>meta.test_suite_runs.schedule_id</code>.
+     */
+    public void setScheduleId(String value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suite_runs.schedule_id</code>.
+     */
+    public String getScheduleId() {
+        return (String) get(13);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -224,7 +238,7 @@ public class TestSuiteRunsRecord extends UpdatableRecordImpl<TestSuiteRunsRecord
     /**
      * Create a detached, initialised TestSuiteRunsRecord
      */
-    public TestSuiteRunsRecord(String id, String testSuiteId, String testRunName, String status, JSONB runConfig, Integer numberOfTestCases, Long startedAtMs, Long completedAtMs, String errorMessage, JSONB errorDetails, Long createdAtMs, Long updatedAtMs, JSONB suiteSnapshot) {
+    public TestSuiteRunsRecord(String id, String testSuiteId, String testRunName, String status, JSONB runConfig, Integer numberOfTestCases, Long startedAtMs, Long completedAtMs, String errorMessage, JSONB errorDetails, Long createdAtMs, Long updatedAtMs, JSONB suiteSnapshot, String scheduleId) {
         super(TestSuiteRuns.TEST_SUITE_RUNS);
 
         setId(id);
@@ -240,6 +254,7 @@ public class TestSuiteRunsRecord extends UpdatableRecordImpl<TestSuiteRunsRecord
         setCreatedAtMs(createdAtMs);
         setUpdatedAtMs(updatedAtMs);
         setSuiteSnapshot(suiteSnapshot);
+        setScheduleId(scheduleId);
         resetTouchedOnNotNull();
     }
 }

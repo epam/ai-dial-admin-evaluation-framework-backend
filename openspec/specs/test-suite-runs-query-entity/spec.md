@@ -33,6 +33,7 @@ The `test_suite_runs` entity SHALL expose exactly the following flat **queryable
 | `started_at_ms` | `long` | `started_at_ms` | nullable |
 | `completed_at_ms` | `long` | `completed_at_ms` | nullable |
 | `error_message` | `string` | `error_message` | nullable |
+| `schedule_id` | `string` | `schedule_id` | id of the schedule that started the run; null for manually started runs |
 | `created_at_ms` | `long` | `created_at_ms` | |
 | `updated_at_ms` | `long` | `updated_at_ms` | |
 | `number_of_runs` | `integer` | `run_config` | `run_config ->> 'numberOfRuns'`; see "Repetition count is derived from the run's stored run configuration" |
@@ -63,6 +64,14 @@ Status: **Implemented**
 #### Scenario: Base schema matches the executable field set
 - **WHEN** `GET /api/v1/queries/entities/schema/test_suite_runs` is called
 - **THEN** the returned fields are exactly the rows of the table above, with the listed types and sources
+
+#### Scenario: Runs can be filtered by the schedule that started them
+- **WHEN** a `row` query against `test_suite_runs` filters `schedule_id` with `eq` (or `in`) on a schedule id
+- **THEN** only runs started by that schedule are returned; manually started runs, whose `schedule_id` is null, are excluded
+
+#### Scenario: Manually started runs have a null schedule_id
+- **WHEN** a `row` query returns a run that was started manually
+- **THEN** its `schedule_id` is null
 
 ### Requirement: Repetition count is derived from the run's stored run configuration
 `number_of_runs` SHALL be the run's configured repetitions per test case, read in-database from the run's own `run_config` payload (key `numberOfRuns`) as a flat `integer` field — the value the run was created with. A run whose `run_config` lacks the key SHALL yield null and the query SHALL still succeed.

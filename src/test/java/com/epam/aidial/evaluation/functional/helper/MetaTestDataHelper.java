@@ -6,6 +6,7 @@ import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASES;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITES;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_METRIC_DEFINITIONS;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS;
+import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_SCHEDULES;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
@@ -546,6 +547,46 @@ public class MetaTestDataHelper {
     @Transactional("metaTransactionManager")
     public void cleanupRunMetricSnapshots() {
         metaDsl.deleteFrom(RUN_METRIC_SNAPSHOTS).execute();
+    }
+
+    @Transactional("metaTransactionManager")
+    public void cleanupTestSuiteSchedules() {
+        metaDsl.deleteFrom(TEST_SUITE_SCHEDULES).execute();
+    }
+
+    /** Inserts a {@code test_suite_schedules} mapping row without going through the scheduler client. */
+    @Transactional("metaTransactionManager")
+    public void createTestSuiteSchedule(UUID suiteId, String scheduleId, String createdBy, long createdAt) {
+        createTestSuiteSchedule(suiteId, scheduleId, createdBy, createdAt, null);
+    }
+
+    /** Variant carrying the callback reference, for tests that resolve a {@code scheduleRef}. */
+    @Transactional("metaTransactionManager")
+    public void createTestSuiteSchedule(
+            UUID suiteId, String scheduleId, String createdBy, long createdAt, String scheduleRef) {
+        metaDsl.insertInto(TEST_SUITE_SCHEDULES)
+                .set(TEST_SUITE_SCHEDULES.SCHEDULE_ID, scheduleId)
+                .set(TEST_SUITE_SCHEDULES.TEST_SUITE_ID, suiteId.toString())
+                .set(TEST_SUITE_SCHEDULES.CREATED_BY, createdBy)
+                .set(TEST_SUITE_SCHEDULES.CREATED_AT, createdAt)
+                .set(TEST_SUITE_SCHEDULES.SCHEDULE_REF, scheduleRef)
+                .execute();
+    }
+
+    /**
+     * Saves a completed run tagged with the schedule that started it, without going through run creation. Needs no
+     * dataset, unlike {@link #createTestSuiteRun(UUID)}.
+     */
+    @Transactional("metaTransactionManager")
+    public TestSuiteRun createScheduledTestSuiteRun(UUID suiteId, String scheduleId) {
+        return testSuiteRunRepository.save(TestSuiteRun.builder()
+                .testSuiteId(suiteId)
+                .testRunName("scheduled-run-" + UUID.randomUUID())
+                .status(RunStatus.COMPLETED.name())
+                .runConfig("{\"numberOfRuns\":1}")
+                .numberOfTestCases(0)
+                .scheduleId(scheduleId)
+                .build());
     }
 
     public long countRunMetricSnapshots() {

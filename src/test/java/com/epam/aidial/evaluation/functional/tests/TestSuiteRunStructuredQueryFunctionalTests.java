@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
@@ -12,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
@@ -48,7 +50,7 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Structured Query → jOOQ translation (test_suite_runs) Tests")
 public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFunctionalTest {
 
-    /** Exactly the 22 fields of the {@code test_suite_runs} entity (spec's field table). */
+    /** Exactly the 23 fields of the {@code test_suite_runs} entity (spec's field table). */
     private static final Set<String> ALL_FIELDS = Set.of(
             "id",
             "test_suite_id",
@@ -58,6 +60,7 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
             "started_at_ms",
             "completed_at_ms",
             "error_message",
+            "schedule_id",
             "created_at_ms",
             "updated_at_ms",
             "number_of_runs",
@@ -166,10 +169,81 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
         return result;
     }
 
+    // ---- schedule tag (V1.40) ----
+
+    @Test
+    @DisplayName("filters runs by schedule_id with eq and reports null for a manually started run")
+    void filtersByScheduleIdWithEq() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-schedule-eq-" + UUID.randomUUID());
+        String scheduleId = "sch-" + UUID.randomUUID();
+        TestSuiteRun tagged = metaTestDataHelper.createScheduledTestSuiteRun(suite.getId(), scheduleId);
+        metaTestDataHelper.createScheduledTestSuiteRun(suite.getId(), "sch-other-" + UUID.randomUUID());
+        TestSuiteRun manual = metaTestDataHelper.createScheduledTestSuiteRun(suite.getId(), null);
+
+        QueryResultPage byTag = queryRepository.execute(rowQuery(
+                and(eqUuid("test_suite_id", suite.getId()), eq("schedule_id", ValueType.STRING, scheduleId)),
+                List.of(col("id"), col("schedule_id"))));
+        QueryResultPage manualRow =
+                queryRepository.execute(rowQuery(eqUuid("id", manual.getId()), List.of(col("id"), col("schedule_id"))));
+
+        assertThat(byTag.rows())
+                .extracting(row -> row.get("id"), row -> row.get("schedule_id"))
+                .containsExactly(tuple(tagged.getId().toString(), scheduleId));
+        assertThat(manualRow.rows()).hasSize(1);
+        assertThat(manualRow.rows().get(0).get("schedule_id")).isNull();
+    }
+
+    @Test
+    @DisplayName("filters runs by schedule_id with in across several schedules")
+    void filtersByScheduleIdWithIn() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-schedule-in-" + UUID.randomUUID());
+        String first = "sch-a-" + UUID.randomUUID();
+        String second = "sch-b-" + UUID.randomUUID();
+        TestSuiteRun runOfFirst = metaTestDataHelper.createScheduledTestSuiteRun(suite.getId(), first);
+        TestSuiteRun runOfSecond = metaTestDataHelper.createScheduledTestSuiteRun(suite.getId(), second);
+        metaTestDataHelper.createScheduledTestSuiteRun(suite.getId(), "sch-c-" + UUID.randomUUID());
+        FilterNode inTwo = new ComparisonNode(
+                ComparisonOp.IN,
+                List.of(
+                        new FieldExpr("schedule_id"),
+                        new ArrayExpr(List.of(
+                                new ValueExpr(ValueType.STRING, first), new ValueExpr(ValueType.STRING, second)))));
+
+        QueryResultPage page = queryRepository.execute(
+                rowQuery(and(eqUuid("test_suite_id", suite.getId()), inTwo), List.of(col("id"))));
+
+        assertThat(page.rows())
+                .extracting(row -> row.get("id"))
+                .containsExactlyInAnyOrder(
+                        runOfFirst.getId().toString(), runOfSecond.getId().toString());
+    }
+
+    @Test
+    @DisplayName(
+            "ne on schedule_id is null-safe: manual runs are returned, only the named schedule's runs are excluded")
+    void neOnScheduleIdKeepsManualRuns() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-schedule-ne-" + UUID.randomUUID());
+        String scheduleId = "sch-" + UUID.randomUUID();
+        metaTestDataHelper.createScheduledTestSuiteRun(suite.getId(), scheduleId);
+        TestSuiteRun otherSchedule =
+                metaTestDataHelper.createScheduledTestSuiteRun(suite.getId(), "sch-other-" + UUID.randomUUID());
+        TestSuiteRun manual = metaTestDataHelper.createScheduledTestSuiteRun(suite.getId(), null);
+        FilterNode notFromSchedule = new ComparisonNode(
+                ComparisonOp.NE, List.of(new FieldExpr("schedule_id"), new ValueExpr(ValueType.STRING, scheduleId)));
+
+        QueryResultPage page = queryRepository.execute(
+                rowQuery(and(eqUuid("test_suite_id", suite.getId()), notFromSchedule), List.of(col("id"))));
+
+        assertThat(page.rows())
+                .extracting(row -> row.get("id"))
+                .containsExactlyInAnyOrder(
+                        otherSchedule.getId().toString(), manual.getId().toString());
+    }
+
     // ---- field set / snapshot refs (task 3.2) ----
 
     @Test
-    @DisplayName("empty select projects at least the 22 entity fields and none of the excluded columns")
+    @DisplayName("empty select projects at least the 23 entity fields and none of the excluded columns")
     void emptySelectProjectsExactlyTheEntityFields() {
         TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-fields-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());

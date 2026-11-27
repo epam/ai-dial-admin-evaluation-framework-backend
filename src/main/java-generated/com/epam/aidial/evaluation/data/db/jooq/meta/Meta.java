@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteMetricDefinitions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteRuns;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteSchedules;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuites;
 
 import java.util.Arrays;
@@ -84,6 +85,11 @@ public class Meta extends SchemaImpl {
     public final TestSuiteRuns TEST_SUITE_RUNS = TestSuiteRuns.TEST_SUITE_RUNS;
 
     /**
+     * The table <code>meta.test_suite_schedules</code>.
+     */
+    public final TestSuiteSchedules TEST_SUITE_SCHEDULES = TestSuiteSchedules.TEST_SUITE_SCHEDULES;
+
+    /**
      * The table <code>meta.test_suites</code>.
      */
     public final TestSuites TEST_SUITES = TestSuites.TEST_SUITES;
@@ -120,6 +126,7 @@ public class Meta extends SchemaImpl {
             TestCases.TEST_CASES,
             TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS,
             TestSuiteRuns.TEST_SUITE_RUNS,
+            TestSuiteSchedules.TEST_SUITE_SCHEDULES,
             TestSuites.TEST_SUITES
         );
     }

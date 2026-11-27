@@ -143,6 +143,11 @@ public class TestSuiteService {
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
+    public boolean existsById(UUID id) {
+        return testSuiteRepository.existsById(id);
+    }
+
+    @Transactional(value = "metaTransactionManager", readOnly = true)
     public TestSuiteResponseDto getById(UUID id) {
         log.debug("Fetching TestSuite by id: {}", id);
         return testSuiteRepository

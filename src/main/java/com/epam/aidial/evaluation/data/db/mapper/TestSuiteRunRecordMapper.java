@@ -31,6 +31,7 @@ public class TestSuiteRunRecordMapper {
                 .errorMessage(r.getErrorMessage())
                 .errorDetails(toJsonString(r.getErrorDetails()))
                 .suiteSnapshot(toJsonString(r.getSuiteSnapshot()))
+                .scheduleId(r.getScheduleId())
                 .createdAt(r.getCreatedAtMs())
                 .updatedAt(r.getUpdatedAtMs())
                 .build();
@@ -54,6 +55,7 @@ public class TestSuiteRunRecordMapper {
                 .errorMessage(r.getValue(TEST_SUITE_RUNS.ERROR_MESSAGE))
                 .errorDetails(toJsonString(r.getValue(TEST_SUITE_RUNS.ERROR_DETAILS)))
                 .suiteSnapshot(null)
+                .scheduleId(r.getValue(TEST_SUITE_RUNS.SCHEDULE_ID))
                 .createdAt(r.getValue(TEST_SUITE_RUNS.CREATED_AT_MS))
                 .updatedAt(r.getValue(TEST_SUITE_RUNS.UPDATED_AT_MS))
                 .build();
